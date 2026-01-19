@@ -1,0 +1,10 @@
+apache-airflow-providers-amazon
+apache-airflow-providers-celery
+apache-airflow-providers-fab
+apache-airflow-providers-mysql
+asyncpg
+pandas
+psycopg2-binary
+PyMySQL
+requests
+sqlalchemy
