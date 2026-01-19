@@ -1,3 +1,0 @@
-bucket = "loci-infra-dev"
-key    = "backend/dev/state.tfstate"
-region = "us-east-2"
