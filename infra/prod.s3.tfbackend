@@ -1,0 +1,3 @@
+bucket = "loci-infra-prod"
+key    = "backend/prod/state.tfstate"
+region = "us-east-2"
