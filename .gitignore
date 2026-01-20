@@ -2,3 +2,7 @@
 *.tfstate
 *.tfstate.backup
 .terraform
+logs
+__pycache__
+raw_data
+
