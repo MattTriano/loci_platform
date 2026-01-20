@@ -3,6 +3,7 @@ apache-airflow-providers-celery
 apache-airflow-providers-fab
 apache-airflow-providers-mysql
 asyncpg
+faker
 pandas
 psycopg2-binary
 PyMySQL
