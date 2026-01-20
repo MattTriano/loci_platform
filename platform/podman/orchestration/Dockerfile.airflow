@@ -22,7 +22,3 @@ RUN CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints
     pip install --no-cache-dir \
     -r /tmp/requirements.txt \
     --constraint "${CONSTRAINT_URL}"
-
-RUN python -m venv /home/airflow/dbt_venv && \
-    /home/airflow/dbt_venv/bin/pip install --no-cache-dir \
-    -r /tmp/requirements-dbt.txt
