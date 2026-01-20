@@ -30,6 +30,10 @@ cd bootstrap/dev
 AWS_PROFILE=dev_profile_name tofu init
 AWS_PROFILE=dev_profile_name tofu apply
 
+cd ../staging
+AWS_PROFILE=staging_profile_name tofu init
+AWS_PROFILE=staging_profile_name tofu apply
+
 cd ../prod
 AWS_PROFILE=prod_profile_name tofu init
 AWS_PROFILE=prod_profile_name tofu apply
@@ -37,7 +41,7 @@ AWS_PROFILE=prod_profile_name tofu apply
 
 ## Regular operation
 
-In the top-level dir, any time you're switching between the `dev` or `prod` envs, you'll have to reconfigure the state. For example, if you've been building to `prod` but want to switch to building to `dev`, you'd have to run this command.
+In the top-level dir, any time you're switching between the `dev`, `staging`, or `prod` envs, you'll have to reconfigure the state. For example, if you've been building to `prod` but want to switch to building to `dev`, you'd have to run this command.
 
 ```console
 $ AWS_PROFILE=dev_profile_name tofu init -var-file=dev.tfvars -reconfigure
