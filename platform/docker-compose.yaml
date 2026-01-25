@@ -128,6 +128,49 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate_mysql:
+    image: flyway/flyway:10
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: >
+      -url=jdbc:mysql://mysql:3306/servingdb
+      -user=app
+      -password=app
+      -connectRetries=60
+      migrate
+    volumes:
+      - ./migrations/mysql:/flyway/sql:ro
+
+  flyway-postgres:
+    image: flyway/flyway:11
+    command: migrate
+    volumes:
+      - ./migrations/postgres:/flyway/sql
+    environment:
+      - FLYWAY_URL=jdbc:postgresql://postgres:5432/airflow
+      - FLYWAY_USER=airflow
+      - FLYWAY_PASSWORD=airflow
+      - FLYWAY_BASELINE_ON_MIGRATE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  flyway-mysql:
+    image: flyway/flyway:11
+    command: migrate
+    volumes:
+      - ./migrations/mysql:/flyway/sql
+    environment:
+      - FLYWAY_URL=jdbc:mysql://mysql:3306/loci?allowPublicKeyRetrieval=true&useSSL=false
+      - FLYWAY_USER=loci
+      - FLYWAY_PASSWORD=loci
+      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
+      # - FLYWAY_BASELINE_ON_MIGRATE=true
+    depends_on:
+      mysql:
+        condition: service_healthy
+
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
     # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
@@ -305,7 +348,7 @@ services:
         echo
         echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
         echo
-        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        # chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
         echo
         echo "Files in shared volumes:"
         echo
