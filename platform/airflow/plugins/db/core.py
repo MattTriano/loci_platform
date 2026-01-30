@@ -249,8 +249,8 @@ class PostgresEngine:
 
 
     @pg_retry()
-    def ingest_csv(self, filepath: str | Path, table: str, schema: str) -> int:
-        fqn = f"{schema}.{table}"
+    def ingest_csv(self, filepath: str | Path, table_name: str, schema: str) -> int:
+        fqn = f"{schema}.{table_name}"
         with self.cursor() as cur:
             cur.execute("drop table if exists _staging")
             cur.execute(f"create temp table _staging (like {fqn} excluding all)")
@@ -284,6 +284,7 @@ class MySQLEngine:
         self.logger = get_logger("mysql_engine")
 
     def _connect(self) -> pymysql.Connection:
+        print(f"Connecting with: host={self.creds.host}, port={self.creds.port}, user={self.creds.username}")
         return pymysql.connect(
             host=self.creds.host,
             port=int(self.creds.port),
@@ -403,7 +404,7 @@ def get_postgres_engine(
     return PostgresEngine(
         DatabaseCredentials(
             host=conn_dict["host"],
-            port=conn_dict["port"],
+            port=conn_dict.get("port", "5432"),
             database=conn_dict["database"],
             username=conn_dict["user"],
             password=conn_dict["password"],
@@ -415,10 +416,13 @@ def get_mysql_engine(
     conn_id: str, logger: Optional[Logger] = None
 ) -> MySQLEngine:
     conn_dict = extract_connection_to_dict(conn_id, logger)
+    port = conn_dict.get("port")
+    if port is None:
+        port = "3306"
     return MySQLEngine(
         DatabaseCredentials(
             host=conn_dict["host"],
-            port=conn_dict["port"],
+            port=port,
             database=conn_dict["database"],
             username=conn_dict["user"],
             password=conn_dict["password"],
