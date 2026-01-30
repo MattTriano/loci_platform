@@ -79,11 +79,11 @@ x-airflow-common:
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
   volumes:
-    - ./airflow/dags:/opt/airflow/dags
-    - ./airflow/logs:/opt/airflow/logs
-    - ./airflow/config:/opt/airflow/config
-    - ./airflow/plugins:/opt/airflow/plugins
-    - ./raw_data:/opt/airflow/raw_data
+    - ./airflow/dags:/opt/airflow/dags:U
+    - ./airflow/logs:/opt/airflow/logs:U
+    - ./airflow/config:/opt/airflow/config:U
+    - ./airflow/plugins:/opt/airflow/plugins:U
+    - ./raw_data:/opt/airflow/raw_data:U
   user: "50000:0"
   depends_on:
     &airflow-common-depends-on
@@ -112,7 +112,6 @@ services:
 
   mysql:
     image: docker.io/mysql:9.5
-    container_name: mysql-9.5
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_DATABASE: loci
@@ -127,6 +126,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  flyway-postgres:
+    image: flyway/flyway:11
+    command: migrate
+    volumes:
+      - ./migrations/postgres:/flyway/sql
+    environment:
+      - FLYWAY_URL=jdbc:postgresql://postgres:5432/airflow
+      - FLYWAY_USER=airflow
+      - FLYWAY_PASSWORD=airflow
+      - FLYWAY_BASELINE_ON_MIGRATE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  flyway-mysql:
+    image: flyway/flyway:11
+    command: migrate
+    volumes:
+      - ./migrations/mysql:/flyway/sql
+    environment:
+      - FLYWAY_URL=jdbc:mysql://mysql:3306/loci?allowPublicKeyRetrieval=true&useSSL=false
+      - FLYWAY_USER=loci
+      - FLYWAY_PASSWORD=loci
+      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
+      # - FLYWAY_BASELINE_ON_MIGRATE=true
+    depends_on:
+      mysql:
+        condition: service_healthy
 
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
@@ -282,7 +310,22 @@ services:
         echo
         echo "Creating missing opt dirs if missing:"
         echo
-        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
+        if [ ! -d /opt/airflow/dags ]; then
+          mkdir -p /opt/airflow/dags
+          echo "Created /opt/airflow/dags"
+        fi
+        if [ ! -d /opt/airflow/logs ]; then
+          mkdir -p /opt/airflow/logs
+          echo "Created /opt/airflow/logs"
+        fi
+        if [ ! -d /opt/airflow/plugins ]; then
+          mkdir -p /opt/airflow/plugins
+          echo "Created /opt/airflow/plugins"
+        fi
+        if [ ! -d /opt/airflow/config ]; then
+          mkdir -p /opt/airflow/config
+          echo "Created /opt/airflow/config"
+        fi
         echo
         echo "Airflow version:"
         /entrypoint airflow version
@@ -293,23 +336,23 @@ services:
         echo
         echo "Running airflow config list to create default config file if missing."
         echo
-        /entrypoint airflow config list >/dev/null
+        if [ ! -f /opt/airflow/config/airflow.cfg ]; then
+          /entrypoint airflow config list >/dev/null
+          echo "Created airflow.cfg file"
+        fi
         echo
         echo "Files in shared volumes:"
         echo
         ls -la /opt/airflow/{logs,dags,plugins,config}
         echo
-        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
-        echo
-        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
-        echo
-        echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
-        echo
-        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
-        echo
-        echo "Files in shared volumes:"
-        echo
-        ls -la /opt/airflow/{logs,dags,plugins,config}
+        # echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
+        # echo
+        # chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        # echo
+        # echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
+        # echo
+        # chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        # echo
 
     # yamllint enable rule:line-length
     environment:

@@ -101,7 +101,7 @@ def generate_and_ingest_data():
     mysql_schemas = show_mysql_schemas()
     create_raw = create_raw_data_schema()
     ingest_files = ingest_fake_data_files(generate_data)
-    chain(generate_data, create_raw, [pg_schemas, mysql_schemas], ingest_files)
+    chain(create_raw, [pg_schemas, mysql_schemas], generate_data, ingest_files)
 
 
 generate_and_ingest_data()

@@ -154,6 +154,7 @@ class MySQLConnector(BaseConnector):
             cursor_factory: Cursor class to use (default: DictCursor).
                            Pass pymysql.cursors.Cursor for tuple results.
         """
+        self.connect()
         self._ensure_connected()
 
         # Temporarily change cursor class if specified
@@ -190,6 +191,7 @@ class MySQLConnector(BaseConnector):
         Returns:
             List of query results
         """
+        self.connect()
         cursor_factory = (
             pymysql.cursors.DictCursor if return_dict else pymysql.cursors.Cursor
         )
@@ -216,6 +218,7 @@ class MySQLConnector(BaseConnector):
         Returns:
             pandas DataFrame with query results
         """
+        self.connect()
         with self.get_cursor() as cursor:
             cursor.execute(sql, params)
             if cursor.description is None:
@@ -244,6 +247,7 @@ class MySQLConnector(BaseConnector):
         Returns:
             Number of affected rows
         """
+        self.connect()
         with self.get_cursor() as cursor:
             cursor.execute(sql, params)
             return cursor.rowcount
@@ -261,6 +265,7 @@ class MySQLConnector(BaseConnector):
         Returns:
             Number of affected rows
         """
+        self.connect()
         with self.get_cursor() as cursor:
             cursor.executemany(sql, params_list)
             return cursor.rowcount
@@ -287,6 +292,7 @@ class MySQLConnector(BaseConnector):
         Yields:
             Batches of rows (list of dicts or tuples)
         """
+        self.connect()
         self._ensure_connected()
 
         cursor_class = (
