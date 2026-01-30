@@ -9,3 +9,4 @@ psycopg2-binary
 PyMySQL
 requests
 sqlalchemy
+tenacity

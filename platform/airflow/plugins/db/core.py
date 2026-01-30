@@ -1,82 +1,270 @@
-from abc import ABC, abstractmethod
+import logging
+import os
+import re
 from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import quote_plus
 from logging import Logger
-from typing import Any, Generator, Optional, Union
-import warnings
+from typing import Any, Iterator, Optional
 
 import pymysql
 import pandas as pd
 import psycopg2
 from airflow.sdk.bases.hook import BaseHook
-from psycopg2.extras import RealDictCursor, execute_batch
+from psycopg2.extensions import connection as Psycopg2Connection
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 
-class BaseConnector(ABC):
-    """Abstract base class defining the standard database connector interface."""
+def get_logger(
+    name: str,
+    level: int = logging.INFO,
+    log_format: Optional[str] = None,
+) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
 
-    @abstractmethod
-    def connect(self) -> None:
-        """Establish a connection to the database."""
-        pass
+    if logger.handlers:
+        return logger
 
-    @abstractmethod
-    def close(self) -> None:
-        """Close the database connection."""
-        pass
+    log_format = log_format or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    formatter = logging.Formatter(log_format)
 
-    @abstractmethod
-    def is_connected(self) -> bool:
-        """Check if the connection is active."""
-        pass
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
-    @abstractmethod
+    return logger
+
+
+@dataclass
+class DatabaseCredentials:
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+    driver: str = "postgresql"
+
+    @classmethod
+    def from_env_file(cls, env_path: str | Path, prefix: str, driver: str) -> "DatabaseCredentials":
+        """
+        Load credentials from a .env file using variables matching a prefix pattern.
+
+        Expected variables:
+            prefix_HOST, prefix_PORT, prefix_DATABASE, prefix_USERNAME,
+            prefix_PASSWORD, prefix_DRIVER (optional)
+        """
+        env_vars = cls._parse_env_file(env_path)
+
+        def get_var(name: str, default: Optional[str] = None) -> str:
+            key = f"{prefix}{name}"
+            value = env_vars.get(key) or os.environ.get(key) or default
+            if value is None:
+                raise ValueError(f"Missing required environment variable: {key}")
+            return value
+
+        return cls(
+            host=get_var("HOST"),
+            port=int(get_var("PORT", "5432")),
+            database=get_var("DATABASE"),
+            username=get_var("USER"),
+            password=get_var("PASSWORD"),
+            driver=get_var("DRIVER", driver),
+        )
+
+    @staticmethod
+    def _parse_env_file(env_path: str | Path) -> dict[str, str]:
+        env_vars = {}
+        path = Path(env_path)
+
+        if not path.exists():
+            return env_vars
+
+        with open(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+                if match:
+                    key, value = match.groups()
+                    value = value.strip()
+                    if (value.startswith('"') and value.endswith('"')) or (
+                        value.startswith("'") and value.endswith("'")
+                    ):
+                        value = value[1:-1]
+                    env_vars[key] = value
+
+        return env_vars
+
+    @property
+    def connection_string(self) -> str:
+        encoded_password = quote_plus(self.password)
+        return (
+            f"{self.driver}://{self.username}:{encoded_password}"
+            f"@{self.host}:{self.port}/{self.database}"
+        )
+
+    @property
+    def redacted_connection_string(self) -> str:
+        return f"{self.driver}://{self.username}:****@****:{self.port}/{self.database}"
+
+    def __str__(self) -> str:
+        return (
+            f"DatabaseCredentials(driver={self.driver!r}, "
+            f"host='****', port={self.port}, database={self.database!r}, "
+            f"username={self.username!r}, password='****')"
+        )
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+def pg_retry():
+    return retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((psycopg2.OperationalError, psycopg2.InterfaceError)),
+        reraise=True,
+    )
+
+
+def mysql_retry():
+    return retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((pymysql.OperationalError, pymysql.InterfaceError)),
+        reraise=True,
+    )
+
+
+class PostgresEngine:
+    def __init__(self, creds: DatabaseCredentials, db_name: Optional[str] = None) -> None:
+        self.creds = creds
+        self.db_name = db_name or creds.database
+        self._conn: Optional[Psycopg2Connection] = None
+        self.logger = get_logger("postgres_engine")
+
+    def _connect(self) -> Psycopg2Connection:
+        return psycopg2.connect(
+            host=self.creds.host,
+            port=self.creds.port,
+            dbname=self.db_name,
+            user=self.creds.username,
+            password=self.creds.password,
+        )
+
     @contextmanager
-    def get_cursor(self, cursor_factory: Optional[Any] = None) -> Generator:
-        """Get a cursor with automatic commit/rollback handling."""
-        pass
+    def transaction(self):
+        try:
+            yield self.connection
+            self.connection.commit()
+        except Exception as e:
+            self.logger.error(f"Transaction failed with error {e}")
+            self.connection.rollback()
+            raise
 
-    @abstractmethod
-    def query(
+    @contextmanager
+    def cursor(self):
+        with self.transaction():
+            cur = self.connection.cursor()
+            try:
+                yield cur
+            finally:
+                cur.close()
+
+    @property
+    def connection(self) -> Psycopg2Connection:
+        if self._conn is None or self._conn.closed:
+            self._conn = self._connect()
+        return self._conn
+
+    def close(self) -> None:
+        if self._conn is not None and not self._conn.closed:
+            self._conn.close()
+            self._conn = None
+
+    @pg_retry()
+    def query(self, sql: str) -> pd.DataFrame:
+        with self.cursor() as cur:
+            cur.execute(sql)
+            columns = [desc[0] for desc in cur.description]
+            return pd.DataFrame(cur.fetchall(), columns=columns)
+
+
+    @pg_retry()
+    def execute(self, sql: str) -> None:
+        try:
+            with self.cursor() as cur:
+                cur.execute(sql)
+        except Exception as e:
+            self.logger.error(f"Command failed with error {e}")
+            raise
+
+    @pg_retry()
+    def query_batches(
         self,
         sql: str,
-        params: Optional[tuple] = None,
-        return_dict: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Execute a SELECT query and return results."""
-        pass
+        batch_size: int = 10000,
+        as_dicts: bool = True,
+    ) -> Iterator[list[dict] | pd.DataFrame]:
+        cursor = self.connection.cursor(name="batch_cursor")
+        cursor.itersize = batch_size
+        try:
+            cursor.execute(sql)
+            columns = None
 
-    @abstractmethod
-    def query_df(
+            while True:
+                rows = cursor.fetchmany(batch_size)
+                if not rows:
+                    break
+
+                if columns is None:
+                    columns = [desc[0] for desc in cursor.description]
+
+                if as_dicts:
+                    yield [dict(zip(columns, row)) for row in rows]
+                else:
+                    yield pd.DataFrame(rows, columns=columns)
+        except Exception as e:
+            self.logger.error(f"Query batches failed: {e}")
+            self.connection.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def stream_to_destination(
         self,
         sql: str,
-        params: Optional[tuple] = None,
-    ) -> pd.DataFrame:
-        """Execute a SELECT query and return results as a DataFrame."""
-        pass
+        process_batch: callable,
+        batch_size: int = 10000,
+    ) -> int:
+        total = 0
+        for batch in self.query_batches(sql, batch_size=batch_size, as_dicts=True):
+            process_batch(batch)
+            total += len(batch)
+        return total
 
-    @abstractmethod
-    def execute(self, sql: str, params: Optional[tuple] = None) -> int:
-        """Execute a single statement (INSERT/UPDATE/DELETE)."""
-        pass
 
-    @abstractmethod
-    def execute_many(self, sql: str, params_list: list[tuple]) -> int:
-        """Execute a statement multiple times with different parameters."""
-        pass
-
-    @abstractmethod
-    def stream_batches(
-        self,
-        sql: str,
-        params: Optional[tuple] = None,
-        batch_size: int = 1000,
-        return_dict: bool = True,
-    ) -> Generator[list[dict[str, Any]], None, None]:
-        """Stream query results in batches for memory efficiency."""
-        pass
+    @pg_retry()
+    def ingest_csv(self, filepath: str | Path, table: str, schema: str) -> int:
+        fqn = f"{schema}.{table}"
+        with self.cursor() as cur:
+            cur.execute("drop table if exists _staging")
+            cur.execute(f"create temp table _staging (like {fqn} excluding all)")
+            cur.execute("alter table _staging drop column if exists ingested_to_postgres")
+            with open(filepath, "r") as f:
+                cur.copy_expert("copy _staging from stdin with csv header", f)
+            cur.execute(f"""
+                insert into {fqn}
+                select *, current_timestamp at time zone 'UTC'
+                from _staging
+            """)
+            return cur.rowcount
 
     def __enter__(self):
-        self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -84,450 +272,108 @@ class BaseConnector(ABC):
         return False
 
 
-class MySQLConnector(BaseConnector):
-    """
-    MySQL database connector with standardized API.
-
-    Args:
-        host: Database host address
-        user: Database username
-        password: Database password
-        database: Database name
-        port: Database port (default: 3306)
-        charset: Character set (default: utf8mb4)
-        autoconnect: Whether to connect immediately (default: True)
-        **kwargs: Additional connection parameters passed to pymysql
-    """
-
+class MySQLEngine:
     def __init__(
         self,
-        host: str,
-        user: str,
-        password: str,
-        database: str,
-        port: int = 3306,
-        charset: str = "utf8mb4",
-        autoconnect: bool = True,
-        **kwargs,
-    ):
-        self._connection_params = {
-            "host": host,
-            "user": user,
-            "password": password,
-            "database": database,
-            "port": port,
-            "charset": charset,
-            "cursorclass": pymysql.cursors.DictCursor,
-            **kwargs,
-        }
-        self._connection: Optional[pymysql.connections.Connection] = None
+        creds: DatabaseCredentials,
+        db_name: Optional[str] = None,
+    ) -> None:
+        self.creds = creds
+        self.db_name = db_name or creds.database
+        self._conn: Optional[pymysql.Connection] = None
+        self.logger = get_logger("mysql_engine")
 
-        if autoconnect:
-            self.connect()
-
-    def connect(self) -> None:
-        if self._connection is not None and self._connection.open:
-            return
-        try:
-            self._connection = pymysql.connect(**self._connection_params)
-        except pymysql.Error as e:
-            raise ConnectionError(f"Failed to connect to MySQL database: {e}")
-
-    def close(self) -> None:
-        if self._connection is not None and self._connection.open:
-            self._connection.close()
-            self._connection = None
-
-    def is_connected(self) -> bool:
-        return self._connection is not None and self._connection.open
-
-    def _ensure_connected(self) -> None:
-        if not self.is_connected():
-            raise ConnectionError("Not connected to database. Call connect() first.")
-
-    @contextmanager
-    def get_cursor(self, cursor_factory: Optional[Any] = None) -> Generator:
-        """
-        Get a cursor with automatic commit/rollback handling.
-
-        Args:
-            cursor_factory: Cursor class to use (default: DictCursor).
-                           Pass pymysql.cursors.Cursor for tuple results.
-        """
-        self.connect()
-        self._ensure_connected()
-
-        # Temporarily change cursor class if specified
-        original_cursorclass = self._connection_params.get("cursorclass")
-        if cursor_factory is not None:
-            self._connection.cursorclass = cursor_factory
-
-        cursor = self._connection.cursor()
-        try:
-            yield cursor
-            self._connection.commit()
-        except Exception as e:
-            self._connection.rollback()
-            raise e
-        finally:
-            cursor.close()
-            if cursor_factory is not None:
-                self._connection.cursorclass = original_cursorclass
-
-    def query(
-        self,
-        sql: str,
-        params: Optional[tuple] = None,
-        return_dict: bool = True,
-    ) -> list[dict[str, Any]]:
-        """
-        Execute a SELECT query and return all results.
-
-        Args:
-            sql: SQL query string
-            params: Query parameters (tuple)
-            return_dict: If True, return list of dicts; if False, return list of tuples
-
-        Returns:
-            List of query results
-        """
-        self.connect()
-        cursor_factory = (
-            pymysql.cursors.DictCursor if return_dict else pymysql.cursors.Cursor
+    def _connect(self) -> pymysql.Connection:
+        return pymysql.connect(
+            host=self.creds.host,
+            port=int(self.creds.port),
+            user=self.creds.username,
+            password=self.creds.password,
+            database=self.db_name,
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
         )
 
-        with self.get_cursor(cursor_factory=cursor_factory) as cursor:
-            cursor.execute(sql, params)
-            results = cursor.fetchall()
-            if return_dict:
-                return [dict(row) for row in results]
-            return list(results)
-
-    def query_df(
-        self,
-        sql: str,
-        params: Optional[tuple] = None,
-    ) -> pd.DataFrame:
-        """
-        Execute a SELECT query and return results as a DataFrame.
-
-        Args:
-            sql: SQL query string
-            params: Query parameters (tuple)
-
-        Returns:
-            pandas DataFrame with query results
-        """
-        self.connect()
-        with self.get_cursor() as cursor:
-            cursor.execute(sql, params)
-            if cursor.description is None:
-                warnings.warn(
-                    "Query did not return results (likely INSERT/UPDATE/DELETE). "
-                    "Use execute() method instead.",
-                    UserWarning,
-                )
-                return pd.DataFrame()
-
-            results = cursor.fetchall()
-            if results:
-                return pd.DataFrame(results)
-            else:
-                columns = [desc[0] for desc in cursor.description]
-                return pd.DataFrame(columns=columns)
-
-    def execute(self, sql: str, params: Optional[tuple] = None) -> int:
-        """
-        Execute a single statement (INSERT/UPDATE/DELETE).
-
-        Args:
-            sql: SQL statement
-            params: Statement parameters (tuple)
-
-        Returns:
-            Number of affected rows
-        """
-        self.connect()
-        with self.get_cursor() as cursor:
-            cursor.execute(sql, params)
-            return cursor.rowcount
-
-    def execute_many(self, sql: str, params_list: list[tuple]) -> int:
-        """
-        Execute the same statement multiple times with different parameters.
-
-        Uses executemany for batch operations.
-
-        Args:
-            sql: SQL statement
-            params_list: List of parameter tuples
-
-        Returns:
-            Number of affected rows
-        """
-        self.connect()
-        with self.get_cursor() as cursor:
-            cursor.executemany(sql, params_list)
-            return cursor.rowcount
-
-    def stream_batches(
-        self,
-        sql: str,
-        params: Optional[tuple] = None,
-        batch_size: int = 1000,
-        return_dict: bool = True,
-    ) -> Generator[list[dict[str, Any]], None, None]:
-        """
-        Stream query results in batches for memory efficiency.
-
-        Note: MySQL doesn't have true server-side cursors like PostgreSQL,
-        so this uses SSCursor (unbuffered cursor) for streaming.
-
-        Args:
-            sql: SQL query string
-            params: Query parameters (tuple)
-            batch_size: Number of rows per batch
-            return_dict: If True, yield dicts; if False, yield tuples
-
-        Yields:
-            Batches of rows (list of dicts or tuples)
-        """
-        self.connect()
-        self._ensure_connected()
-
-        cursor_class = (
-            pymysql.cursors.SSDictCursor if return_dict else pymysql.cursors.SSCursor
-        )
-        cursor = self._connection.cursor(cursor_class)
-
-        try:
-            cursor.execute(sql, params)
-            while True:
-                batch = cursor.fetchmany(batch_size)
-                if not batch:
-                    break
-                if return_dict:
-                    yield [dict(row) for row in batch]
-                else:
-                    yield list(batch)
-        finally:
-            cursor.close()
-
-
-class PostgresConnector(BaseConnector):
-    """
-    PostgreSQL database connector with standardized API.
-
-    Args:
-        host: Database host address
-        user: Database username
-        password: Database password
-        database: Database name
-        port: Database port (default: 5432)
-        autoconnect: Whether to connect immediately (default: True)
-        **kwargs: Additional connection parameters passed to psycopg2
-    """
-
-    def __init__(
-        self,
-        host: str,
-        user: str,
-        password: str,
-        database: str,
-        port: int = 5432,
-        autoconnect: bool = True,
-        **kwargs,
-    ):
-        self._connection_params = {
-            "host": host,
-            "user": user,
-            "password": password,
-            "database": database,
-            "port": port,
-            **kwargs,
-        }
-        self._connection = None
-
-        if autoconnect:
-            self.connect()
-
-    def connect(self) -> None:
-        if self._connection is not None and not self._connection.closed:
-            return
-        try:
-            self._connection = psycopg2.connect(**self._connection_params)
-        except psycopg2.Error as e:
-            raise ConnectionError(f"Failed to connect to PostgreSQL database: {e}")
+    @property
+    def conn(self) -> pymysql.Connection:
+        if self._conn is None or not self._conn.open:
+            self._conn = self._connect()
+        return self._conn
 
     def close(self) -> None:
-        if self._connection is not None and not self._connection.closed:
-            self._connection.close()
-            self._connection = None
-
-    def is_connected(self) -> bool:
-        return self._connection is not None and not self._connection.closed
-
-    def _ensure_connected(self) -> None:
-        if not self.is_connected():
-            raise ConnectionError("Not connected to database. Call connect() first.")
+        if self._conn is not None and self._conn.open:
+            self._conn.close()
+            self._conn = None
 
     @contextmanager
-    def get_cursor(self, cursor_factory: Optional[Any] = None) -> Generator:
-        """
-        Get a cursor with automatic commit/rollback handling.
-
-        Args:
-            cursor_factory: Cursor factory to use (e.g., RealDictCursor)
-        """
-        self._ensure_connected()
-        cursor = self._connection.cursor(cursor_factory=cursor_factory)
+    def cursor(self):
+        cursor = self.conn.cursor()
         try:
             yield cursor
-            self._connection.commit()
-        except Exception as e:
-            self._connection.rollback()
-            raise e
         finally:
             cursor.close()
 
-    def query(
-        self,
-        sql: str,
-        params: Optional[tuple] = None,
-        return_dict: bool = True,
-    ) -> list[dict[str, Any]]:
-        """
-        Execute a SELECT query and return all results.
+    @mysql_retry()
+    def query(self, sql: str, params: Optional[tuple] = None) -> pd.DataFrame:
+        with self.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            return pd.DataFrame(rows) if rows else pd.DataFrame()
 
-        Args:
-            sql: SQL query string
-            params: Query parameters (tuple)
-            return_dict: If True, return list of dicts; if False, return list of tuples
-
-        Returns:
-            List of query results
-        """
-        cursor_factory = RealDictCursor if return_dict else None
-
-        with self.get_cursor(cursor_factory=cursor_factory) as cursor:
-            cursor.execute(sql, params)
-            results = cursor.fetchall()
-            if return_dict:
-                return [dict(row) for row in results]
-            return results
-
-    def query_df(
-        self,
-        sql: str,
-        params: Optional[tuple] = None,
-    ) -> pd.DataFrame:
-        """
-        Execute a SELECT query and return results as a DataFrame.
-
-        Args:
-            sql: SQL query string
-            params: Query parameters (tuple)
-
-        Returns:
-            pandas DataFrame with query results
-        """
-        with self.get_cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, params)
-            if cursor.description is None:
-                warnings.warn(
-                    "Query did not return results (likely INSERT/UPDATE/DELETE). "
-                    "Use execute() method instead.",
-                    UserWarning,
-                )
-                return pd.DataFrame()
-
-            results = cursor.fetchall()
-            if results:
-                return pd.DataFrame([dict(row) for row in results])
-            else:
-                columns = [desc[0] for desc in cursor.description]
-                return pd.DataFrame(columns=columns)
-
+    @mysql_retry()
     def execute(self, sql: str, params: Optional[tuple] = None) -> int:
-        """
-        Execute a single statement (INSERT/UPDATE/DELETE).
+        with self.cursor() as cur:
+            result = cur.execute(sql, params)
+            self.conn.commit()
+            return result
 
-        Args:
-            sql: SQL statement
-            params: Statement parameters (tuple)
-
-        Returns:
-            Number of affected rows
-        """
-        with self.get_cursor() as cursor:
-            cursor.execute(sql, params)
-            return cursor.rowcount
-
-    def execute_many(
-        self, sql: str, params_list: list[tuple], page_size: int = 1000
+    @mysql_retry()
+    def upsert_batch(
+        self,
+        table: str,
+        records: list[dict],
+        update_columns: Optional[list[str]] = None,
     ) -> int:
+        if not records:
+            return 0
+
+        columns = list(records[0].keys())
+        update_cols = update_columns or columns
+
+        placeholders = ", ".join(["%s"] * len(columns))
+        columns_str = ", ".join(f"`{c}`" for c in columns)
+        update_clause = ", ".join(f"`{c}` = VALUES(`{c}`)" for c in update_cols)
+
+        sql = f"""
+            insert into `{table}` ({columns_str})
+            values ({placeholders})
+            on duplicate key update {update_clause}
         """
-        Execute the same statement multiple times with different parameters.
 
-        Uses psycopg2's execute_batch for significantly better performance
-        than executemany (batches statements together).
+        values = [tuple(r[col] for col in columns) for r in records]
 
-        Args:
-            sql: SQL statement
-            params_list: List of parameter tuples
-            page_size: Number of statements per batch (default: 1000)
+        with self.cursor() as cur:
+            result = cur.executemany(sql, values)
+            self.conn.commit()
+            return result
 
-        Returns:
-            Number of affected rows
-        """
-        with self.get_cursor() as cursor:
-            execute_batch(cursor, sql, params_list, page_size=page_size)
-            return cursor.rowcount
-
-    def stream_batches(
+    def upsert_batches(
         self,
-        sql: str,
-        params: Optional[tuple] = None,
-        batch_size: int = 1000,
-        return_dict: bool = True,
-    ) -> Generator[list[dict[str, Any]], None, None]:
-        """
-        Stream query results in batches using a server-side cursor.
+        table: str,
+        batches: Iterator[list[dict]],
+        update_columns: Optional[list[str]] = None,
+    ) -> int:
+        total = 0
+        for batch in batches:
+            total += self.upsert_batch(table, batch, update_columns)
+        return total
 
-        Memory-efficient for large result sets. Uses PostgreSQL's
-        server-side cursor to avoid loading all results into memory.
+    def __enter__(self):
+        return self
 
-        Args:
-            sql: SQL query string
-            params: Query parameters (tuple)
-            batch_size: Number of rows per batch
-            return_dict: If True, yield dicts; if False, yield tuples
-
-        Yields:
-            Batches of rows (list of dicts or tuples)
-        """
-        self._ensure_connected()
-
-        cursor_factory = RealDictCursor if return_dict else None
-
-        # Named cursor for server-side processing
-        with self._connection.cursor(
-            name="server_side_cursor", cursor_factory=cursor_factory
-        ) as cursor:
-            cursor.itersize = batch_size
-            cursor.execute(sql, params)
-
-            while True:
-                batch = cursor.fetchmany(batch_size)
-                if not batch:
-                    break
-                if return_dict:
-                    yield [dict(row) for row in batch]
-                else:
-                    yield batch
-
-
-DatabaseConnector = Union[MySQLConnector, PostgresConnector]
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
 
 def extract_connection_to_dict(
@@ -550,27 +396,31 @@ def extract_connection_to_dict(
     return conn_dict
 
 
-def get_postgres_connector(
+def get_postgres_engine(
     conn_id: str, logger: Optional[Logger] = None
-) -> PostgresConnector:
+) -> PostgresEngine:
     conn_dict = extract_connection_to_dict(conn_id, logger)
-    return PostgresConnector(
-        host=conn_dict["host"],
-        port=conn_dict["port"],
-        database=conn_dict["database"],
-        user=conn_dict["user"],
-        password=conn_dict["password"],
+    return PostgresEngine(
+        DatabaseCredentials(
+            host=conn_dict["host"],
+            port=conn_dict["port"],
+            database=conn_dict["database"],
+            username=conn_dict["user"],
+            password=conn_dict["password"],
+        )
     )
 
 
-def get_mysql_connector(
+def get_mysql_engine(
     conn_id: str, logger: Optional[Logger] = None
-) -> MySQLConnector:
+) -> MySQLEngine:
     conn_dict = extract_connection_to_dict(conn_id, logger)
-    return MySQLConnector(
-        host=conn_dict["host"],
-        port=conn_dict["port"],
-        database=conn_dict["database"],
-        user=conn_dict["user"],
-        password=conn_dict["password"],
+    return MySQLEngine(
+        DatabaseCredentials(
+            host=conn_dict["host"],
+            port=conn_dict["port"],
+            database=conn_dict["database"],
+            username=conn_dict["user"],
+            password=conn_dict["password"],
+        )
     )
