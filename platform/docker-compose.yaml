@@ -136,6 +136,8 @@ services:
       - FLYWAY_URL=jdbc:postgresql://postgres:5432/airflow
       - FLYWAY_USER=airflow
       - FLYWAY_PASSWORD=airflow
+      - FLYWAY_SCHEMAS=raw_data,marts,public
+      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
       - FLYWAY_BASELINE_ON_MIGRATE=true
     depends_on:
       postgres:

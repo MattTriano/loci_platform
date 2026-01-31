@@ -6,6 +6,8 @@ asyncpg
 faker
 pandas
 psycopg2-binary
+pyarrow
 PyMySQL
 requests
 sqlalchemy
+tenacity

@@ -7,8 +7,7 @@ from pathlib import Path
 from airflow.sdk import dag, task
 from airflow.sdk.bases.operator import chain
 
-from db.core import get_postgres_connector, get_mysql_connector
-from db.ingest_to_pg import ingest_csv
+from db.core import get_postgres_engine, get_mysql_engine
 from datagen.data_model_mocker import DataFaker
 
 task_logger = logging.getLogger("airflow.task")
@@ -23,20 +22,18 @@ task_logger = logging.getLogger("airflow.task")
 def generate_and_ingest_data():
     @task
     def show_postgres_schemas() -> list[dict[str, str]]:
-        pg_connector = get_postgres_connector(conn_id="dwh_db", logger=task_logger)
-        schemas = pg_connector.query(""" select * from information_schema.schemata """)
-        for schema in schemas:
+        pg_engine = get_postgres_engine(conn_id="dwh_db", logger=task_logger)
+        schemas = pg_engine.query(""" select * from information_schema.schemata """)
+        for schema in schemas["schema_name"].values:
             print(schema)
-        # task_logger.log(schemas)
         return schemas
 
     @task
     def show_mysql_schemas() -> list[dict[str, str]]:
-        pg_connector = get_mysql_connector(conn_id="app_db", logger=task_logger)
-        schemas = pg_connector.query(""" show schemas """)
-        for schema in schemas:
+        mysql_engine = get_mysql_engine(conn_id="app_db", logger=task_logger)
+        schemas = mysql_engine.query(""" show schemas """)
+        for schema in schemas["Database"].values:
             print(schema)
-        # task_logger.log(schemas)
         return schemas
 
     @task
@@ -52,7 +49,7 @@ def generate_and_ingest_data():
 
     @task
     def ingest_fake_data_files(data_dir) -> bool:
-        pg_connector = get_postgres_connector(conn_id="dwh_db", logger=task_logger)
+        pg_engine = get_postgres_engine(conn_id="dwh_db", logger=task_logger)
         data_dir = Path(data_dir)
         file_paths = [p for p in data_dir.iterdir() if p.name.endswith(".csv")]
         file_paths.sort()
@@ -61,24 +58,20 @@ def generate_and_ingest_data():
         trading_files = [p for p in file_paths if "trading_partnership" in p.name]
         for fp in addr_files:
             task_logger.info(f"Ingesting {fp.name}")
-            results = ingest_csv(
-                filepath=fp, pg_connector=pg_connector, schema="raw_data", table_name="addresses"
-            )
+            results = pg_engine.ingest_csv(filepath=fp, schema="raw_data", table_name="addresses")
             print(results)
             task_logger.info(f"File ingested")
 
         for fp in biz_files:
             task_logger.info(f"Ingesting {fp.name}")
-            results = ingest_csv(
-                filepath=fp, pg_connector=pg_connector, schema="raw_data", table_name="businesses"
-            )
+            results = pg_engine.ingest_csv(filepath=fp, schema="raw_data", table_name="businesses")
             print(results)
             task_logger.info(f"File ingested")
 
         for fp in trading_files:
             task_logger.info(f"Ingesting {fp.name}")
-            results = ingest_csv(
-                filepath=fp, pg_connector=pg_connector, schema="raw_data", table_name="trading_partnerships"
+            results = pg_engine.ingest_csv(
+                filepath=fp, schema="raw_data", table_name="trading_partnerships"
             )
             print(results)
             task_logger.info(f"File ingested")
@@ -86,8 +79,8 @@ def generate_and_ingest_data():
 
     @task
     def create_raw_data_schema() -> bool:
-        pg_connector = get_postgres_connector(conn_id="dwh_db", logger=task_logger)
-        result = pg_connector.execute(""" create schema if not exists raw_data """)
+        pg_engine = get_postgres_engine(conn_id="dwh_db", logger=task_logger)
+        result = pg_engine.execute(""" create schema if not exists raw_data """)
         task_logger.info(f"Created 'raw_data' schema, result: {result} ")
         return True
 
