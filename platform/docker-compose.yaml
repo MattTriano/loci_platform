@@ -61,6 +61,7 @@ x-airflow-common:
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW_CONN_DWH_DB: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW_CONN_GIS_DWH_DB: postgresql+psycopg2://loci:loci@postgis/loci
     AIRFLOW_CONN_APP_DB: mysql+mysqldb://loci:loci@mysql/loci
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
@@ -110,6 +111,33 @@ services:
       start_period: 5s
     restart: always
 
+  postgis:
+    image: postgis/postgis:18-3.6
+    environment:
+      POSTGRES_USER: loci
+      POSTGRES_PASSWORD: loci
+      POSTGRES_DB: loci
+    ports:
+      - "54321:5432"
+    volumes:
+      - postgis-db-volume:/var/lib/postgresql
+      - ./podman/storage/postgis_init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-h",
+          "dwh_db",
+          "-d",
+          "loci",
+          "-U",
+          "loci"
+        ]
+      interval: 5s
+      retries: 5
+    restart: always
+
   mysql:
     image: docker.io/mysql:9.5
     environment:
@@ -126,6 +154,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  flyway-postgis:
+    image: flyway/flyway:11
+    command: migrate
+    volumes:
+      - ./migrations/postgres:/flyway/sql
+    environment:
+      - FLYWAY_URL=jdbc:postgresql://postgis:5432/loci
+      - FLYWAY_USER=loci
+      - FLYWAY_PASSWORD=loci
+      - FLYWAY_SCHEMAS=raw_data,marts,public
+      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
+      - FLYWAY_BASELINE_ON_MIGRATE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   flyway-postgres:
     image: flyway/flyway:11
@@ -405,4 +449,5 @@ services:
 
 volumes:
   postgres-db-volume:
+  postgis-db-volume:
   mysql_data:
