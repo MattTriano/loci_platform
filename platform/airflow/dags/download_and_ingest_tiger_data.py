@@ -169,17 +169,6 @@ class TIGERIngester:
         )
         print("Schemas created.")
 
-    # def extract_zip(self, zip_path: Path, extract_dir: Path) -> Path:
-    #     """Extract a zip file and return the path to the shapefile."""
-    #     extract_dir.mkdir(parents=True, exist_ok=True)
-    #     with zipfile.ZipFile(zip_path, "r") as zf:
-    #         zf.extractall(extract_dir)
-    #     # Find the .shp file
-    #     shp_files = list(extract_dir.glob("*.shp"))
-    #     if not shp_files:
-    #         raise FileNotFoundError(f"No shapefile found in {zip_path}")
-    #     return shp_files[0]
-
     def extract_zip(self, zip_path: Path, extract_dir: Path) -> Path:
         extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -326,16 +315,12 @@ class TIGERIngester:
     def ingest_all(self) -> None:
         """Ingest all downloaded TIGER data."""
         print("\n=== Starting TIGER data ingestion ===")
-
         self.setup_schemas()
-
-        # Ingest national layers first
         national_layers = ["STATE", "COUNTY"]
         for layer in national_layers:
             count = self.ingest_layer(layer)
             print(f"{layer}: {count} files loaded")
 
-        # Ingest state layers
         state_layers = [
             "PLACE",
             "COUSUB",
@@ -350,11 +335,8 @@ class TIGERIngester:
         for layer in state_layers:
             count = self.ingest_layer(layer)
             print(f"{layer}: {count} files loaded")
-
-        # Create indexes and finalize
         self.create_indexes()
         self.update_loader_tables()
-
         print("\n=== Ingestion complete ===")
 
     def create_indexes(self) -> None:
@@ -364,7 +346,7 @@ class TIGERIngester:
         index_statements = [
             ("tiger_data", "edges", "the_geom", "gist"),
             ("tiger_data", "faces", "the_geom", "gist"),
-            ("tiger_data", "addr", "the_geom", "gist"),
+            # ("tiger_data", "addr", "the_geom", "gist"),
             ("tiger_data", "place", "the_geom", "gist"),
             ("tiger_data", "cousub", "the_geom", "gist"),
             ("tiger_data", "county_all", "the_geom", "gist"),
@@ -375,7 +357,7 @@ class TIGERIngester:
         ]
 
         attr_indexes = [
-            "create index if not exists idx_tiger_edges_tlid ON tiger_data.edges(tlid);",
+            # "create index if not exists idx_tiger_edges_tlid ON tiger_data.edges(tlid);",
             "create index if not exists idx_tiger_edges_tfidl ON tiger_data.edges(tfidl);",
             "create index if not exists idx_tiger_edges_tfidr ON tiger_data.edges(tfidr);",
             "create index if not exists idx_tiger_edges_countyfp ON tiger_data.edges(countyfp);",
@@ -387,16 +369,15 @@ class TIGERIngester:
             "create index if not exists idx_tiger_edges_rtoadd ON tiger_data.edges(rtoadd);",
             "create index if not exists idx_tiger_edges_zipl ON tiger_data.edges(zipl);",
             "create index if not exists idx_tiger_edges_zipr ON tiger_data.edges(zipr);",
-            "create index if not exists idx_tiger_faces_tfid ON tiger_data.faces(tfid);",
-            "create index if not exists idx_tiger_faces_countyfp ON tiger_data.faces(countyfp);",
-            "create index if not exists idx_tiger_faces_statefp ON tiger_data.faces(statefp);",
+            # "create index if not exists idx_tiger_faces_tfid ON tiger_data.faces(tfid);",
+            "create index if not exists idx_tiger_faces_countyfp20 ON tiger_data.faces(countyfp20);",
+            "create index if not exists idx_tiger_faces_statefp20 ON tiger_data.faces(statefp20);",
             "create index if not exists idx_tiger_addr_tlid ON tiger_data.addr(tlid);",
             "create index if not exists idx_tiger_addr_statefp ON tiger_data.addr(statefp);",
             "create index if not exists idx_tiger_addr_zip ON tiger_data.addr(zip);",
             "create index if not exists idx_tiger_addr_fromhn ON tiger_data.addr(fromhn);",
             "create index if not exists idx_tiger_addr_tohn ON tiger_data.addr(tohn);",
             "create index if not exists idx_tiger_featnames_tlid ON tiger_data.featnames(tlid);",
-            "create index if not exists idx_tiger_featnames_statefp ON tiger_data.featnames(statefp);",
             "create index if not exists idx_tiger_featnames_name ON tiger_data.featnames(name);",
             "create index if not exists idx_tiger_featnames_fullname ON tiger_data.featnames(fullname);",
             "create index if not exists idx_tiger_place_statefp ON tiger_data.place(statefp);",
@@ -408,6 +389,8 @@ class TIGERIngester:
             "create index if not exists idx_tiger_state_stusps ON tiger_data.state_all(stusps);",
             "create index if not exists idx_tiger_state_name ON tiger_data.state_all(name);",
         ]
+        self.pg_engine.execute("alter table tiger.state_lookup alter column name type varchar(100);")
+        self.pg_engine.execute("alter table tiger.county_lookup alter column name type varchar(100);")
 
         for schema, table, column, idx_type in index_statements:
             idx_name = f"idx_{table}_{column}"
@@ -447,18 +430,14 @@ class TIGERIngester:
             update tiger.loader_platform
             set declare_sect = '{declare_sect}'
             where os = 'sh'; """)
-
         print("Geocoder configuration updated.")
 
-        # Populate state lookup if empty
         self.pg_engine.execute("""
             insert into tiger.state_lookup (st_code, name, abbrev)
             select statefp::integer, name, stusps
             from tiger_data.state_all
             on conflict (st_code) DO NOTHING;
         """)
-
-        # Populate county lookup
         self.pg_engine.execute("""
             insert into tiger.county_lookup (st_code, co_code, name)
             select statefp::integer, countyfp::integer, name
@@ -467,59 +446,132 @@ class TIGERIngester:
         """)
         print("Geocoder configuration updated.")
 
-    def create_state_tables(self, state_fips: str) -> None:
+    def create_state_tables(self, state_fips: str | None = None) -> None:
         """
         Create state-specific tables using PostGIS tiger geocoder conventions.
         This follows the naming pattern: {state_abbr}_{layer}
+
+        If state_fips is None, creates tables for all states.
         """
+        if state_fips is None:
+            states = self.pg_engine.query("""
+                SELECT statefp, stusps FROM tiger_data.state_all ORDER BY statefp;
+            """)
+            for _, row in states.iterrows():
+                self.create_state_tables(row['statefp'])
+            return
         print(f"\nCreating state tables for FIPS {state_fips}...")
+        result = self.pg_engine.query(f"""
+            SELECT stusps FROM tiger_data.state_all
+            WHERE statefp = '{state_fips}' LIMIT 1;
+        """)
 
-        with self.get_connection() as conn:
-            with conn.cursor() as cur:
-                self.pg_engine.execute(
-                    """
-                    select stusps from tiger_data.state_all
-                    where statefp = %s LIMIT 1;
-                """,
-                    (state_fips,),
-                )
-                result = cur.fetchone()
-                if not result:
-                    print(f"State FIPS {state_fips} not found")
-                    return
+        if result.empty:
+            print(f"State FIPS {state_fips} not found")
+            return
 
-                state_abbr = result[0].lower()
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_edges as
-                    select * from tiger_data.edges where statefp = '{state_fips}'; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_faces as
-                    select * from tiger_data.faces where statefp = '{state_fips}'; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_addr as
-                    select * from tiger_data.addr where statefp = '{state_fips}'; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_featnames as
-                    select * from tiger_data.featnames where statefp = '{state_fips}' ; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_place as
-                    select * from tiger_data.place where statefp = '{state_fips}'; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_cousub as
-                    select * from tiger_data.cousub where statefp = '{state_fips}'; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_county as
-                    select * from tiger_data.county_all where statefp = '{state_fips}'; """)
-                self.pg_engine.execute(f"""
-                    create table if not exists tiger_data.{state_abbr}_zip_lookup_base as
-                    select distinct e.zipl as zip, e.statefp, e.countyfp
-                    from tiger_data.edges e
-                    where e.statefp = ''{state_fips}' AND e.zipl is not null
-                    union
-                    select distinct e.zipr as zip, e.statefp, e.countyfp
-                    from tiger_data.edges e
-                    where e.statefp = '{state_fips}' AND e.zipr is not null; """)
+        state_abbr = result.iloc[0, 0].lower()
+        # Define tables and their statefp column names
+        tables = [
+            ("edges", "statefp"),
+            ("faces", "statefp"),
+            ("place", "statefp"),
+            ("cousub", "statefp"),
+            ("tract", "statefp"),
+            ("bg", "statefp"),
+            ("tabblock20", "statefp20"),
+        ]
+        for source_table, fips_col in tables:
+            target_table = f"{state_abbr}_{source_table}"
+            self.pg_engine.execute(f"""
+                CREATE TABLE IF NOT EXISTS tiger_data.{target_table} AS
+                SELECT * FROM tiger_data.{source_table} WHERE {fips_col} = '{state_fips}';
+            """)
+            print(f"  Created {target_table}")
+        self.pg_engine.execute(f"""
+            CREATE TABLE IF NOT EXISTS tiger_data.{state_abbr}_addr AS
+            SELECT a.* FROM tiger_data.addr a
+            JOIN tiger_data.edges e ON a.tlid = e.tlid
+            WHERE e.statefp = '{state_fips}';
+        """)
+        self.pg_engine.execute(f"""
+            CREATE TABLE IF NOT EXISTS tiger_data.{state_abbr}_county AS
+            SELECT * FROM tiger_data.county_all WHERE statefp = '{state_fips}';
+        """)
+        print(f"  Created {state_abbr}_county")
+        # Zip lookup
+        self.pg_engine.execute(f"""
+            CREATE TABLE IF NOT EXISTS tiger_data.{state_abbr}_zip_lookup_base AS
+            SELECT DISTINCT e.zipl AS zip, e.statefp, e.countyfp
+            FROM tiger_data.edges e
+            WHERE e.statefp = '{state_fips}' AND e.zipl IS NOT NULL
+            UNION
+            SELECT DISTINCT e.zipr AS zip, e.statefp, e.countyfp
+            FROM tiger_data.edges e
+            WHERE e.statefp = '{state_fips}' AND e.zipr IS NOT NULL;
+        """)
+        self.pg_engine.execute(f"""
+            CREATE TABLE IF NOT EXISTS tiger_data.{state_abbr}_featnames AS
+            SELECT f.* FROM tiger_data.featnames f
+            JOIN tiger_data.edges e ON f.tlid = e.tlid
+            WHERE e.statefp = '{state_fips}';
+        """)
+        print(f"  Created {state_abbr}_zip_lookup_base")
         print(f"State tables created for {state_abbr.upper()}")
+
+    # def create_state_tables(self, state_fips: str) -> None:
+    #     """
+    #     Create state-specific tables using PostGIS tiger geocoder conventions.
+    #     This follows the naming pattern: {state_abbr}_{layer}
+    #     """
+    #     print(f"\nCreating state tables for FIPS {state_fips}...")
+
+    #     with self.get_connection() as conn:
+    #         with conn.cursor() as cur:
+    #             self.pg_engine.execute(
+    #                 """
+    #                 select stusps from tiger_data.state_all
+    #                 where statefp = %s LIMIT 1;
+    #             """,
+    #                 (state_fips,),
+    #             )
+    #             result = cur.fetchone()
+    #             if not result:
+    #                 print(f"State FIPS {state_fips} not found")
+    #                 return
+
+    #             state_abbr = result[0].lower()
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_edges as
+    #                 select * from tiger_data.edges where statefp = '{state_fips}'; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_faces as
+    #                 select * from tiger_data.faces where statefp = '{state_fips}'; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_addr as
+    #                 select * from tiger_data.addr where statefp = '{state_fips}'; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_featnames as
+    #                 select * from tiger_data.featnames where statefp = '{state_fips}' ; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_place as
+    #                 select * from tiger_data.place where statefp = '{state_fips}'; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_cousub as
+    #                 select * from tiger_data.cousub where statefp = '{state_fips}'; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_county as
+    #                 select * from tiger_data.county_all where statefp = '{state_fips}'; """)
+    #             self.pg_engine.execute(f"""
+    #                 create table if not exists tiger_data.{state_abbr}_zip_lookup_base as
+    #                 select distinct e.zipl as zip, e.statefp, e.countyfp
+    #                 from tiger_data.edges e
+    #                 where e.statefp = ''{state_fips}' AND e.zipl is not null
+    #                 union
+    #                 select distinct e.zipr as zip, e.statefp, e.countyfp
+    #                 from tiger_data.edges e
+    #                 where e.statefp = '{state_fips}' AND e.zipr is not null; """)
+    #     print(f"State tables created for {state_abbr.upper()}")
 
     def vacuum_analyze(self) -> None:
         """Run VACUUM ANALYZE on all tiger_data tables."""
@@ -584,6 +636,8 @@ def download_and_ingest_tiger_data():
             conn_id="gis_dwh_db", data_dir=data_dir, pg_engine=pg_engine
         )
         tiger_loader.ingest_all()
+        tiger_loader.create_state_tables()
+        tiger_loader.vacuum_analyze()
         task_logger.info("Loaded TIGER Data ")
         return True
 
