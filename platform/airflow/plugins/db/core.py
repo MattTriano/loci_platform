@@ -11,6 +11,7 @@ from typing import Any, Iterator, Optional
 import pymysql
 import pandas as pd
 import psycopg2
+import psycopg2.extras
 from airflow.sdk.bases.hook import BaseHook
 from psycopg2.extensions import connection as Psycopg2Connection
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -246,6 +247,57 @@ class PostgresEngine:
             process_batch(batch)
             total += len(batch)
         return total
+
+    @pg_retry()
+    def ingest_batch(
+        self,
+        rows: list[dict[str, Any]],
+        target_table: str,
+        conflict_column: str | None = None,
+        conflict_action: str = "NOTHING",
+    ) -> int:
+        """
+        Bulk insert a list of dicts into *target_table*.
+
+        Column names are derived from the dict keys of the first row.
+        Uses execute_batch for efficient multi-row inserts.
+
+        Args:
+            rows:              List of dicts to insert.
+            target_table:      Fully-qualified table name (e.g. "raw.crimes").
+            conflict_column:   Optional column for ON CONFLICT clause (e.g. "id").
+            conflict_action:   What to do on conflict: "NOTHING" (skip) or "UPDATE"
+                               (upsert all non-conflict columns). Default: "NOTHING".
+
+        Returns:
+            Number of rows submitted for insert.
+        """
+        if not rows:
+            return 0
+
+        columns = list(rows[0].keys())
+        col_list = ", ".join(f'"{c}"' for c in columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+
+        sql = f'INSERT INTO {target_table} ({col_list}) VALUES ({placeholders})'
+
+        if conflict_column:
+            if conflict_action.upper() == "UPDATE":
+                update_cols = [c for c in columns if c != conflict_column]
+                set_clause = ", ".join(
+                    f'"{c}" = EXCLUDED."{c}"' for c in update_cols
+                )
+                sql += f' ON CONFLICT ("{conflict_column}") DO UPDATE SET {set_clause}'
+            else:
+                sql += f' ON CONFLICT ("{conflict_column}") DO NOTHING'
+
+        tuples = [tuple(row.get(c) for c in columns) for row in rows]
+
+        with self.cursor() as cur:
+            psycopg2.extras.execute_batch(cur, sql, tuples, page_size=1000)
+
+        self.logger.info("Inserted %d rows into %s", len(tuples), target_table)
+        return len(tuples)
 
 
     @pg_retry()
