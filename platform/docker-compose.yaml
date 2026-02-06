@@ -166,23 +166,7 @@ services:
       - FLYWAY_URL=jdbc:postgresql://postgis:5432/loci
       - FLYWAY_USER=loci
       - FLYWAY_PASSWORD=loci
-      - FLYWAY_SCHEMAS=raw_data,marts,public
-      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
-      - FLYWAY_BASELINE_ON_MIGRATE=true
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  flyway-postgres:
-    image: flyway/flyway:11
-    command: migrate
-    volumes:
-      - ./migrations/postgres:/flyway/sql
-    environment:
-      - FLYWAY_URL=jdbc:postgresql://postgres:5432/airflow
-      - FLYWAY_USER=airflow
-      - FLYWAY_PASSWORD=airflow
-      - FLYWAY_SCHEMAS=raw_data,marts,public
+      - FLYWAY_SCHEMAS=raw_data,marts,meta,public
       - FLYWAY_LOCATIONS=filesystem:/flyway/sql
       - FLYWAY_BASELINE_ON_MIGRATE=true
     depends_on:
