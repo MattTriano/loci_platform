@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import re
@@ -14,7 +15,12 @@ import psycopg2
 import psycopg2.extras
 from airflow.sdk.bases.hook import BaseHook
 from psycopg2.extensions import connection as Psycopg2Connection
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 
 def get_logger(
@@ -48,7 +54,9 @@ class DatabaseCredentials:
     driver: str = "postgresql"
 
     @classmethod
-    def from_env_file(cls, env_path: str | Path, prefix: str, driver: str) -> "DatabaseCredentials":
+    def from_env_file(
+        cls, env_path: str | Path, prefix: str, driver: str
+    ) -> "DatabaseCredentials":
         """
         Load credentials from a .env file using variables matching a prefix pattern.
 
@@ -127,7 +135,9 @@ def pg_retry():
     return retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((psycopg2.OperationalError, psycopg2.InterfaceError)),
+        retry=retry_if_exception_type(
+            (psycopg2.OperationalError, psycopg2.InterfaceError)
+        ),
         reraise=True,
     )
 
@@ -136,13 +146,17 @@ def mysql_retry():
     return retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((pymysql.OperationalError, pymysql.InterfaceError)),
+        retry=retry_if_exception_type(
+            (pymysql.OperationalError, pymysql.InterfaceError)
+        ),
         reraise=True,
     )
 
 
 class PostgresEngine:
-    def __init__(self, creds: DatabaseCredentials, db_name: Optional[str] = None) -> None:
+    def __init__(
+        self, creds: DatabaseCredentials, db_name: Optional[str] = None
+    ) -> None:
         self.creds = creds
         self.db_name = db_name or creds.database
         self._conn: Optional[Psycopg2Connection] = None
@@ -193,7 +207,6 @@ class PostgresEngine:
             cur.execute(sql)
             columns = [desc[0] for desc in cur.description]
             return pd.DataFrame(cur.fetchall(), columns=columns)
-
 
     @pg_retry()
     def execute(self, sql: str) -> None:
@@ -257,48 +270,70 @@ class PostgresEngine:
         conflict_action: str = "NOTHING",
     ) -> int:
         """
-        Bulk insert a list of dicts into *target_table*.
+        Bulk insert a list of dicts into *target_table* using COPY
+        via a staging table for efficiency.
 
-        Column names are derived from the dict keys of the first row.
-        Uses execute_batch for efficient multi-row inserts.
+        Geometry columns work automatically — pass WKT or WKB hex strings.
 
         Args:
             rows:              List of dicts to insert.
             target_table:      Fully-qualified table name (e.g. "raw.crimes").
-            conflict_column:   Optional column for ON CONFLICT clause (e.g. "id").
-            conflict_action:   What to do on conflict: "NOTHING" (skip) or "UPDATE"
-                               (upsert all non-conflict columns). Default: "NOTHING".
+            conflict_column:   Optional column for ON CONFLICT clause.
+            conflict_action:   "NOTHING" (skip) or "UPDATE" (upsert).
 
         Returns:
-            Number of rows submitted for insert.
+            Number of rows inserted.
         """
         if not rows:
             return 0
 
         columns = list(rows[0].keys())
         col_list = ", ".join(f'"{c}"' for c in columns)
-        placeholders = ", ".join(["%s"] * len(columns))
-
-        sql = f'INSERT INTO {target_table} ({col_list}) VALUES ({placeholders})'
-
-        if conflict_column:
-            if conflict_action.upper() == "UPDATE":
-                update_cols = [c for c in columns if c != conflict_column]
-                set_clause = ", ".join(
-                    f'"{c}" = EXCLUDED."{c}"' for c in update_cols
-                )
-                sql += f' ON CONFLICT ("{conflict_column}") DO UPDATE SET {set_clause}'
-            else:
-                sql += f' ON CONFLICT ("{conflict_column}") DO NOTHING'
-
-        tuples = [tuple(row.get(c) for c in columns) for row in rows]
 
         with self.cursor() as cur:
-            psycopg2.extras.execute_batch(cur, sql, tuples, page_size=1000)
+            cur.execute(f"""
+                CREATE TEMP TABLE _staging (LIKE {target_table} INCLUDING DEFAULTS)
+                ON COMMIT DROP
+            """)
 
-        self.logger.info("Inserted %d rows into %s", len(tuples), target_table)
-        return len(tuples)
+            # Stream rows via COPY
+            buf = io.StringIO()
+            for row in rows:
+                vals = []
+                for c in columns:
+                    v = row.get(c)
+                    if v is None:
+                        vals.append("\\N")
+                    else:
+                        vals.append(str(v).replace("\t", " ").replace("\n", " "))
+                buf.write("\t".join(vals) + "\n")
+            buf.seek(0)
 
+            cur.copy_expert(
+                f"COPY _staging ({col_list}) FROM STDIN WITH (FORMAT text, NULL '\\N')",
+                buf,
+            )
+
+            # Insert from staging into target
+            insert_sql = f"INSERT INTO {target_table} ({col_list}) SELECT {col_list} FROM _staging"
+
+            if conflict_column:
+                if conflict_action.upper() == "UPDATE":
+                    update_cols = [c for c in columns if c != conflict_column]
+                    set_clause = ", ".join(
+                        f'"{c}" = EXCLUDED."{c}"' for c in update_cols
+                    )
+                    insert_sql += (
+                        f' ON CONFLICT ("{conflict_column}") DO UPDATE SET {set_clause}'
+                    )
+                else:
+                    insert_sql += f' ON CONFLICT ("{conflict_column}") DO NOTHING'
+
+            cur.execute(insert_sql)
+            count = cur.rowcount
+
+        self.logger.info("Inserted %d rows into %s", count, target_table)
+        return count
 
     @pg_retry()
     def ingest_csv(self, filepath: str | Path, table_name: str, schema: str) -> int:
@@ -306,7 +341,9 @@ class PostgresEngine:
         with self.cursor() as cur:
             cur.execute("drop table if exists _staging")
             cur.execute(f"create temp table _staging (like {fqn} excluding all)")
-            cur.execute("alter table _staging drop column if exists ingested_to_postgres")
+            cur.execute(
+                "alter table _staging drop column if exists ingested_to_postgres"
+            )
             with open(filepath, "r") as f:
                 cur.copy_expert("copy _staging from stdin with csv header", f)
             cur.execute(f"""
@@ -336,7 +373,9 @@ class MySQLEngine:
         self.logger = get_logger("mysql_engine")
 
     def _connect(self) -> pymysql.Connection:
-        print(f"Connecting with: host={self.creds.host}, port={self.creds.port}, user={self.creds.username}")
+        print(
+            f"Connecting with: host={self.creds.host}, port={self.creds.port}, user={self.creds.username}"
+        )
         return pymysql.connect(
             host=self.creds.host,
             port=int(self.creds.port),
@@ -464,9 +503,7 @@ def get_postgres_engine(
     )
 
 
-def get_mysql_engine(
-    conn_id: str, logger: Optional[Logger] = None
-) -> MySQLEngine:
+def get_mysql_engine(conn_id: str, logger: Optional[Logger] = None) -> MySQLEngine:
     conn_dict = extract_connection_to_dict(conn_id, logger)
     port = conn_dict.get("port")
     if port is None:
