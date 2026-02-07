@@ -6,14 +6,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_plus
-from logging import Logger
 from typing import Any, Iterator, Optional
 
 import pymysql
 import pandas as pd
 import psycopg2
 import psycopg2.extras
-from airflow.sdk.bases.hook import BaseHook
+
 from psycopg2.extensions import connection as Psycopg2Connection
 from tenacity import (
     retry,
@@ -202,17 +201,39 @@ class PostgresEngine:
             self._conn = None
 
     @pg_retry()
-    def query(self, sql: str) -> pd.DataFrame:
+    def query(
+        self,
+        sql: str,
+        params: dict[str, Any] | tuple | None = None,
+    ) -> pd.DataFrame:
+        """
+        Execute a SELECT and return results as a DataFrame.
+
+        Args:
+            sql:    SQL string. Use %(name)s for named params or %s for positional.
+            params: Dict for named params, tuple for positional, or None.
+        """
         with self.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql, params)
             columns = [desc[0] for desc in cur.description]
             return pd.DataFrame(cur.fetchall(), columns=columns)
 
     @pg_retry()
-    def execute(self, sql: str) -> None:
+    def execute(
+        self,
+        sql: str,
+        params: dict[str, Any] | tuple | None = None,
+    ) -> None:
+        """
+        Execute a DDL/DML statement (no result set).
+
+        Args:
+            sql:    SQL string. Use %(name)s for named params or %s for positional.
+            params: Dict for named params, tuple for positional, or None.
+        """
         try:
             with self.cursor() as cur:
-                cur.execute(sql)
+                cur.execute(sql, params)
         except Exception as e:
             self.logger.error(f"Command failed with error {e}")
             raise
@@ -221,13 +242,23 @@ class PostgresEngine:
     def query_batches(
         self,
         sql: str,
+        params: dict[str, Any] | tuple | None = None,
         batch_size: int = 10000,
         as_dicts: bool = True,
     ) -> Iterator[list[dict] | pd.DataFrame]:
+        """
+        Server-side cursor for large result sets, yielded in batches.
+
+        Args:
+            sql:        SQL string with optional parameter placeholders.
+            params:     Dict for named params, tuple for positional, or None.
+            batch_size: Rows per batch.
+            as_dicts:   If True, yield list[dict]; otherwise yield DataFrames.
+        """
         cursor = self.connection.cursor(name="batch_cursor")
         cursor.itersize = batch_size
         try:
-            cursor.execute(sql)
+            cursor.execute(sql, params)
             columns = None
 
             while True:
@@ -253,10 +284,13 @@ class PostgresEngine:
         self,
         sql: str,
         process_batch: callable,
+        params: dict[str, Any] | tuple | None = None,
         batch_size: int = 10000,
     ) -> int:
         total = 0
-        for batch in self.query_batches(sql, batch_size=batch_size, as_dicts=True):
+        for batch in self.query_batches(
+            sql, params=params, batch_size=batch_size, as_dicts=True
+        ):
             process_batch(batch)
             total += len(batch)
         return total
@@ -266,7 +300,7 @@ class PostgresEngine:
         self,
         rows: list[dict[str, Any]],
         target_table: str,
-        conflict_column: str | None = None,
+        conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
     ) -> int:
         """
@@ -278,7 +312,8 @@ class PostgresEngine:
         Args:
             rows:              List of dicts to insert.
             target_table:      Fully-qualified table name (e.g. "raw.crimes").
-            conflict_column:   Optional column for ON CONFLICT clause.
+            conflict_column:   Column name (str) or list of column names for
+                               composite keys. Used in ON CONFLICT clause.
             conflict_action:   "NOTHING" (skip) or "UPDATE" (upsert).
 
         Returns:
@@ -289,6 +324,12 @@ class PostgresEngine:
 
         columns = list(rows[0].keys())
         col_list = ", ".join(f'"{c}"' for c in columns)
+
+        # Normalize conflict_column to a list
+        if isinstance(conflict_column, str):
+            conflict_columns = [conflict_column]
+        else:
+            conflict_columns = conflict_column
 
         with self.cursor() as cur:
             cur.execute(f"""
@@ -317,17 +358,18 @@ class PostgresEngine:
             # Insert from staging into target
             insert_sql = f"INSERT INTO {target_table} ({col_list}) SELECT {col_list} FROM _staging"
 
-            if conflict_column:
+            if conflict_columns:
+                conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
                 if conflict_action.upper() == "UPDATE":
-                    update_cols = [c for c in columns if c != conflict_column]
+                    update_cols = [c for c in columns if c not in conflict_columns]
                     set_clause = ", ".join(
                         f'"{c}" = EXCLUDED."{c}"' for c in update_cols
                     )
                     insert_sql += (
-                        f' ON CONFLICT ("{conflict_column}") DO UPDATE SET {set_clause}'
+                        f" ON CONFLICT ({conflict_clause}) DO UPDATE SET {set_clause}"
                     )
                 else:
-                    insert_sql += f' ON CONFLICT ("{conflict_column}") DO NOTHING'
+                    insert_sql += f" ON CONFLICT ({conflict_clause}) DO NOTHING"
 
             cur.execute(insert_sql)
             count = cur.rowcount
@@ -466,54 +508,3 @@ class MySQLEngine:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False
-
-
-def extract_connection_to_dict(
-    conn_id: str, logger: Optional[Logger] = None
-) -> dict[str, Any]:
-    conn = BaseHook.get_connection(conn_id)
-    conn_dict = {
-        "type": conn.conn_type,
-        "host": conn.host,
-        "port": conn.port,
-        "database": conn.schema,
-        "user": conn.login,
-        "password": conn.password,
-        "extra": conn.extra_dejson,
-    }
-    if logger is not None:
-        safe_dict = conn_dict.copy()
-        safe_dict["password"] = "****" if conn_dict["password"] else None
-        logger.info(f"Connection parameters: {safe_dict}")
-    return conn_dict
-
-
-def get_postgres_engine(
-    conn_id: str, logger: Optional[Logger] = None
-) -> PostgresEngine:
-    conn_dict = extract_connection_to_dict(conn_id, logger)
-    return PostgresEngine(
-        DatabaseCredentials(
-            host=conn_dict["host"],
-            port=conn_dict.get("port", "5432"),
-            database=conn_dict["database"],
-            username=conn_dict["user"],
-            password=conn_dict["password"],
-        )
-    )
-
-
-def get_mysql_engine(conn_id: str, logger: Optional[Logger] = None) -> MySQLEngine:
-    conn_dict = extract_connection_to_dict(conn_id, logger)
-    port = conn_dict.get("port")
-    if port is None:
-        port = "3306"
-    return MySQLEngine(
-        DatabaseCredentials(
-            host=conn_dict["host"],
-            port=port,
-            database=conn_dict["database"],
-            username=conn_dict["user"],
-            password=conn_dict["password"],
-        )
-    )
