@@ -40,107 +40,94 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import tempfile
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import requests
 
+from collectors.ingestion_tracker import IngestionTracker
+
 logger = logging.getLogger(__name__)
 
 
-class SocrataIngestor:
-    """Executes SoQL queries against a Socrata domain and loads results into PostgreSQL."""
+class SocrataClient:
+    """
+    Executes SoQL queries against a Socrata domain and yields results.
+
+    Unlike the previous SocrataIngestor, this class:
+      - Has no PostgresEngine dependency (pure API client)
+      - Does not require domain at init (accepts it per-call)
+      - Focuses on two operations: paginated iteration and one-shot queries
+    """
 
     def __init__(
         self,
-        domain: str,
-        engine: Any,
         app_token: Optional[str] = None,
         page_size: int = 10_000,
         request_timeout: int = 120,
     ) -> None:
-        self.domain = domain
-        self.engine = engine
         self.app_token = app_token
         self.page_size = page_size
         self.request_timeout = request_timeout
-        self.logger = logging.getLogger("socrata_ingestor")
+        self.logger = logging.getLogger("socrata_client")
 
         self._session = requests.Session()
         self._session.headers["Accept"] = "application/json"
         if self.app_token:
             self._session.headers["X-App-Token"] = self.app_token
 
-    def ingest(
+    def paginate(
         self,
+        domain: str,
         dataset_id: str,
-        target_table: str,
         columns: list[str] | None = None,
         where: str | None = None,
-        order_by: str | None = None,
-        incremental_column: str | None = None,
-        high_water_mark: str | None = None,
-    ) -> int:
+        order_by: str = ":id",
+    ) -> Iterator[list[dict[str, Any]]]:
         """
-        Run a SoQL query with pagination and insert all results into *target_table*.
+        Yield pages of results from a Socrata dataset until exhausted.
 
         Args:
-            dataset_id:          Socrata 4x4 dataset identifier (e.g. "ijzp-q8t2").
-            target_table:        Fully-qualified PostgreSQL table (e.g. "raw.crimes").
-                                 Must already exist.
-            columns:             Columns to SELECT. None means all (*).
-            where:               Optional SoQL $where clause fragment.
-            order_by:            Column(s) to $order by. Defaults to ":id" for
-                                 stable pagination.
-            incremental_column:  Column to filter on for incremental loads.
-            high_water_mark:     Only fetch rows where incremental_column > this value.
-                                 Ignored if incremental_column is None.
+            domain:      Socrata domain (e.g. "data.cityofchicago.org").
+            dataset_id:  Socrata 4x4 identifier.
+            columns:     Columns to $select. None means all.
+            where:       Optional $where clause.
+            order_by:    $order clause. Defaults to ":id" for stable pagination.
 
-        Returns:
-            Total number of rows inserted.
+        Yields:
+            Lists of dicts, one per page. Final page may be shorter than page_size.
         """
-        where_clauses = []
-        if incremental_column and high_water_mark:
-            where_clauses.append(f"{incremental_column} > '{high_water_mark}'")
-            self.logger.info(
-                "Incremental load: %s > '%s'", incremental_column, high_water_mark
-            )
-        if where:
-            where_clauses.append(where)
+        offset = 0
+        while True:
+            params: dict[str, str] = {
+                "$limit": str(self.page_size),
+                "$offset": str(offset),
+                "$order": order_by,
+            }
+            if columns:
+                params["$select"] = ", ".join(columns)
+            if where:
+                params["$where"] = where
 
-        combined_where = " AND ".join(where_clauses) if where_clauses else None
-        effective_order = order_by or (incremental_column or ":id")
-
-        total_inserted = 0
-        for page_num, batch in enumerate(
-            self._paginate(dataset_id, columns, combined_where, effective_order),
-            start=1,
-        ):
+            batch = self._request(domain, dataset_id, params)
             if not batch:
                 break
-            rows_inserted = self.engine.ingest_batch(batch, target_table)
-            total_inserted += rows_inserted
-            self.logger.info(
-                "Page %d: fetched %d rows, inserted %d (running total: %d)",
-                page_num,
-                len(batch),
-                rows_inserted,
-                total_inserted,
-            )
 
-        self.logger.info(
-            "Ingest complete for %s → %s: %d rows",
-            dataset_id,
-            target_table,
-            total_inserted,
-        )
-        return total_inserted
+            yield batch
+
+            if len(batch) < self.page_size:
+                break
+            offset += self.page_size
 
     def query(
         self,
+        domain: str,
         dataset_id: str,
         select: str | None = None,
         where: str | None = None,
@@ -157,38 +144,13 @@ class SocrataIngestor:
             params["$order"] = order
         if limit is not None:
             params["$limit"] = str(limit)
-        return self._request(dataset_id, params)
+        return self._request(domain, dataset_id, params)
 
-    def _paginate(
-        self,
-        dataset_id: str,
-        columns: list[str] | None,
-        where: str | None,
-        order_by: str,
-    ) -> Iterator[list[dict[str, Any]]]:
-        """Yield pages of results until the API returns fewer rows than page_size."""
-        offset = 0
-        while True:
-            params: dict[str, str] = {
-                "$limit": str(self.page_size),
-                "$offset": str(offset),
-                "$order": order_by,
-            }
-            if columns:
-                params["$select"] = ", ".join(columns)
-            if where:
-                params["$where"] = where
-
-            batch = self._request(dataset_id, params)
-            yield batch
-
-            if len(batch) < self.page_size:
-                break
-            offset += self.page_size
-
-    def _request(self, dataset_id: str, params: dict[str, str]) -> list[dict[str, Any]]:
+    def _request(
+        self, domain: str, dataset_id: str, params: dict[str, str]
+    ) -> list[dict[str, Any]]:
         """Make a single request to the Socrata JSON endpoint."""
-        url = f"https://{self.domain}/resource/{dataset_id}.json"
+        url = f"https://{domain}/resource/{dataset_id}.json"
         self.logger.debug("GET %s  params=%s", url, params)
 
         resp = self._session.get(url, params=params, timeout=self.request_timeout)
@@ -501,3 +463,450 @@ class SocrataTableMetadata:
         print("-" * len(header))
         for col in self.columns:
             print(f"{col.field_name:40s} {col.datatype:20s} {col.pg_type:30s}")
+
+
+@dataclass
+class IncrementalConfig:
+    """
+    Configuration for incremental loading of a specific dataset.
+
+    Attributes:
+        incremental_column:  The Socrata column to filter on (e.g. "updated_on").
+                             Should be monotonically increasing for new/changed rows.
+        conflict_key:        Column(s) forming the natural key for upsert.
+                             e.g. ["case_number"] or ["pin14", "tax_year"].
+        columns:             Optional subset of columns to SELECT. None = all.
+        order_by:            Explicit $order clause. Defaults to incremental_column.
+                             Use "updated_on, :id" if the column has duplicates.
+        where:               Additional static $where filter (combined via AND).
+    """
+
+    incremental_column: str
+    conflict_key: list[str]
+    columns: list[str] | None = None
+    order_by: str | None = None
+    where: str | None = None
+
+
+class SocrataCollector:
+    """
+    High-level orchestrator for Socrata dataset ingestion.
+
+    Changes from original:
+      - Automatically creates an IngestionTracker if none is provided.
+      - Renamed methods: full_refresh() and incremental_update().
+      - Geospatial files are loaded via _load_geojson_features() which
+        reads GeoJSON and calls engine.ingest_batch() instead of a
+        non-existent engine.ingest_geospatial() method.
+    """
+
+    SOURCE_NAME = "socrata"
+
+    def __init__(
+        self,
+        engine: Any,
+        tracker: IngestionTracker | None = None,
+        app_token: str | None = None,
+        download_dir: Path | None = None,
+        page_size: int = 10_000,
+    ) -> None:
+        self.engine = engine
+        self.tracker = tracker or IngestionTracker(engine=engine)
+        self.app_token = app_token
+        self.download_dir = download_dir or Path(tempfile.gettempdir())
+        self.page_size = page_size
+        self.logger = logging.getLogger("socrata_collector")
+
+        self._client: Optional[SocrataClient] = None
+        self._metadata_cache: dict[str, SocrataTableMetadata] = {}
+
+    @property
+    def client(self) -> SocrataClient:
+        if self._client is None:
+            self._client = SocrataClient(
+                app_token=self.app_token,
+                page_size=self.page_size,
+            )
+        return self._client
+
+    def _get_metadata(self, dataset_id: str) -> SocrataTableMetadata:
+        if dataset_id not in self._metadata_cache:
+            self._metadata_cache[dataset_id] = SocrataTableMetadata(dataset_id)
+        return self._metadata_cache[dataset_id]
+
+    def full_refresh(
+        self,
+        dataset_id: str,
+        target_table: str,
+        target_schema: str = "raw_data",
+        conflict_key: list[str] | None = None,
+        mode: str = "upsert",
+    ) -> int:
+        """
+        Download the full dataset export and load it into PostgreSQL.
+
+        This is a full table refresh — the entire dataset is downloaded and
+        loaded in one shot.
+
+        Args:
+            dataset_id:    Socrata 4x4 identifier.
+            target_table:  Fully-qualified table name (e.g. "raw_data.permits").
+            target_schema: Schema name for routing.
+            conflict_key:  Columns for ON CONFLICT upsert.
+            mode:          "upsert" | "replace" | "append"
+
+        Returns:
+            Number of rows ingested.
+        """
+        meta = self._get_metadata(dataset_id)
+        run_metadata = {
+            "mode": mode,
+            "download_format": meta.download_format,
+            "download_url": meta.data_download_url,
+            "domain": meta.domain,
+        }
+
+        with self.tracker.track(
+            self.SOURCE_NAME, dataset_id, target_table, metadata=run_metadata
+        ) as run:
+            filepath = self._download_file(meta)
+            self.logger.info("Downloaded %s to %s", dataset_id, filepath)
+
+            if meta.is_geospatial:
+                if mode == "replace":
+                    self.engine.execute(f"TRUNCATE TABLE {target_table}")
+                rows = self._load_geojson_features(
+                    filepath=filepath,
+                    target_table=target_table,
+                    conflict_key=conflict_key if mode == "upsert" else None,
+                )
+            else:
+                rows = self._ingest_csv_with_conflict_handling(
+                    filepath=filepath,
+                    target_table=target_table,
+                    conflict_key=conflict_key,
+                    mode=mode,
+                )
+
+            run.rows_ingested = rows
+
+            try:
+                filepath.unlink()
+            except OSError:
+                pass
+
+        return rows
+
+    def _detect_geometry_column(self, target_table: str) -> Optional[str]:
+        """
+        Query the target table's information_schema to find a PostGIS geometry
+        column.  Returns the column name, or None if no geometry column exists.
+        """
+        # Split schema.table for the query
+        parts = target_table.split(".", 1)
+        if len(parts) == 2:
+            schema, table = parts
+        else:
+            schema, table = "public", parts[0]
+
+        df = self.engine.query(
+            """
+            SELECT f_geometry_column
+            FROM geometry_columns
+            WHERE f_table_schema = %(schema)s
+              AND f_table_name   = %(table)s
+            LIMIT 1
+            """,
+            {"schema": schema, "table": table},
+        )
+        if df.empty:
+            return None
+        return str(df.iloc[0]["f_geometry_column"])
+
+    @staticmethod
+    def _geojson_to_wkt(geojson_geom: dict) -> str:
+        """Convert a GeoJSON geometry dict to WKT using Shapely."""
+        from shapely.geometry import shape
+
+        return shape(geojson_geom).wkt
+
+    def _load_geojson_features(
+        self,
+        filepath: Path,
+        target_table: str,
+        conflict_key: list[str] | None = None,
+        batch_size: int = 5_000,
+    ) -> int:
+        """
+        Read a GeoJSON file and ingest its features via engine.ingest_batch().
+
+        Each GeoJSON Feature's properties are flattened into a dict.  The
+        geometry is converted to WKT and stored under the target table's
+        actual geometry column name (auto-detected from ``geometry_columns``).
+
+        If the target table has no PostGIS geometry column the geometry is
+        silently dropped.
+        """
+        with open(filepath, "r") as f:
+            geojson = json.load(f)
+
+        features = geojson.get("features", [])
+        if not features:
+            self.logger.warning("No features found in %s", filepath)
+            return 0
+
+        geom_col = self._detect_geometry_column(target_table)
+        if geom_col:
+            self.logger.info(
+                "Detected geometry column '%s' in %s", geom_col, target_table
+            )
+        else:
+            self.logger.warning(
+                "No geometry column found in %s — geometry will be dropped",
+                target_table,
+            )
+
+        total_rows = 0
+        batch: list[dict[str, Any]] = []
+
+        for feature in features:
+            row = dict(feature.get("properties", {}))
+            geom = feature.get("geometry")
+
+            if geom is not None and geom_col is not None:
+                row[geom_col] = self._geojson_to_wkt(geom)
+
+            batch.append(row)
+
+            if len(batch) >= batch_size:
+                rows = self.engine.ingest_batch(
+                    batch,
+                    target_table,
+                    conflict_column=conflict_key,
+                    conflict_action="UPDATE" if conflict_key else "NOTHING",
+                )
+                total_rows += rows
+                batch = []
+
+        if batch:
+            rows = self.engine.ingest_batch(
+                batch,
+                target_table,
+                conflict_column=conflict_key,
+                conflict_action="UPDATE" if conflict_key else "NOTHING",
+            )
+            total_rows += rows
+
+        self.logger.info(
+            "Loaded %d features from %s into %s", total_rows, filepath, target_table
+        )
+        return total_rows
+
+    def _download_file(self, meta: SocrataTableMetadata) -> Path:
+        url = meta.data_download_url
+        suffix = ".geojson" if meta.is_geospatial else ".csv"
+        filename = f"{meta.table_id}{suffix}"
+        filepath = self.download_dir / filename
+
+        resp = requests.get(url, stream=True, timeout=300)
+        resp.raise_for_status()
+
+        with open(filepath, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        return filepath
+
+    def _ingest_csv_with_conflict_handling(
+        self,
+        filepath: Path,
+        target_table: str,
+        conflict_key: list[str] | None,
+        mode: str,
+    ) -> int:
+        if mode == "replace":
+            self.engine.execute(f"TRUNCATE TABLE {target_table}")
+            return self.engine.ingest_csv(filepath, target_table)
+
+        if mode == "append" or conflict_key is None:
+            return self.engine.ingest_csv(filepath, target_table)
+
+        return self._upsert_from_csv(filepath, target_table, conflict_key)
+
+    def _upsert_from_csv(
+        self,
+        filepath: Path,
+        target_table: str,
+        conflict_key: list[str],
+    ) -> int:
+        staging_table = f"{target_table}_staging"
+
+        col_query = f"""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema || '.' || table_name = '{target_table}'
+              AND column_name != 'ingested_at'
+            ORDER BY ordinal_position
+        """
+        col_df = self.engine.query(col_query)
+        all_columns = col_df["column_name"].tolist()
+
+        conflict_cols = ", ".join(f'"{c}"' for c in conflict_key)
+        update_cols = [c for c in all_columns if c not in conflict_key]
+        update_set = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in update_cols)
+        insert_cols = ", ".join(f'"{c}"' for c in all_columns)
+
+        upsert_sql = f"""
+            INSERT INTO {target_table} ({insert_cols}, "ingested_at")
+            SELECT {insert_cols}, current_timestamp AT TIME ZONE 'UTC'
+            FROM {staging_table}
+            ON CONFLICT ({conflict_cols}) DO UPDATE SET
+                {update_set},
+                "ingested_at" = current_timestamp AT TIME ZONE 'UTC'
+        """
+
+        with self.engine.transaction():
+            self.engine.execute(f"DROP TABLE IF EXISTS {staging_table}")
+            self.engine.execute(
+                f"CREATE TEMP TABLE {staging_table} (LIKE {target_table} EXCLUDING ALL)"
+            )
+            self.engine.execute(
+                f'ALTER TABLE {staging_table} DROP COLUMN IF EXISTS "ingested_at"'
+            )
+
+            with open(filepath, "r") as f:
+                with self.engine.connection.cursor() as cur:
+                    cur.copy_expert(
+                        f"COPY {staging_table} FROM STDIN WITH CSV HEADER", f
+                    )
+
+            count_df = self.engine.query(f"SELECT count(*) AS n FROM {staging_table}")
+            staged_rows = int(count_df.iloc[0]["n"])
+            self.engine.execute(upsert_sql)
+            self.engine.execute(f"DROP TABLE IF EXISTS {staging_table}")
+
+        return staged_rows
+
+    def incremental_update(
+        self,
+        dataset_id: str,
+        target_table: str,
+        config: IncrementalConfig,
+        high_water_mark_override: str | None = None,
+    ) -> int:
+        """
+        Run an incremental paginated ingest with automatic high-water mark
+        management and idempotent upsert.
+
+        Args:
+            dataset_id:               Socrata 4x4 identifier.
+            target_table:             Fully-qualified table.
+            config:                   IncrementalConfig.
+            high_water_mark_override: Use instead of stored HWM.
+
+        Returns:
+            Total rows ingested.
+        """
+        hwm = high_water_mark_override or self.tracker.get_high_water_mark(
+            self.SOURCE_NAME, dataset_id
+        )
+        if hwm:
+            self.logger.info("Resuming from high_water_mark: %s", hwm)
+        else:
+            self.logger.info("No prior high_water_mark — full incremental load")
+
+        meta = self._get_metadata(dataset_id)
+        domain = meta.domain
+
+        run_metadata = {
+            "mode": "incremental",
+            "incremental_column": config.incremental_column,
+            "conflict_key": config.conflict_key,
+            "prior_high_water_mark": hwm,
+            "domain": domain,
+        }
+
+        with self.tracker.track(
+            self.SOURCE_NAME, dataset_id, target_table, metadata=run_metadata
+        ) as run:
+            where_parts = []
+            if hwm:
+                where_parts.append(f"{config.incremental_column} > '{hwm}'")
+            if config.where:
+                where_parts.append(config.where)
+
+            combined_where = " AND ".join(where_parts) if where_parts else None
+            order_by = config.order_by or f"{config.incremental_column}, :id"
+
+            total_rows = 0
+            max_hwm = hwm
+
+            for page_num, batch in enumerate(
+                self.client.paginate(
+                    domain=domain,
+                    dataset_id=dataset_id,
+                    columns=config.columns,
+                    where=combined_where,
+                    order_by=order_by,
+                ),
+                start=1,
+            ):
+                rows = self.engine.ingest_batch(
+                    batch,
+                    target_table,
+                    conflict_column=config.conflict_key,
+                    conflict_action="UPDATE",
+                )
+                total_rows += rows
+
+                batch_max = self._extract_max_hwm(batch, config.incremental_column)
+                if batch_max and (max_hwm is None or batch_max > max_hwm):
+                    max_hwm = batch_max
+
+                self.logger.info(
+                    "Page %d: fetched %d, upserted %d (total: %d, hwm: %s)",
+                    page_num,
+                    len(batch),
+                    rows,
+                    total_rows,
+                    max_hwm,
+                )
+
+            run.rows_ingested = total_rows
+            run.high_water_mark = max_hwm
+
+        return total_rows
+
+    @staticmethod
+    def _extract_max_hwm(batch: list[dict[str, Any]], column: str) -> Optional[str]:
+        values = [row[column] for row in batch if row.get(column) is not None]
+        if not values:
+            return None
+        return str(max(values))
+
+    # ------------------------------------------------------------------
+    # Convenience
+    # ------------------------------------------------------------------
+
+    def preview(
+        self,
+        dataset_id: str,
+        limit: int = 5,
+        columns: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        meta = self._get_metadata(dataset_id)
+        return self.client.query(
+            domain=meta.domain,
+            dataset_id=dataset_id,
+            select=", ".join(columns) if columns else None,
+            limit=limit,
+        )
+
+    def print_ddl(
+        self,
+        dataset_id: str,
+        schema: str = "raw_data",
+        table_name: str | None = None,
+    ) -> None:
+        meta = self._get_metadata(dataset_id)
+        print(meta.generate_ddl(schema=schema, table_name=table_name))
