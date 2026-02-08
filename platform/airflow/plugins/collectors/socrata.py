@@ -320,10 +320,10 @@ class SocrataTableMetadata:
 
         if include_ingested_at:
             col_defs.append(
-                "    \"ingested_at\" TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')"
+                "    \"ingested_at\" timestamptz not null default (now() at time zone 'UTC')"
             )
 
-        ddl = f"CREATE TABLE IF NOT EXISTS {fqn} (\n"
+        ddl = f"create table if not exists {fqn} (\n"
         ddl += ",\n".join(col_defs)
         ddl += "\n);\n"
 
@@ -332,8 +332,8 @@ class SocrataTableMetadata:
                 if col.description:
                     escaped = col.description.replace("'", "''")
                     ddl += (
-                        f'\nCOMMENT ON COLUMN {fqn}."{col.field_name}" '
-                        f"IS '{escaped}';"
+                        f'\ncomment on column {fqn}."{col.field_name}" '
+                        f"is '{escaped}';"
                     )
 
         return ddl
@@ -537,7 +537,7 @@ class SocrataCollector:
                 rows, failed = self.engine.ingest_geojson(
                     filepath=filepath,
                     target_table=target_table,
-                    conflict_key=conflict_key if mode == "upsert" else None,
+                    conflict_column=conflict_key if mode == "upsert" else None,
                 )
             else:
                 rows = self._ingest_csv_with_conflict_handling(
