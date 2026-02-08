@@ -1,46 +1,5 @@
-"""
-Socrata SoQL query executor and PostgreSQL ingestor.
-
-Supports:
-- Arbitrary SoQL queries against any Socrata dataset
-- Automatic pagination for large result sets
-- Incremental loads using a high-water mark column
-- Structured logging throughout
-
-Requirements:
-    pip install requests psycopg2-binary
-
-Usage:
-    from socrata_ingestor import SocrataIngestor
-    from postgres_engine import PostgresEngine
-
-    engine = PostgresEngine(creds=my_creds)
-    ingestor = SocrataIngestor(
-        domain="data.cityofchicago.org",
-        engine=engine,
-        app_token="your_socrata_app_token",  # optional but recommended
-    )
-
-    # Full load
-    ingestor.ingest(
-        dataset_id="ijzp-q8t2",
-        target_table="raw.crimes",
-        columns=["id", "date", "primary_type", "description", "latitude", "longitude"],
-    )
-
-    # Incremental load
-    ingestor.ingest(
-        dataset_id="ijzp-q8t2",
-        target_table="raw.crimes",
-        columns=["id", "date", "primary_type", "description", "latitude", "longitude"],
-        incremental_column="date",
-        high_water_mark="2025-01-01T00:00:00",
-    )
-"""
-
 from __future__ import annotations
 
-import json
 import logging
 import re
 import tempfile
@@ -575,7 +534,7 @@ class SocrataCollector:
             if meta.is_geospatial:
                 if mode == "replace":
                     self.engine.execute(f"TRUNCATE TABLE {target_table}")
-                rows = self._load_geojson_features(
+                rows, failed = self.engine.ingest_geojson(
                     filepath=filepath,
                     target_table=target_table,
                     conflict_key=conflict_key if mode == "upsert" else None,
@@ -597,110 +556,134 @@ class SocrataCollector:
 
         return rows
 
-    def _detect_geometry_column(self, target_table: str) -> Optional[str]:
-        """
-        Query the target table's information_schema to find a PostGIS geometry
-        column.  Returns the column name, or None if no geometry column exists.
-        """
-        # Split schema.table for the query
-        parts = target_table.split(".", 1)
-        if len(parts) == 2:
-            schema, table = parts
-        else:
-            schema, table = "public", parts[0]
+    # def _detect_geometry_column(self, target_table: str) -> Optional[str]:
+    #     """
+    #     Query the target table's information_schema to find a PostGIS geometry
+    #     column.  Returns the column name, or None if no geometry column exists.
+    #     """
+    #     # Split schema.table for the query
+    #     parts = target_table.split(".", 1)
+    #     if len(parts) == 2:
+    #         schema, table = parts
+    #     else:
+    #         schema, table = "public", parts[0]
 
-        df = self.engine.query(
-            """
-            SELECT f_geometry_column
-            FROM geometry_columns
-            WHERE f_table_schema = %(schema)s
-              AND f_table_name   = %(table)s
-            LIMIT 1
-            """,
-            {"schema": schema, "table": table},
-        )
-        if df.empty:
-            return None
-        return str(df.iloc[0]["f_geometry_column"])
+    #     df = self.engine.query(
+    #         """
+    #         SELECT f_geometry_column
+    #         FROM geometry_columns
+    #         WHERE f_table_schema = %(schema)s
+    #           AND f_table_name   = %(table)s
+    #         LIMIT 1
+    #         """,
+    #         {"schema": schema, "table": table},
+    #     )
+    #     if df.empty:
+    #         return None
+    #     return str(df.iloc[0]["f_geometry_column"])
 
-    @staticmethod
-    def _geojson_to_wkt(geojson_geom: dict) -> str:
-        """Convert a GeoJSON geometry dict to WKT using Shapely."""
-        from shapely.geometry import shape
+    # @staticmethod
+    # def _geojson_to_wkt(geojson_geom: dict) -> str:
+    #     """Convert a GeoJSON geometry dict to WKT using Shapely."""
+    #     from shapely.geometry import shape
 
-        return shape(geojson_geom).wkt
+    #     return shape(geojson_geom).wkt
 
-    def _load_geojson_features(
-        self,
-        filepath: Path,
-        target_table: str,
-        conflict_key: list[str] | None = None,
-        batch_size: int = 5_000,
-    ) -> int:
-        """
-        Read a GeoJSON file and ingest its features via engine.ingest_batch().
+    # @staticmethod
+    # def _sanitize_utf8(value: str) -> str:
+    #     """
+    #     Remove or replace characters that will fail PostgreSQL UTF-8 COPY.
 
-        Each GeoJSON Feature's properties are flattened into a dict.  The
-        geometry is converted to WKT and stored under the target table's
-        actual geometry column name (auto-detected from ``geometry_columns``).
+    #     Handles two scenarios:
+    #       1. Surrogate-escaped strings from file I/O with errors='surrogateescape'
+    #          (lone surrogates like \\udcXX).
+    #       2. C1 control characters (U+0080–U+009F) that come from Windows-1252
+    #          data misinterpreted as UTF-8 — these are valid Unicode but often
+    #          represent encoding errors in practice.
 
-        If the target table has no PostGIS geometry column the geometry is
-        silently dropped.
-        """
-        with open(filepath, "r") as f:
-            geojson = json.load(f)
+    #     Replaces problematic characters with the Unicode replacement character.
+    #     """
+    #     # First pass: handle surrogate escapes from file I/O
+    #     value = value.encode("utf-8", errors="surrogateescape").decode(
+    #         "utf-8", errors="replace"
+    #     )
+    #     # Second pass: strip C1 control characters (0x80-0x9F) which are
+    #     # almost always encoding artifacts, not intentional content
+    #     return value.translate(
+    #         {c: "\ufffd" for c in range(0x80, 0xA0)}
+    #     )
 
-        features = geojson.get("features", [])
-        if not features:
-            self.logger.warning("No features found in %s", filepath)
-            return 0
+    # def _load_geojson_features(
+    #     self,
+    #     filepath: Path,
+    #     target_table: str,
+    #     conflict_key: list[str] | None = None,
+    #     batch_size: int = 5_000,
+    # ) -> int:
+    #     """
+    #     Read a GeoJSON file and ingest its features via engine.ingest_batch().
 
-        geom_col = self._detect_geometry_column(target_table)
-        if geom_col:
-            self.logger.info(
-                "Detected geometry column '%s' in %s", geom_col, target_table
-            )
-        else:
-            self.logger.warning(
-                "No geometry column found in %s — geometry will be dropped",
-                target_table,
-            )
+    #     Each GeoJSON Feature's properties are flattened into a dict.  The
+    #     geometry is converted to WKT and stored under the target table's
+    #     actual geometry column name (auto-detected from ``geometry_columns``).
 
-        total_rows = 0
-        batch: list[dict[str, Any]] = []
+    #     If the target table has no PostGIS geometry column the geometry is
+    #     silently dropped.
+    #     """
+    #     with open(filepath, "r") as f:
+    #         geojson = json.load(f)
 
-        for feature in features:
-            row = dict(feature.get("properties", {}))
-            geom = feature.get("geometry")
+    #     features = geojson.get("features", [])
+    #     if not features:
+    #         self.logger.warning("No features found in %s", filepath)
+    #         return 0
 
-            if geom is not None and geom_col is not None:
-                row[geom_col] = self._geojson_to_wkt(geom)
+    #     geom_col = self._detect_geometry_column(target_table)
+    #     if geom_col:
+    #         self.logger.info(
+    #             "Detected geometry column '%s' in %s", geom_col, target_table
+    #         )
+    #     else:
+    #         self.logger.warning(
+    #             "No geometry column found in %s — geometry will be dropped",
+    #             target_table,
+    #         )
 
-            batch.append(row)
+    #     total_rows = 0
+    #     batch: list[dict[str, Any]] = []
 
-            if len(batch) >= batch_size:
-                rows = self.engine.ingest_batch(
-                    batch,
-                    target_table,
-                    conflict_column=conflict_key,
-                    conflict_action="UPDATE" if conflict_key else "NOTHING",
-                )
-                total_rows += rows
-                batch = []
+    #     for feature in features:
+    #         row = dict(feature.get("properties", {}))
+    #         geom = feature.get("geometry")
 
-        if batch:
-            rows = self.engine.ingest_batch(
-                batch,
-                target_table,
-                conflict_column=conflict_key,
-                conflict_action="UPDATE" if conflict_key else "NOTHING",
-            )
-            total_rows += rows
+    #         if geom is not None and geom_col is not None:
+    #             row[geom_col] = self._geojson_to_wkt(geom)
 
-        self.logger.info(
-            "Loaded %d features from %s into %s", total_rows, filepath, target_table
-        )
-        return total_rows
+    #         batch.append(row)
+
+    #         if len(batch) >= batch_size:
+    #             rows = self.engine.ingest_batch(
+    #                 batch,
+    #                 target_table,
+    #                 conflict_column=conflict_key,
+    #                 conflict_action="UPDATE" if conflict_key else "NOTHING",
+    #             )
+    #             total_rows += rows
+    #             batch = []
+
+    #     if batch:
+    #         rows = self.engine.ingest_batch(
+    #             batch,
+    #             target_table,
+    #             conflict_column=conflict_key,
+    #             conflict_action="UPDATE" if conflict_key else "NOTHING",
+    #         )
+    #         total_rows += rows
+
+    #     self.logger.info(
+    #         "Loaded %d features from %s into %s", total_rows, filepath, target_table
+    #     )
+    #     return total_rows
 
     def _download_file(self, meta: SocrataTableMetadata) -> Path:
         url = meta.data_download_url

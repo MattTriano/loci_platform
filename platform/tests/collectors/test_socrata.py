@@ -205,10 +205,10 @@ class TestFullRefresh:
         mock_engine.ingest_csv.assert_called_once()
 
     @patch("collectors.socrata.requests.get")
-    def test_full_refresh_geospatial_uses_ingest_batch(
+    def test_full_refresh_geospatial_uses_ingest_geojson(
         self, mock_get, collector, mock_engine, tmp_dir
     ):
-        """Verify geospatial files are loaded via ingest_batch, not ingest_geospatial."""
+        """Verify geospatial files are loaded via ingest_geojson."""
         meta = _make_metadata_mock(is_geospatial=True)
         collector._metadata_cache["abcd-1234"] = meta
 
@@ -218,31 +218,17 @@ class TestFullRefresh:
         mock_resp.raise_for_status.return_value = None
         mock_get.return_value = mock_resp
 
-        mock_engine.ingest_batch.return_value = 2
+        mock_engine.ingest_geojson.return_value = (2, [])  # inserted, failed
 
-        with patch.object(
-            collector, "_detect_geometry_column", return_value="the_geom"
-        ):
-            rows = collector.full_refresh(
-                "abcd-1234",
-                "raw_data.geo_test",
-                mode="upsert",
-                conflict_key=["name"],
-            )
+        rows = collector.full_refresh(
+            "abcd-1234",
+            "raw_data.geo_test",
+            mode="upsert",
+            conflict_key=["name"],
+        )
 
         assert rows == 2
-        mock_engine.ingest_batch.assert_called_once()
-
-        call_args = mock_engine.ingest_batch.call_args
-        batch = call_args[0][0]
-        assert len(batch) == 2
-        assert batch[0]["name"] == "A"
-        # Geometry should be WKT under the detected column name
-        assert "the_geom" in batch[0]
-        assert batch[0]["the_geom"] == "POINT (-87.6 41.8)"
-
-        assert call_args[1]["conflict_column"] == ["name"]
-        assert call_args[1]["conflict_action"] == "UPDATE"
+        mock_engine.ingest_geojson.assert_called_once()
 
     @patch("collectors.socrata.requests.get")
     def test_full_refresh_geospatial_replace_truncates(
@@ -257,14 +243,10 @@ class TestFullRefresh:
         mock_resp.raise_for_status.return_value = None
         mock_get.return_value = mock_resp
 
-        mock_engine.ingest_batch.return_value = 2
+        mock_engine.ingest_geojson.return_value = (2, [])  # inserted, failed
 
-        with patch.object(
-            collector, "_detect_geometry_column", return_value="the_geom"
-        ):
-            collector.full_refresh("abcd-1234", "raw_data.geo_test", mode="replace")
+        collector.full_refresh("abcd-1234", "raw_data.geo_test", mode="replace")
 
-        # Should truncate before loading
         mock_engine.execute.assert_called_with("TRUNCATE TABLE raw_data.geo_test")
 
     def test_full_refresh_records_tracker_run(self, collector, mock_engine, tmp_dir):
@@ -447,99 +429,6 @@ class TestExtractMaxHwm:
     def test_returns_none_for_all_nulls(self):
         batch = [{"ts": None}, {"ts": None}]
         assert SocrataCollector._extract_max_hwm(batch, "ts") is None
-
-
-# ---------------------------------------------------------------------------
-# _load_geojson_features tests
-# ---------------------------------------------------------------------------
-
-
-class TestLoadGeojsonFeatures:
-    def test_loads_features_with_geometry_column(self, collector, mock_engine, tmp_dir):
-        geojson = {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {"id": "1", "name": "Park"},
-                    "geometry": {"type": "Point", "coordinates": [0, 0]},
-                },
-            ],
-        }
-        fp = tmp_dir / "test.geojson"
-        fp.write_text(json.dumps(geojson))
-
-        mock_engine.ingest_batch.return_value = 1
-
-        # Mock _detect_geometry_column to return the target's actual column name
-        with patch.object(
-            collector, "_detect_geometry_column", return_value="the_geom"
-        ):
-            rows = collector._load_geojson_features(
-                fp, "raw_data.places", conflict_key=["id"]
-            )
-        assert rows == 1
-
-        batch = mock_engine.ingest_batch.call_args[0][0]
-        assert batch[0]["id"] == "1"
-        assert batch[0]["name"] == "Park"
-        # Geometry should be WKT under the detected column name, not "geometry"
-        assert "the_geom" in batch[0]
-        assert "geometry" not in batch[0]
-        assert batch[0]["the_geom"] == "POINT (0 0)"
-
-    def test_drops_geometry_when_no_geom_column(self, collector, mock_engine, tmp_dir):
-        geojson = {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {"id": "1"},
-                    "geometry": {"type": "Point", "coordinates": [1, 2]},
-                },
-            ],
-        }
-        fp = tmp_dir / "test.geojson"
-        fp.write_text(json.dumps(geojson))
-
-        mock_engine.ingest_batch.return_value = 1
-
-        with patch.object(collector, "_detect_geometry_column", return_value=None):
-            rows = collector._load_geojson_features(fp, "raw_data.places")
-
-        assert rows == 1
-        batch = mock_engine.ingest_batch.call_args[0][0]
-        assert "geometry" not in batch[0]
-        assert "the_geom" not in batch[0]
-
-    def test_empty_feature_collection(self, collector, mock_engine, tmp_dir):
-        fp = tmp_dir / "empty.geojson"
-        fp.write_text(json.dumps({"type": "FeatureCollection", "features": []}))
-
-        rows = collector._load_geojson_features(fp, "raw_data.places")
-        assert rows == 0
-        mock_engine.ingest_batch.assert_not_called()
-
-    def test_batching(self, collector, mock_engine, tmp_dir):
-        """Verify that features are split into batches."""
-        features = [
-            {
-                "type": "Feature",
-                "properties": {"id": str(i)},
-                "geometry": {"type": "Point", "coordinates": [0, 0]},
-            }
-            for i in range(7)
-        ]
-        fp = tmp_dir / "batch.geojson"
-        fp.write_text(json.dumps({"type": "FeatureCollection", "features": features}))
-
-        # Use batch_size=3 so we get 3 calls: 3, 3, 1
-        mock_engine.ingest_batch.side_effect = [3, 3, 1]
-
-        with patch.object(collector, "_detect_geometry_column", return_value="geom"):
-            rows = collector._load_geojson_features(fp, "raw_data.places", batch_size=3)
-        assert rows == 7
-        assert mock_engine.ingest_batch.call_count == 3
 
 
 # ---------------------------------------------------------------------------

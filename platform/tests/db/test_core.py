@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 from urllib.parse import quote_plus
 
@@ -417,3 +418,287 @@ class TestPostgresEngineConnectionManagement:
     def test_db_name_override(self, sample_creds):
         eng = PostgresEngine(sample_creds, db_name="staging")
         assert eng.db_name == "staging"
+
+
+@pytest.fixture
+def sample_geojson(tmp_path):
+    data = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"id": 1, "name": "Park A"},
+                "geometry": {"type": "Point", "coordinates": [-87.6298, 41.8781]},
+            },
+            {
+                "type": "Feature",
+                "properties": {"id": 2, "name": "Park B"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-87.63, 41.87],
+                            [-87.62, 41.87],
+                            [-87.62, 41.88],
+                            [-87.63, 41.88],
+                            [-87.63, 41.87],
+                        ]
+                    ],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {"id": 3, "name": "Park C"},
+                "geometry": {"type": "Point", "coordinates": [-87.65, 41.90]},
+            },
+        ],
+    }
+    path = tmp_path / "test.geojson"
+    path.write_text(json.dumps(data))
+    return path
+
+
+@pytest.fixture
+def geojson_with_nulls(tmp_path):
+    data = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"id": 1, "name": "Valid"},
+                "geometry": {"type": "Point", "coordinates": [-87.6, 41.8]},
+            },
+            {
+                "type": "Feature",
+                "properties": {"id": 2, "name": "No Geom"},
+                "geometry": None,
+            },
+            {
+                "type": "Feature",
+                "properties": {"id": 3, "name": None},
+                "geometry": {"type": "Point", "coordinates": [-87.7, 41.9]},
+            },
+        ],
+    }
+    path = tmp_path / "nulls.geojson"
+    path.write_text(json.dumps(data))
+    return path
+
+
+@pytest.fixture
+def empty_geojson(tmp_path):
+    data = {"type": "FeatureCollection", "features": []}
+    path = tmp_path / "empty.geojson"
+    path.write_text(json.dumps(data))
+    return path
+
+
+class TestIngestGeojson:
+    def test_basic_ingest(self, sample_geojson, engine, mock_cursor):
+        mock_cursor.rowcount = 3
+
+        inserted, failed = engine.ingest_geojson(
+            filepath=sample_geojson,
+            target_table="public.parks",
+        )
+
+        assert inserted == 3
+        assert len(failed) == 0
+
+        # Extract all SQL strings sent to .execute() for easier searching
+        all_execute_sql = [
+            str(call[0][0]) for call in mock_cursor.execute.call_args_list
+        ]
+
+        # 1. Verify the Metadata Lookup (The call that caused the original failure)
+        assert any("FROM geometry_columns" in sql for sql in all_execute_sql)
+
+        # 2. Verify Staging Table Creation
+        create_stmt = next(
+            (sql for sql in all_execute_sql if "CREATE TEMP TABLE" in sql), None
+        )
+        assert create_stmt is not None, "Staging table was not created"
+        assert "_geojson_staging" in create_stmt
+        assert "public.parks" in create_stmt
+
+        # 3. Verify Data Loading (copy_expert)
+        copy_calls = [c for c in mock_cursor.method_calls if c[0] == "copy_expert"]
+        assert len(copy_calls) == 1
+
+        # 4. Verify Geometry Column Alteration
+        assert any("ALTER TABLE" in sql for sql in all_execute_sql)
+
+        # 5. Verify Final Insertion
+        assert any("INSERT INTO public.parks" in sql for sql in all_execute_sql)
+
+    def test_empty_file_returns_zero(self, empty_geojson, engine, mock_cursor):
+        inserted, failed = engine.ingest_geojson(
+            filepath=empty_geojson,
+            target_table="public.parks",
+        )
+
+        assert inserted == 0
+        assert failed == []
+
+    def test_null_geometry_logged_as_failure(
+        self, geojson_with_nulls, engine, mock_cursor
+    ):
+        mock_cursor.rowcount = 2
+
+        inserted, failed = engine.ingest_geojson(
+            filepath=geojson_with_nulls,
+            target_table="public.parks",
+        )
+
+        assert len(failed) == 1
+        assert failed[0]["index"] == 1
+        assert "no geometry" in failed[0]["error"].lower()
+
+    def test_null_property_written_as_backslash_n(
+        self, geojson_with_nulls, engine, mock_cursor
+    ):
+        copied_data = []
+
+        def capture_copy(sql, buf):
+            copied_data.append(buf.read())
+
+        mock_cursor.copy_expert.side_effect = capture_copy
+
+        engine.ingest_geojson(
+            filepath=geojson_with_nulls,
+            target_table="public.parks",
+        )
+
+        combined = "".join(copied_data)
+        lines = [l for l in combined.strip().split("\n") if l]
+        line_for_id3 = [l for l in lines if l.startswith("3\t")][0]
+        fields = line_for_id3.split("\t")
+        assert fields[1] == "\\N"
+
+    def test_batching(self, sample_geojson, engine, mock_cursor):
+        mock_cursor.rowcount = 3
+
+        engine.ingest_geojson(
+            filepath=sample_geojson,
+            target_table="public.parks",
+            batch_size=2,
+        )
+
+        copy_calls = [c for c in mock_cursor.method_calls if c[0] == "copy_expert"]
+        assert len(copy_calls) == 2
+
+    def test_conflict_do_nothing(self, sample_geojson, engine, mock_cursor):
+        engine.ingest_geojson(
+            filepath=sample_geojson,
+            target_table="public.parks",
+            conflict_column="id",
+            conflict_action="NOTHING",
+        )
+
+        insert_sql = [
+            c[0][0]
+            for c in mock_cursor.execute.call_args_list
+            if "INSERT INTO" in str(c) and "ON CONFLICT" in str(c)
+        ]
+        assert len(insert_sql) == 1
+        assert 'ON CONFLICT ("id") DO NOTHING' in insert_sql[0]
+
+    def test_conflict_do_update(self, sample_geojson, engine, mock_cursor):
+        engine.ingest_geojson(
+            filepath=sample_geojson,
+            target_table="public.parks",
+            conflict_column="id",
+            conflict_action="UPDATE",
+        )
+
+        insert_sql = [
+            c[0][0]
+            for c in mock_cursor.execute.call_args_list
+            if "INSERT INTO" in str(c) and "DO UPDATE SET" in str(c)
+        ]
+        assert len(insert_sql) == 1
+        assert 'ON CONFLICT ("id") DO UPDATE SET' in insert_sql[0]
+        set_part = insert_sql[0].split("DO UPDATE SET")[1]
+        assert '"id"' not in set_part
+
+    def test_composite_conflict_columns(self, sample_geojson, engine, mock_cursor):
+        engine.ingest_geojson(
+            filepath=sample_geojson,
+            target_table="public.parks",
+            conflict_column=["id", "name"],
+            conflict_action="NOTHING",
+        )
+
+        insert_sql = [
+            c[0][0]
+            for c in mock_cursor.execute.call_args_list
+            if "ON CONFLICT" in str(c)
+        ]
+        assert '"id", "name"' in insert_sql[0]
+
+    def test_copy_data_contains_wkb_hex(self, sample_geojson, engine, mock_cursor):
+        copied_data = []
+
+        def capture_copy(sql, buf):
+            copied_data.append(buf.read())
+
+        mock_cursor.copy_expert.side_effect = capture_copy
+
+        engine.ingest_geojson(
+            filepath=sample_geojson,
+            target_table="public.parks",
+        )
+
+        combined = "".join(copied_data)
+        lines = combined.strip().split("\n")
+        for line in lines:
+            geom_field = line.split("\t")[-1]
+            assert all(c in "0123456789abcdefABCDEF" for c in geom_field)
+
+    def test_special_characters_escaped(self, tmp_path, engine, mock_cursor):
+        copied_data = []
+
+        def capture_copy(sql, buf):
+            copied_data.append(buf.read())
+
+        mock_cursor.copy_expert.side_effect = capture_copy
+
+        data = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"id": 1, "name": "Has\ttab\nand\\backslash"},
+                    "geometry": {"type": "Point", "coordinates": [0, 0]},
+                }
+            ],
+        }
+        path = tmp_path / "special.geojson"
+        path.write_text(json.dumps(data))
+
+        engine.ingest_geojson(filepath=path, target_table="public.t")
+
+        combined = "".join(copied_data)
+        name_field = combined.strip().split("\t")[1]
+        assert "\t" not in name_field
+        assert "\n" not in name_field
+        assert "\\\\" in combined
+
+    def test_all_features_fail_returns_zero(self, tmp_path, engine, mock_cursor):
+        data = {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"id": 1}, "geometry": None},
+                {"type": "Feature", "properties": {"id": 2}, "geometry": None},
+            ],
+        }
+        path = tmp_path / "allfail.geojson"
+        path.write_text(json.dumps(data))
+
+        inserted, failed = engine.ingest_geojson(
+            filepath=path,
+            target_table="public.t",
+        )
+
+        assert inserted == 0
+        assert len(failed) == 2
