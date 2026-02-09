@@ -300,6 +300,7 @@ class PostgresEngine:
         self,
         rows: list[dict[str, Any]],
         target_table: str,
+        target_schema: str,
         conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
     ) -> int:
@@ -311,7 +312,8 @@ class PostgresEngine:
 
         Args:
             rows:              List of dicts to insert.
-            target_table:      Fully-qualified table name (e.g. "raw.crimes").
+            target_table:      Table name.
+            target_schema:     Schema name.
             conflict_column:   Column name (str) or list of column names for
                                composite keys. Used in ON CONFLICT clause.
             conflict_action:   "NOTHING" (skip) or "UPDATE" (upsert).
@@ -321,6 +323,7 @@ class PostgresEngine:
         """
         if not rows:
             return 0
+        fqn = f"{target_schema}.{target_table}"
 
         columns = list(rows[0].keys())
         col_list = ", ".join(f'"{c}"' for c in columns)
@@ -333,7 +336,7 @@ class PostgresEngine:
 
         with self.cursor() as cur:
             cur.execute(f"""
-                CREATE TEMP TABLE _staging (LIKE {target_table} INCLUDING DEFAULTS)
+                CREATE TEMP TABLE _staging (LIKE {fqn} INCLUDING DEFAULTS)
                 ON COMMIT DROP
             """)
 
@@ -356,7 +359,9 @@ class PostgresEngine:
             )
 
             # Insert from staging into target
-            insert_sql = f"INSERT INTO {target_table} ({col_list}) SELECT {col_list} FROM _staging"
+            insert_sql = (
+                f"INSERT INTO {fqn} ({col_list}) SELECT {col_list} FROM _staging"
+            )
 
             if conflict_columns:
                 conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
@@ -374,18 +379,18 @@ class PostgresEngine:
             cur.execute(insert_sql)
             count = cur.rowcount
 
-        self.logger.info("Inserted %d rows into %s", count, target_table)
+        self.logger.info("Inserted %d rows into %s", count, fqn)
         return count
 
     @pg_retry()
-    def ingest_csv(self, filepath: str | Path, table_name: str, schema: str) -> int:
-        fqn = f"{schema}.{table_name}"
+    def ingest_csv(
+        self, filepath: str | Path, target_table: str, target_schema: str
+    ) -> int:
+        fqn = f"{target_schema}.{target_table}"
         with self.cursor() as cur:
             cur.execute("drop table if exists _staging")
             cur.execute(f"create temp table _staging (like {fqn} excluding all)")
-            cur.execute(
-                "alter table _staging drop column if exists ingested_to_postgres"
-            )
+            cur.execute('alter table _staging drop column if exists "ingested_at"')
             with open(filepath, "r") as f:
                 cur.copy_expert("copy _staging from stdin with csv header", f)
             cur.execute(f"""
@@ -395,11 +400,8 @@ class PostgresEngine:
             """)
             return cur.rowcount
 
-    def _get_geometry_column(self, target_table: str) -> str:
+    def _get_geometry_column(self, target_table: str, target_schema: str) -> str:
         """Look up the geometry column name from PostGIS metadata."""
-        schema, tbl = (
-            target_table.split(".") if "." in target_table else ("public", target_table)
-        )
         df = self.query(
             """
             SELECT f_geometry_column
@@ -407,10 +409,12 @@ class PostgresEngine:
             WHERE f_table_schema = %(schema)s AND f_table_name = %(table)s
             LIMIT 1
             """,
-            {"schema": schema, "table": tbl},
+            {"schema": target_schema, "table": target_table},
         )
         if df.empty:
-            raise ValueError(f"No geometry column found for {target_table}")
+            raise ValueError(
+                f"No geometry column found for {target_schema}.{target_table}"
+            )
         return df.iloc[0, 0]
 
     @pg_retry()
@@ -418,6 +422,7 @@ class PostgresEngine:
         self,
         filepath: str | Path,
         target_table: str,
+        target_schema: str,
         conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
         batch_size: int = 5000,
@@ -446,10 +451,9 @@ class PostgresEngine:
         from shapely import wkb as shapely_wkb
 
         filepath = Path(filepath)
-        geometry_column = self._get_geometry_column(target_table)
-        self.logger.info(
-            f"Detected geometry column '{geometry_column}' in {target_table}"
-        )
+        fqn = f"{target_schema}.{target_table}"
+        geometry_column = self._get_geometry_column(target_table, target_schema)
+        self.logger.info(f"Detected geometry column '{geometry_column}' in {fqn}")
         failed: list[dict] = []
 
         if isinstance(conflict_column, str):
@@ -462,7 +466,7 @@ class PostgresEngine:
 
         with self.cursor() as cur:
             cur.execute(f"""
-                CREATE TEMP TABLE _geojson_staging (LIKE {target_table} INCLUDING DEFAULTS)
+                CREATE TEMP TABLE _geojson_staging (LIKE {fqn} INCLUDING DEFAULTS)
                 ON COMMIT DROP
             """)
 
@@ -552,7 +556,7 @@ class PostgresEngine:
 
             # Merge staging → target
             insert_sql = (
-                f"INSERT INTO {target_table} ({col_list}) "
+                f"INSERT INTO {fqn} ({col_list}) "
                 f"SELECT {col_list} FROM _geojson_staging"
             )
 
@@ -573,7 +577,7 @@ class PostgresEngine:
             inserted = cur.rowcount
 
         self.logger.info(
-            "Inserted %d rows into %s (%d failed)", inserted, target_table, len(failed)
+            "Inserted %d rows into %s (%d failed)", inserted, fqn, len(failed)
         )
         return inserted, failed
 

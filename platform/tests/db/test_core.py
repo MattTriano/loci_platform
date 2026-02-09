@@ -279,11 +279,11 @@ class TestPostgresEngineIngestBatchConflict:
         ]
 
     def test_empty_rows_returns_zero(self, engine):
-        assert engine.ingest_batch([], "raw.test") == 0
+        assert engine.ingest_batch([], "test", "raw") == 0
 
     def test_no_conflict_column(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice"}]
-        engine.ingest_batch(rows, "raw.test")
+        engine.ingest_batch(rows, "test", "raw")
         sqls = self._get_executed_sql(mock_cursor)
         insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
         assert "ON CONFLICT" not in insert_sql
@@ -291,7 +291,7 @@ class TestPostgresEngineIngestBatchConflict:
     def test_single_conflict_column_string_do_nothing(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice", "age": 30}]
         engine.ingest_batch(
-            rows, "raw.test", conflict_column="id", conflict_action="NOTHING"
+            rows, "test", "raw", conflict_column="id", conflict_action="NOTHING"
         )
         sqls = self._get_executed_sql(mock_cursor)
         insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
@@ -300,7 +300,7 @@ class TestPostgresEngineIngestBatchConflict:
     def test_single_conflict_column_string_do_update(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice", "age": 30}]
         engine.ingest_batch(
-            rows, "raw.test", conflict_column="id", conflict_action="UPDATE"
+            rows, "test", "raw", conflict_column="id", conflict_action="UPDATE"
         )
         sqls = self._get_executed_sql(mock_cursor)
         insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
@@ -313,7 +313,8 @@ class TestPostgresEngineIngestBatchConflict:
         rows = [{"pin14": "123", "tax_year": 2024, "assessed_value": 50000}]
         engine.ingest_batch(
             rows,
-            "raw.assessments",
+            "assessments",
+            "raw",
             conflict_column=["pin14", "tax_year"],
             conflict_action="UPDATE",
         )
@@ -327,7 +328,7 @@ class TestPostgresEngineIngestBatchConflict:
     def test_composite_conflict_key_do_nothing(self, engine, mock_cursor):
         rows = [{"a": 1, "b": 2, "c": 3}]
         engine.ingest_batch(
-            rows, "raw.test", conflict_column=["a", "b"], conflict_action="NOTHING"
+            rows, "test", "raw", conflict_column=["a", "b"], conflict_action="NOTHING"
         )
         sqls = self._get_executed_sql(mock_cursor)
         insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
@@ -346,7 +347,7 @@ class TestPostgresEngineIngestBatchConflict:
             return original_copy(sql, buf)
 
         mock_cursor.copy_expert = capture_copy
-        engine.ingest_batch(rows, "raw.test")
+        engine.ingest_batch(rows, "test", "raw")
 
         tsv = captured_buf[0]
         lines = tsv.strip().split("\n")
@@ -357,7 +358,7 @@ class TestPostgresEngineIngestBatchConflict:
     def test_returns_rowcount(self, engine, mock_cursor):
         mock_cursor.rowcount = 5
         rows = [{"id": i} for i in range(5)]
-        assert engine.ingest_batch(rows, "raw.test") == 5
+        assert engine.ingest_batch(rows, "test", "raw") == 5
 
 
 class TestPostgresEngineConnectionManagement:
@@ -498,8 +499,7 @@ class TestIngestGeojson:
         mock_cursor.rowcount = 3
 
         inserted, failed = engine.ingest_geojson(
-            filepath=sample_geojson,
-            target_table="public.parks",
+            filepath=sample_geojson, target_table="parks", target_schema="public"
         )
 
         assert inserted == 3
@@ -533,8 +533,7 @@ class TestIngestGeojson:
 
     def test_empty_file_returns_zero(self, empty_geojson, engine, mock_cursor):
         inserted, failed = engine.ingest_geojson(
-            filepath=empty_geojson,
-            target_table="public.parks",
+            filepath=empty_geojson, target_table="parks", target_schema="public"
         )
 
         assert inserted == 0
@@ -546,8 +545,7 @@ class TestIngestGeojson:
         mock_cursor.rowcount = 2
 
         inserted, failed = engine.ingest_geojson(
-            filepath=geojson_with_nulls,
-            target_table="public.parks",
+            filepath=geojson_with_nulls, target_table="parks", target_schema="public"
         )
 
         assert len(failed) == 1
@@ -565,8 +563,7 @@ class TestIngestGeojson:
         mock_cursor.copy_expert.side_effect = capture_copy
 
         engine.ingest_geojson(
-            filepath=geojson_with_nulls,
-            target_table="public.parks",
+            filepath=geojson_with_nulls, target_table="parks", target_schema="public"
         )
 
         combined = "".join(copied_data)
@@ -580,7 +577,8 @@ class TestIngestGeojson:
 
         engine.ingest_geojson(
             filepath=sample_geojson,
-            target_table="public.parks",
+            target_table="parks",
+            target_schema="public",
             batch_size=2,
         )
 
@@ -590,7 +588,8 @@ class TestIngestGeojson:
     def test_conflict_do_nothing(self, sample_geojson, engine, mock_cursor):
         engine.ingest_geojson(
             filepath=sample_geojson,
-            target_table="public.parks",
+            target_table="parks",
+            target_schema="public",
             conflict_column="id",
             conflict_action="NOTHING",
         )
@@ -606,7 +605,8 @@ class TestIngestGeojson:
     def test_conflict_do_update(self, sample_geojson, engine, mock_cursor):
         engine.ingest_geojson(
             filepath=sample_geojson,
-            target_table="public.parks",
+            target_table="parks",
+            target_schema="public",
             conflict_column="id",
             conflict_action="UPDATE",
         )
@@ -624,7 +624,8 @@ class TestIngestGeojson:
     def test_composite_conflict_columns(self, sample_geojson, engine, mock_cursor):
         engine.ingest_geojson(
             filepath=sample_geojson,
-            target_table="public.parks",
+            target_table="parks",
+            target_schema="public",
             conflict_column=["id", "name"],
             conflict_action="NOTHING",
         )
@@ -645,8 +646,7 @@ class TestIngestGeojson:
         mock_cursor.copy_expert.side_effect = capture_copy
 
         engine.ingest_geojson(
-            filepath=sample_geojson,
-            target_table="public.parks",
+            filepath=sample_geojson, target_table="parks", target_schema="public"
         )
 
         combined = "".join(copied_data)
@@ -676,7 +676,7 @@ class TestIngestGeojson:
         path = tmp_path / "special.geojson"
         path.write_text(json.dumps(data))
 
-        engine.ingest_geojson(filepath=path, target_table="public.t")
+        engine.ingest_geojson(filepath=path, target_table="t", target_schema="public")
 
         combined = "".join(copied_data)
         name_field = combined.strip().split("\t")[1]
@@ -696,8 +696,7 @@ class TestIngestGeojson:
         path.write_text(json.dumps(data))
 
         inserted, failed = engine.ingest_geojson(
-            filepath=path,
-            target_table="public.t",
+            filepath=path, target_table="t", target_schema="public"
         )
 
         assert inserted == 0

@@ -182,7 +182,7 @@ class TestFullRefresh:
 
         mock_engine.ingest_csv.return_value = 2
 
-        rows = collector.full_refresh("abcd-1234", "raw_data.test", mode="append")
+        rows = collector.full_refresh("abcd-1234", "test", "raw_data", mode="append")
         assert rows == 2
         mock_engine.ingest_csv.assert_called_once()
 
@@ -199,7 +199,7 @@ class TestFullRefresh:
 
         mock_engine.ingest_csv.return_value = 2
 
-        rows = collector.full_refresh("abcd-1234", "raw_data.test", mode="replace")
+        rows = collector.full_refresh("abcd-1234", "test", "raw_data", mode="replace")
         assert rows == 2
         mock_engine.execute.assert_called()  # TRUNCATE was called
         mock_engine.ingest_csv.assert_called_once()
@@ -222,7 +222,8 @@ class TestFullRefresh:
 
         rows = collector.full_refresh(
             "abcd-1234",
-            "raw_data.geo_test",
+            "geo_test",
+            "raw_data",
             mode="upsert",
             conflict_key=["name"],
         )
@@ -245,7 +246,7 @@ class TestFullRefresh:
 
         mock_engine.ingest_geojson.return_value = (2, [])  # inserted, failed
 
-        collector.full_refresh("abcd-1234", "raw_data.geo_test", mode="replace")
+        collector.full_refresh("abcd-1234", "geo_test", "raw_data", mode="replace")
 
         mock_engine.execute.assert_called_with("TRUNCATE TABLE raw_data.geo_test")
 
@@ -263,7 +264,7 @@ class TestFullRefresh:
             mock_get.return_value = mock_resp
             mock_engine.ingest_csv.return_value = 1
 
-            collector.full_refresh("abcd-1234", "raw_data.t", mode="append")
+            collector.full_refresh("abcd-1234", "t", "raw_data", mode="append")
 
         run = collector.tracker.last_run
         assert run is not None
@@ -303,7 +304,7 @@ class TestIncrementalUpdate:
             conflict_key=["id"],
         )
 
-        total = collector.incremental_update("abcd-1234", "raw_data.test", config)
+        total = collector.incremental_update("abcd-1234", "test", "raw_data", config)
 
         assert total == 3
         assert mock_engine.ingest_batch.call_count == 2
@@ -323,7 +324,8 @@ class TestIncrementalUpdate:
 
         total = collector.incremental_update(
             "abcd-1234",
-            "raw_data.test",
+            "test",
+            "raw_data",
             config,
             high_water_mark_override="2024-06-01",
         )
@@ -349,7 +351,8 @@ class TestIncrementalUpdate:
 
         collector.incremental_update(
             "abcd-1234",
-            "raw_data.test",
+            "test",
+            "raw_data",
             config,
             high_water_mark_override="2024-01-01",
         )
@@ -377,7 +380,7 @@ class TestIncrementalUpdate:
             conflict_key=["id"],
         )
 
-        collector.incremental_update("abcd-1234", "raw_data.test", config)
+        collector.incremental_update("abcd-1234", "test", "raw_data", config)
 
         run = collector.tracker.last_run
         assert run.high_water_mark == "2024-03-15"
@@ -396,7 +399,7 @@ class TestIncrementalUpdate:
         )
 
         with pytest.raises(RuntimeError, match="API down"):
-            collector.incremental_update("abcd-1234", "raw_data.test", config)
+            collector.incremental_update("abcd-1234", "test", "raw_data", config)
 
         run = collector.tracker.last_run
         assert run.status == "failed"
