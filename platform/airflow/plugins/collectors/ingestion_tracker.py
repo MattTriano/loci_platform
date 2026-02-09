@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -21,7 +23,7 @@ class IngestionRun:
     high_water_mark: Optional[str] = None
     status: str = "running"
     started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     error: Optional[str] = None
 
     def __enter__(self) -> "IngestionRun":
@@ -29,7 +31,7 @@ class IngestionRun:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        self.finished_at = datetime.now(timezone.utc)
+        self.completed_at = datetime.now(timezone.utc)
         if exc_type is not None:
             self.status = "failed"
             self.error = str(exc_val)
@@ -55,6 +57,7 @@ class IngestionTracker:
         self._runs: list[IngestionRun] = []
         self._hwm_cache: dict[tuple[str, str], str] = {}
 
+    @contextmanager
     def track(
         self,
         source: str,
@@ -62,7 +65,7 @@ class IngestionTracker:
         target_table: str,
         metadata: dict[str, Any] | None = None,
     ) -> IngestionRun:
-        """Create and return an IngestionRun context manager."""
+        """Create, yield, and persist an IngestionRun."""
         run = IngestionRun(
             source=source,
             dataset_id=dataset_id,
@@ -70,7 +73,42 @@ class IngestionTracker:
             metadata=metadata or {},
         )
         self._runs.append(run)
-        return run
+        with run:
+            yield run
+        self._persist_run(run)
+
+    def _persist_run(self, run: IngestionRun) -> None:
+        if self.engine is None:
+            return
+        try:
+            self.engine.execute(
+                f"""
+                INSERT INTO {self.TABLE_NAME}
+                    (source, dataset_id, target_table, status,
+                     rows_ingested, high_water_mark, metadata,
+                     started_at, completed_at, error_message)
+                VALUES
+                    (%(source)s, %(dataset_id)s, %(target_table)s, %(status)s,
+                     %(rows_ingested)s, %(high_water_mark)s, %(metadata)s,
+                     %(started_at)s, %(completed_at)s, %(error_message)s)
+                """,
+                {
+                    "source": run.source,
+                    "dataset_id": run.dataset_id,
+                    "target_table": run.target_table,
+                    "status": run.status,
+                    "rows_ingested": run.rows_ingested,
+                    "high_water_mark": run.high_water_mark,
+                    "metadata": json.dumps(run.metadata),
+                    "started_at": run.started_at,
+                    "completed_at": run.completed_at,
+                    "error_message": run.error,
+                },
+            )
+            if run.high_water_mark:
+                self._hwm_cache[(run.source, run.dataset_id)] = run.high_water_mark
+        except Exception as e:
+            self.logger.error("Failed to persist ingestion run: %s", e)
 
     def get_high_water_mark(self, source: str, dataset_id: str) -> Optional[str]:
         """Look up the last successful high-water mark for a dataset."""
@@ -90,7 +128,7 @@ class IngestionTracker:
                   AND dataset_id = %(dataset_id)s
                   AND status = 'success'
                   AND high_water_mark IS NOT NULL
-                ORDER BY finished_at DESC
+                ORDER BY completed_at DESC
                 LIMIT 1
                 """,
                 {"source": source, "dataset_id": dataset_id},

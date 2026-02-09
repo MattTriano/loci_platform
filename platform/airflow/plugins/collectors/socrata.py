@@ -16,19 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class SocrataClient:
-    """
-    Executes SoQL queries against a Socrata domain and yields results.
-
-    Unlike the previous SocrataIngestor, this class:
-      - Has no PostgresEngine dependency (pure API client)
-      - Does not require domain at init (accepts it per-call)
-      - Focuses on two operations: paginated iteration and one-shot queries
-    """
+    """Executes SoQL queries against a Socrata domain and yields results."""
 
     def __init__(
         self,
         app_token: Optional[str] = None,
-        page_size: int = 10_000,
+        page_size: int = 10000,
         request_timeout: int = 120,
     ) -> None:
         self.app_token = app_token
@@ -47,7 +40,8 @@ class SocrataClient:
         dataset_id: str,
         columns: list[str] | None = None,
         where: str | None = None,
-        order_by: str = ":id",
+        order_by: str = ":updated_at, :id",
+        include_system_fields: bool = False,
     ) -> Iterator[list[dict[str, Any]]]:
         """
         Yield pages of results from a Socrata dataset until exhausted.
@@ -71,10 +65,12 @@ class SocrataClient:
             }
             if columns:
                 params["$select"] = ", ".join(columns)
+            elif include_system_fields:
+                params["$select"] = ":*, *"
             if where:
                 params["$where"] = where
 
-            batch = self._request(domain, dataset_id, params)
+            batch = self._request(domain, dataset_id, params, include_system_fields)
             if not batch:
                 break
 
@@ -92,24 +88,33 @@ class SocrataClient:
         where: str | None = None,
         order: str | None = None,
         limit: int | None = None,
+        include_system_fields: bool = False,
     ) -> list[dict[str, Any]]:
         """Execute a one-shot SoQL query and return the JSON result."""
         params: dict[str, str] = {}
         if select:
             params["$select"] = select
+        elif include_system_fields:
+            params["$select"] = ":*, *"
         if where:
             params["$where"] = where
         if order:
             params["$order"] = order
         if limit is not None:
             params["$limit"] = str(limit)
-        return self._request(domain, dataset_id, params)
+        return self._request(domain, dataset_id, params, include_system_fields)
 
     def _request(
-        self, domain: str, dataset_id: str, params: dict[str, str]
+        self,
+        domain: str,
+        dataset_id: str,
+        params: dict[str, str],
+        include_system_fields: bool = False,
     ) -> list[dict[str, Any]]:
         """Make a single request to the Socrata JSON endpoint."""
         url = f"https://{domain}/resource/{dataset_id}.json"
+        if include_system_fields and "$select" not in params:
+            params["$$exclude_system_fields"] = "false"
         self.logger.debug("GET %s  params=%s", url, params)
 
         resp = self._session.get(url, params=params, timeout=self.request_timeout)
@@ -143,7 +148,7 @@ class SocrataTableMetadata:
     """Fetches Socrata dataset metadata and generates PostgreSQL DDL."""
 
     CATALOG_API = "http://api.us.socrata.com/api/catalog/v1"
-    VIEWS_API_TEMPLATE = "https://{domain}/api/views/{table_id}.json"
+    VIEWS_API_TEMPLATE = "https://{domain}/api/views/{dataset_id}.json"
     # Socrata datatype → PostgreSQL type mapping
     # Covers SODA 2.0 and 2.1 types, plus deprecated types that appear in older datasets
     SOCRATA_TO_PG_TYPE: dict[str, str] = {
@@ -174,8 +179,8 @@ class SocrataTableMetadata:
     }
     DEFAULT_PG_TYPE = "text"
 
-    def __init__(self, table_id: str) -> None:
-        self.table_id = table_id
+    def __init__(self, dataset_id: str) -> None:
+        self.dataset_id = dataset_id
         self.logger = logging.getLogger("socrata_table_metadata")
 
         self._catalog_metadata: Optional[dict] = None
@@ -198,23 +203,25 @@ class SocrataTableMetadata:
     def domain(self) -> str:
         _domain = self.catalog_metadata.get("metadata", {}).get("domain")
         if not _domain:
-            raise ValueError(f"Could not determine domain for {self.table_id}")
+            raise ValueError(f"Could not determine domain for {self.dataset_id}")
         return _domain
 
     def _fetch_catalog_metadata(self) -> dict:
-        url = f"{self.CATALOG_API}?ids={self.table_id}"
-        self.logger.info("Fetching catalog metadata for %s", self.table_id)
+        url = f"{self.CATALOG_API}?ids={self.dataset_id}"
+        self.logger.info("Fetching catalog metadata for %s", self.dataset_id)
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         results = resp.json().get("results", [])
         if not results:
-            raise ValueError(f"No results found for table_id '{self.table_id}'")
+            raise ValueError(f"No results found for dataset_id '{self.dataset_id}'")
         return results[0]
 
     def _fetch_views_metadata(self) -> dict:
-        url = self.VIEWS_API_TEMPLATE.format(domain=self.domain, table_id=self.table_id)
+        url = self.VIEWS_API_TEMPLATE.format(
+            domain=self.domain, dataset_id=self.dataset_id
+        )
         self.logger.info(
-            "Fetching views metadata for %s from %s", self.table_id, self.domain
+            "Fetching views metadata for %s from %s", self.dataset_id, self.domain
         )
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
@@ -231,7 +238,7 @@ class SocrataTableMetadata:
         if not raw_columns:
             self.logger.warning(
                 "No columns in views API for %s, falling back to catalog API",
-                self.table_id,
+                self.dataset_id,
             )
             return self._parse_columns_from_catalog()
 
@@ -254,7 +261,7 @@ class SocrataTableMetadata:
                 )
             )
 
-        self.logger.info("Parsed %d columns for %s", len(parsed), self.table_id)
+        self.logger.info("Parsed %d columns for %s", len(parsed), self.dataset_id)
         return parsed
 
     def _parse_columns_from_catalog(self) -> list[SocrataColumnInfo]:
@@ -266,7 +273,7 @@ class SocrataTableMetadata:
 
         if not field_names:
             raise ValueError(
-                f"No column metadata found for table_id '{self.table_id}' "
+                f"No column metadata found for dataset_id '{self.dataset_id}' "
                 f"in either views or catalog API"
             )
 
@@ -286,7 +293,7 @@ class SocrataTableMetadata:
             )
 
         self.logger.info(
-            "Parsed %d columns from catalog API for %s", len(parsed), self.table_id
+            "Parsed %d columns from catalog API for %s", len(parsed), self.dataset_id
         )
         return parsed
 
@@ -360,7 +367,7 @@ class SocrataTableMetadata:
 
     @property
     def dataset_name(self) -> str:
-        return self.resource_metadata.get("name", self.table_id)
+        return self.resource_metadata.get("name", self.dataset_id)
 
     @cached_property
     def has_geospatial_columns(self) -> bool:
@@ -407,9 +414,9 @@ class SocrataTableMetadata:
     @property
     def data_download_url(self) -> str:
         if self.is_geospatial:
-            return f"https://{self.domain}/api/geospatial/{self.table_id}?method=export&format={self.download_format}"
+            return f"https://{self.domain}/api/geospatial/{self.dataset_id}?method=export&format={self.download_format}"
         else:
-            return f"https://{self.domain}/api/views/{self.table_id}/rows.{self.download_format}?accessType=DOWNLOAD"
+            return f"https://{self.domain}/api/views/{self.dataset_id}/rows.{self.download_format}?accessType=DOWNLOAD"
 
     def _default_table_name(self) -> str:
         name = self.dataset_name.lower()
@@ -460,6 +467,12 @@ class SocrataCollector:
     """
 
     SOURCE_NAME = "socrata"
+    SYSTEM_FIELD_RENAMES = {
+        ":id": "socrata_id",
+        ":updated_at": "socrata_updated_at",
+        ":created_at": "socrata_created_at",
+        ":version": "socrata_version",
+    }
 
     def __init__(
         self,
@@ -562,7 +575,7 @@ class SocrataCollector:
     def _download_file(self, meta: SocrataTableMetadata) -> Path:
         url = meta.data_download_url
         suffix = ".geojson" if meta.is_geospatial else ".csv"
-        filename = f"{meta.table_id}{suffix}"
+        filename = f"{meta.dataset_id}{suffix}"
         filepath = self.download_dir / filename
 
         resp = requests.get(url, stream=True, timeout=300)
@@ -652,6 +665,31 @@ class SocrataCollector:
 
         return staged_rows
 
+    def full_refresh_via_api(
+        self,
+        dataset_id: str,
+        target_table: str,
+        target_schema: str = "raw_data",
+        conflict_key: list[str] | None = None,
+    ) -> int:
+        """Full refresh using paginated SODA API (includes system fields)."""
+        return self.incremental_update(
+            dataset_id=dataset_id,
+            target_table=target_table,
+            target_schema=target_schema,
+            config=IncrementalConfig(
+                incremental_column=":updated_at",
+                conflict_key=None,
+            ),
+            high_water_mark_override="",  # no filter, fetch everything
+        )
+
+    def _rename_system_fields(self, rows: list[dict]) -> list[dict]:
+        return [
+            {self.SYSTEM_FIELD_RENAMES.get(k, k): v for k, v in row.items()}
+            for row in rows
+        ]
+
     def incremental_update(
         self,
         dataset_id: str,
@@ -664,33 +702,36 @@ class SocrataCollector:
         Run an incremental paginated ingest with automatic high-water mark
         management and idempotent upsert.
 
-        Args:
-            dataset_id:               Socrata 4x4 identifier.
-            target_table:             Table name (e.g. "permits").
-            target_schema:            Schema name (e.g. "raw_data").
-            config:                   IncrementalConfig.
-            high_water_mark_override: Use instead of stored HWM.
-
-        Returns:
-            Total rows ingested.
+        The high_water_mark is stored as "value|id" to support keyset
+        pagination with a tiebreaker, e.g. "2025-02-01T12:34:56.000|12345".
         """
-        hwm = high_water_mark_override or self.tracker.get_high_water_mark(
+        raw_hwm = high_water_mark_override or self.tracker.get_high_water_mark(
             self.SOURCE_NAME, dataset_id
         )
-        if hwm:
-            self.logger.info("Resuming from high_water_mark: %s", hwm)
+
+        hwm_value, hwm_id = None, None
+        if raw_hwm and "|" in raw_hwm:
+            hwm_value, hwm_id = raw_hwm.rsplit("|", 1)
+        elif raw_hwm:
+            hwm_value = raw_hwm
+
+        if hwm_value:
+            self.logger.info(
+                "Resuming from high_water_mark: %s (id: %s)", hwm_value, hwm_id
+            )
         else:
             self.logger.info("No prior high_water_mark — full incremental load")
 
         meta = self._get_metadata(dataset_id)
         domain = meta.domain
         fqn = f"{target_schema}.{target_table}"
+        inc_col = config.incremental_column
 
         run_metadata = {
             "mode": "incremental",
-            "incremental_column": config.incremental_column,
+            "incremental_column": inc_col,
             "conflict_key": config.conflict_key,
-            "prior_high_water_mark": hwm,
+            "prior_high_water_mark": raw_hwm,
             "domain": domain,
         }
 
@@ -698,16 +739,26 @@ class SocrataCollector:
             self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
         ) as run:
             where_parts = []
-            if hwm:
-                where_parts.append(f"{config.incremental_column} > '{hwm}'")
+            if hwm_value and hwm_id:
+                where_parts.append(
+                    f"({inc_col} = '{hwm_value}' AND :id > '{hwm_id}') "
+                    f"OR ({inc_col} > '{hwm_value}')"
+                )
+            elif hwm_value:
+                where_parts.append(f"{inc_col} > '{hwm_value}'")
             if config.where:
                 where_parts.append(config.where)
 
-            combined_where = " AND ".join(where_parts) if where_parts else None
-            order_by = config.order_by or f"{config.incremental_column}, :id"
+            combined_where = (
+                " AND ".join(f"({p})" for p in where_parts) if where_parts else None
+            )
+
+            order_by = config.order_by or f"{inc_col}, :id"
 
             total_rows = 0
-            max_hwm = hwm
+            max_hwm = hwm_value
+            max_hwm_id = hwm_id
+            renamed_inc_col = self.SYSTEM_FIELD_RENAMES.get(inc_col, inc_col)
 
             for page_num, batch in enumerate(
                 self.client.paginate(
@@ -716,42 +767,163 @@ class SocrataCollector:
                     columns=config.columns,
                     where=combined_where,
                     order_by=order_by,
+                    include_system_fields=True,
                 ),
                 start=1,
             ):
+                renamed_batch = self._rename_system_fields(batch)
                 rows = self.engine.ingest_batch(
-                    batch,
+                    renamed_batch,
                     target_table,
-                    table_schema=target_schema,
-                    conflict_column=config.conflict_key,
-                    conflict_action="UPDATE",
+                    target_schema=target_schema,
+                    conflict_column=None,
+                    conflict_action="NOTHING",
                 )
                 total_rows += rows
 
-                batch_max = self._extract_max_hwm(batch, config.incremental_column)
-                if batch_max and (max_hwm is None or batch_max > max_hwm):
-                    max_hwm = batch_max
+                batch_hwm, batch_id = self._extract_max_hwm(
+                    renamed_batch, renamed_inc_col
+                )
+                if batch_hwm and (
+                    max_hwm is None
+                    or batch_hwm > max_hwm
+                    or (batch_hwm == max_hwm and batch_id > (max_hwm_id or ""))
+                ):
+                    max_hwm = batch_hwm
+                    max_hwm_id = batch_id
 
                 self.logger.info(
-                    "Page %d: fetched %d, upserted %d (total: %d, hwm: %s)",
+                    "Page %d: fetched %d, upserted %d (total: %d, hwm: %s|%s)",
                     page_num,
-                    len(batch),
+                    len(renamed_batch),
                     rows,
                     total_rows,
                     max_hwm,
+                    max_hwm_id,
                 )
 
             run.rows_ingested = total_rows
-            run.high_water_mark = max_hwm
+            run.high_water_mark = (
+                f"{max_hwm}|{max_hwm_id}" if max_hwm and max_hwm_id else max_hwm
+            )
 
         return total_rows
 
     @staticmethod
-    def _extract_max_hwm(batch: list[dict[str, Any]], column: str) -> Optional[str]:
-        values = [row[column] for row in batch if row.get(column) is not None]
+    def _extract_max_hwm(
+        batch: list[dict[str, Any]], column: str
+    ) -> tuple[str | None, str | None]:
+        """Return (max_column_value, id_at_max) from a batch."""
+        values = [
+            (row[column], str(row.get("socrata_id", "")))
+            for row in batch
+            if row.get(column) is not None
+        ]
         if not values:
-            return None
-        return str(max(values))
+            return None, None
+        best = max(values, key=lambda x: (x[0], x[1]))
+        return str(best[0]), best[1]
+
+    # def incremental_update(
+    #     self,
+    #     dataset_id: str,
+    #     target_table: str,
+    #     target_schema: str = "raw_data",
+    #     config: IncrementalConfig | None = None,
+    #     high_water_mark_override: str | None = None,
+    # ) -> int:
+    #     """
+    #     Run an incremental paginated ingest with automatic high-water mark
+    #     management and idempotent upsert.
+
+    #     Args:
+    #         dataset_id:               Socrata 4x4 identifier.
+    #         target_table:             Table name (e.g. "permits").
+    #         target_schema:            Schema name (e.g. "raw_data").
+    #         config:                   IncrementalConfig.
+    #         high_water_mark_override: Use instead of stored HWM.
+
+    #     Returns:
+    #         Total rows ingested.
+    #     """
+    #     hwm = high_water_mark_override or self.tracker.get_high_water_mark(
+    #         self.SOURCE_NAME, dataset_id
+    #     )
+    #     if hwm:
+    #         self.logger.info("Resuming from high_water_mark: %s", hwm)
+    #     else:
+    #         self.logger.info("No prior high_water_mark — full incremental load")
+
+    #     meta = self._get_metadata(dataset_id)
+    #     domain = meta.domain
+    #     fqn = f"{target_schema}.{target_table}"
+
+    #     run_metadata = {
+    #         "mode": "incremental",
+    #         "incremental_column": config.incremental_column,
+    #         "conflict_key": config.conflict_key,
+    #         "prior_high_water_mark": hwm,
+    #         "domain": domain,
+    #     }
+
+    #     with self.tracker.track(
+    #         self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
+    #     ) as run:
+    #         where_parts = []
+    #         if hwm:
+    #             where_parts.append(f"{config.incremental_column} > '{hwm}'")
+    #         if config.where:
+    #             where_parts.append(config.where)
+
+    #         combined_where = " AND ".join(where_parts) if where_parts else None
+    #         order_by = config.order_by or f"{config.incremental_column}, :id"
+
+    #         total_rows = 0
+    #         max_hwm = hwm
+
+    #         for page_num, batch in enumerate(
+    #             self.client.paginate(
+    #                 domain=domain,
+    #                 dataset_id=dataset_id,
+    #                 columns=config.columns,
+    #                 where=combined_where,
+    #                 order_by=order_by,
+    #             ),
+    #             start=1,
+    #         ):
+    #             rows = self.engine.ingest_batch(
+    #                 batch,
+    #                 target_table,
+    #                 table_schema=target_schema,
+    #                 conflict_column=config.conflict_key,
+    #                 conflict_action="UPDATE",
+    #             )
+    #             total_rows += rows
+
+    #             batch_max = self._extract_max_hwm(batch, config.incremental_column)
+    #             if batch_max and (max_hwm is None or batch_max > max_hwm):
+    #                 max_hwm = batch_max
+
+    #             self.logger.info(
+    #                 "Page %d: fetched %d, upserted %d (total: %d, hwm: %s)",
+    #                 page_num,
+    #                 len(batch),
+    #                 rows,
+    #                 total_rows,
+    #                 max_hwm,
+    #             )
+
+    #         run.rows_ingested = total_rows
+    #         run.high_water_mark = max_hwm
+
+    #     return total_rows
+
+    # @staticmethod
+    # def _extract_max_hwm(batch: list[dict[str, Any]], column: str) -> Optional[str]:
+    #     values = [row[column] for row in batch if row.get(column) is not None]
+    #     if not values:
+    #         return None
+    #     return str(max(values))
 
     # ------------------------------------------------------------------
     # Convenience
