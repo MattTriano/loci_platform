@@ -24,15 +24,17 @@ def dbt_build_dag():
             capture_output=True,
             text=True,
         )
-        
+
         print("=== STDOUT ===")
         print(result.stdout)
         print("=== STDERR ===")
         print(result.stderr)
-        
+
         if result.returncode != 0:
-            raise Exception(f"dbt build failed with exit code {result.returncode}\n{result.stderr}\n{result.stdout}")
-        
+            raise Exception(
+                f"dbt build failed with exit code {result.returncode}\n{result.stderr}\n{result.stdout}"
+            )
+
         return result.stdout
 
     dbt_build()
