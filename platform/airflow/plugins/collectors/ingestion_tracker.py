@@ -83,11 +83,11 @@ class IngestionTracker:
         try:
             self.engine.execute(
                 f"""
-                INSERT INTO {self.TABLE_NAME}
+                insert into {self.TABLE_NAME}
                     (source, dataset_id, target_table, status,
                      rows_ingested, high_water_mark, metadata,
                      started_at, completed_at, error_message)
-                VALUES
+                values
                     (%(source)s, %(dataset_id)s, %(target_table)s, %(status)s,
                      %(rows_ingested)s, %(high_water_mark)s, %(metadata)s,
                      %(started_at)s, %(completed_at)s, %(error_message)s)
@@ -122,14 +122,15 @@ class IngestionTracker:
         try:
             df = self.engine.query(
                 f"""
-                SELECT high_water_mark
-                FROM {self.TABLE_NAME}
-                WHERE source = %(source)s
-                  AND dataset_id = %(dataset_id)s
-                  AND status = 'success'
-                  AND high_water_mark IS NOT NULL
-                ORDER BY completed_at DESC
-                LIMIT 1
+                select high_water_mark
+                from {self.TABLE_NAME}
+                where
+                    source = %(source)s
+                    and dataset_id = %(dataset_id)s
+                    and status = 'success'
+                    and high_water_mark is not null
+                order by completed_at desc
+                limit 1
                 """,
                 {"source": source, "dataset_id": dataset_id},
             )
@@ -149,168 +150,3 @@ class IngestionTracker:
     @property
     def last_run(self) -> Optional[IngestionRun]:
         return self._runs[-1] if self._runs else None
-
-
-# @dataclass
-# class IngestionRun:
-#     """Captures the state of a single ingestion run in progress."""
-
-#     source: str
-#     dataset: str
-#     target_table: str
-#     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-#     rows_ingested: int = 0
-#     high_water_mark: Optional[str] = None
-#     status: str = "running"
-#     error_message: Optional[str] = None
-#     metadata: Optional[dict[str, Any]] = None
-
-# class IngestionTracker:
-#     """
-#     Logs ingestion runs to meta.ingest_log and provides high-water mark lookups.
-
-#     Designed to be injected into any collector class. Keeps no collection logic —
-#     it only knows about tracking, so collectors stay focused on extraction.
-
-#     Usage:
-#         tracker = IngestionTracker(engine)
-
-#         with tracker.track("socrata", "ijzp-q8t2", "raw_data.crimes") as run:
-#             # ... do work, updating run.rows_ingested as you go ...
-#             run.rows_ingested += batch_size
-#             run.high_water_mark = last_seen_value
-
-#         # On normal exit: logs status='success'
-#         # On exception:   logs status='failed' with error details, then re-raises
-#     """
-
-#     LOG_TABLE = "meta.ingest_log"
-
-#     def __init__(self, engine: Any) -> None:
-#         self.engine = engine
-#         self.logger = logging.getLogger("ingestion_tracker")
-
-#     @contextmanager
-#     def track(
-#         self,
-#         source: str,
-#         dataset: str,
-#         target_table: str,
-#         metadata: dict[str, Any] | None = None,
-#     ) -> Iterator[IngestionRun]:
-#         """
-#         Context manager that wraps an ingestion run.
-
-#         Yields an IngestionRun whose fields the caller updates during processing.
-#         On exit, writes a row to meta.ingest_log with final state.
-#         """
-#         run = IngestionRun(
-#             source=source,
-#             dataset=dataset,
-#             target_table=target_table,
-#             metadata=metadata,
-#         )
-#         self.logger.info(
-#             "Starting ingestion run: source=%s dataset=%s target=%s",
-#             source,
-#             dataset,
-#             target_table,
-#         )
-
-#         try:
-#             yield run
-#             run.status = "success"
-#         except Exception as exc:
-#             run.status = "failed"
-#             run.error_message = f"{type(exc).__name__}: {exc}"
-#             self.logger.error(
-#                 "Ingestion run failed for %s/%s: %s",
-#                 source,
-#                 dataset,
-#                 run.error_message,
-#             )
-#             raise
-#         finally:
-#             self._log_run(run)
-
-#     def get_high_water_mark(
-#         self,
-#         source: str,
-#         dataset: str,
-#     ) -> Optional[str]:
-#         """
-#         Return the most recent successful high_water_mark for a source/dataset pair,
-#         or None if no successful run exists.
-#         """
-#         sql = f"""
-#             SELECT high_water_mark
-#             FROM {self.LOG_TABLE}
-#             WHERE source = %(source)s
-#               AND dataset = %(dataset)s
-#               AND status = 'success'
-#               AND high_water_mark IS NOT NULL
-#             ORDER BY completed_at DESC
-#             LIMIT 1
-#         """
-#         # engine.query returns a DataFrame
-#         df = self.engine.query(sql, params={"source": source, "dataset": dataset})
-#         if df.empty:
-#             return None
-#         return df.iloc[0]["high_water_mark"]
-
-#     def get_run_history(
-#         self,
-#         source: str | None = None,
-#         dataset: str | None = None,
-#         limit: int = 20,
-#     ) -> Any:
-#         """Return recent ingestion runs as a DataFrame, optionally filtered."""
-#         conditions = ["1=1"]
-#         params: dict[str, Any] = {"limit": limit}
-
-#         if source:
-#             conditions.append("source = %(source)s")
-#             params["source"] = source
-#         if dataset:
-#             conditions.append("dataset = %(dataset)s")
-#             params["dataset"] = dataset
-
-#         where = " AND ".join(conditions)
-#         sql = f"""
-#             SELECT id, source, dataset, target_table, rows_ingested,
-#                    high_water_mark, started_at, completed_at, status, error_message
-#             FROM {self.LOG_TABLE}
-#             WHERE {where}
-#             ORDER BY completed_at DESC
-#             LIMIT %(limit)s
-#         """
-#         return self.engine.query(sql, params=params)
-
-#     def _log_run(self, run: IngestionRun) -> None:
-#         """Write a completed run to the ingest_log table."""
-#         completed_at = datetime.now(timezone.utc)
-#         row = {
-#             "source": run.source,
-#             "dataset": run.dataset,
-#             "target_table": run.target_table,
-#             "rows_ingested": run.rows_ingested,
-#             "high_water_mark": run.high_water_mark,
-#             "started_at": run.started_at.isoformat(),
-#             "completed_at": completed_at.isoformat(),
-#             "status": run.status,
-#             "error_message": run.error_message,
-#         }
-#         if run.metadata:
-#             import json
-#             row["metadata"] = json.dumps(run.metadata)
-
-#         self.engine.ingest_batch([row], self.LOG_TABLE)
-#         self.logger.info(
-#             "Logged run: %s/%s → %s | %s | %d rows | hwm=%s",
-#             run.source,
-#             run.dataset,
-#             run.target_table,
-#             run.status,
-#             run.rows_ingested,
-#             run.high_water_mark,
-#         )

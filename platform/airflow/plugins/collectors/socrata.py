@@ -457,13 +457,6 @@ class IncrementalConfig:
 class SocrataCollector:
     """
     High-level orchestrator for Socrata dataset ingestion.
-
-    Changes from original:
-      - Automatically creates an IngestionTracker if none is provided.
-      - Renamed methods: full_refresh() and incremental_update().
-      - Geospatial files are loaded via _load_geojson_features() which
-        reads GeoJSON and calls engine.ingest_batch() instead of a
-        non-existent engine.ingest_geospatial() method.
     """
 
     SOURCE_NAME = "socrata"
@@ -506,164 +499,164 @@ class SocrataCollector:
             self._metadata_cache[dataset_id] = SocrataTableMetadata(dataset_id)
         return self._metadata_cache[dataset_id]
 
-    def full_refresh(
-        self,
-        dataset_id: str,
-        target_table: str,
-        target_schema: str = "raw_data",
-        conflict_key: list[str] | None = None,
-        mode: str = "upsert",
-    ) -> int:
-        """
-        Download the full dataset export and load it into PostgreSQL.
+    # def full_refresh(
+    #     self,
+    #     dataset_id: str,
+    #     target_table: str,
+    #     target_schema: str = "raw_data",
+    #     conflict_key: list[str] | None = None,
+    #     mode: str = "upsert",
+    # ) -> int:
+    #     """
+    #     Download the full dataset export and load it into PostgreSQL.
 
-        This is a full table refresh — the entire dataset is downloaded and
-        loaded in one shot.
+    #     This is a full table refresh — the entire dataset is downloaded and
+    #     loaded in one shot.
 
-        Args:
-            dataset_id:    Socrata 4x4 identifier.
-            target_table:  Table name (e.g. "permits").
-            target_schema: Schema name (e.g. "raw_data").
-            conflict_key:  Columns for ON CONFLICT upsert.
-            mode:          "upsert" | "replace" | "append"
+    #     Args:
+    #         dataset_id:    Socrata 4x4 identifier.
+    #         target_table:  Table name (e.g. "permits").
+    #         target_schema: Schema name (e.g. "raw_data").
+    #         conflict_key:  Columns for ON CONFLICT upsert.
+    #         mode:          "upsert" | "replace" | "append"
 
-        Returns:
-            Number of rows ingested.
-        """
-        meta = self._get_metadata(dataset_id)
-        fqn = f"{target_schema}.{target_table}"
-        run_metadata = {
-            "mode": mode,
-            "download_format": meta.download_format,
-            "download_url": meta.data_download_url,
-            "domain": meta.domain,
-        }
+    #     Returns:
+    #         Number of rows ingested.
+    #     """
+    #     meta = self._get_metadata(dataset_id)
+    #     fqn = f"{target_schema}.{target_table}"
+    #     run_metadata = {
+    #         "mode": mode,
+    #         "download_format": meta.download_format,
+    #         "download_url": meta.data_download_url,
+    #         "domain": meta.domain,
+    #     }
 
-        with self.tracker.track(
-            self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
-        ) as run:
-            filepath = self._download_file(meta)
-            self.logger.info("Downloaded %s to %s", dataset_id, filepath)
+    #     with self.tracker.track(
+    #         self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
+    #     ) as run:
+    #         filepath = self._download_file(meta)
+    #         self.logger.info("Downloaded %s to %s", dataset_id, filepath)
 
-            if meta.is_geospatial:
-                if mode == "replace":
-                    self.engine.execute(f"TRUNCATE TABLE {fqn}")
-                rows, failed = self.engine.ingest_geojson(
-                    filepath=filepath,
-                    target_table=target_table,
-                    target_schema=target_schema,
-                    conflict_column=conflict_key if mode == "upsert" else None,
-                )
-            else:
-                rows = self._ingest_csv_with_conflict_handling(
-                    filepath=filepath,
-                    target_table=target_table,
-                    target_schema=target_schema,
-                    conflict_key=conflict_key,
-                    mode=mode,
-                )
+    #         if meta.is_geospatial:
+    #             if mode == "replace":
+    #                 self.engine.execute(f"TRUNCATE TABLE {fqn}")
+    #             rows, failed = self.engine.ingest_geojson(
+    #                 filepath=filepath,
+    #                 target_table=target_table,
+    #                 target_schema=target_schema,
+    #                 conflict_column=conflict_key if mode == "upsert" else None,
+    #             )
+    #         else:
+    #             rows = self._ingest_csv_with_conflict_handling(
+    #                 filepath=filepath,
+    #                 target_table=target_table,
+    #                 target_schema=target_schema,
+    #                 conflict_key=conflict_key,
+    #                 mode=mode,
+    #             )
 
-            run.rows_ingested = rows
+    #         run.rows_ingested = rows
 
-            try:
-                filepath.unlink()
-            except OSError:
-                pass
+    #         try:
+    #             filepath.unlink()
+    #         except OSError:
+    #             pass
 
-        return rows
+    #     return rows
 
-    def _download_file(self, meta: SocrataTableMetadata) -> Path:
-        url = meta.data_download_url
-        suffix = ".geojson" if meta.is_geospatial else ".csv"
-        filename = f"{meta.dataset_id}{suffix}"
-        filepath = self.download_dir / filename
+    # def _download_file(self, meta: SocrataTableMetadata) -> Path:
+    #     url = meta.data_download_url
+    #     suffix = ".geojson" if meta.is_geospatial else ".csv"
+    #     filename = f"{meta.dataset_id}{suffix}"
+    #     filepath = self.download_dir / filename
 
-        resp = requests.get(url, stream=True, timeout=300)
-        resp.raise_for_status()
+    #     resp = requests.get(url, stream=True, timeout=300)
+    #     resp.raise_for_status()
 
-        with open(filepath, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                f.write(chunk)
+    #     with open(filepath, "wb") as f:
+    #         for chunk in resp.iter_content(chunk_size=8192):
+    #             f.write(chunk)
 
-        return filepath
+    #     return filepath
 
-    def _ingest_csv_with_conflict_handling(
-        self,
-        filepath: Path,
-        target_table: str,
-        target_schema: str,
-        conflict_key: list[str] | None,
-        mode: str,
-    ) -> int:
-        fqn = f"{target_schema}.{target_table}"
+    # def _ingest_csv_with_conflict_handling(
+    #     self,
+    #     filepath: Path,
+    #     target_table: str,
+    #     target_schema: str,
+    #     conflict_key: list[str] | None,
+    #     mode: str,
+    # ) -> int:
+    #     fqn = f"{target_schema}.{target_table}"
 
-        if mode == "replace":
-            self.engine.execute(f"TRUNCATE TABLE {fqn}")
-            return self.engine.ingest_csv(filepath, target_table, target_schema)
+    #     if mode == "replace":
+    #         self.engine.execute(f"TRUNCATE TABLE {fqn}")
+    #         return self.engine.ingest_csv(filepath, target_table, target_schema)
 
-        if mode == "append" or conflict_key is None:
-            return self.engine.ingest_csv(filepath, target_table, target_schema)
+    #     if mode == "append" or conflict_key is None:
+    #         return self.engine.ingest_csv(filepath, target_table, target_schema)
 
-        return self._upsert_from_csv(
-            filepath, target_table, target_schema, conflict_key
-        )
+    #     return self._upsert_from_csv(
+    #         filepath, target_table, target_schema, conflict_key
+    #     )
 
-    def _upsert_from_csv(
-        self,
-        filepath: Path,
-        target_table: str,
-        target_schema: str,
-        conflict_key: list[str],
-    ) -> int:
-        fqn = f"{target_schema}.{target_table}"
-        staging_table = f"{target_table}_staging"
+    # def _upsert_from_csv(
+    #     self,
+    #     filepath: Path,
+    #     target_table: str,
+    #     target_schema: str,
+    #     conflict_key: list[str],
+    # ) -> int:
+    #     fqn = f"{target_schema}.{target_table}"
+    #     staging_table = f"{target_table}_staging"
 
-        col_query = f"""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = '{target_schema}'
-              AND table_name = '{target_table}'
-              AND column_name != 'ingested_at'
-            ORDER BY ordinal_position
-        """
-        col_df = self.engine.query(col_query)
-        all_columns = col_df["column_name"].tolist()
+    #     col_query = f"""
+    #         SELECT column_name
+    #         FROM information_schema.columns
+    #         WHERE table_schema = '{target_schema}'
+    #           AND table_name = '{target_table}'
+    #           AND column_name != 'ingested_at'
+    #         ORDER BY ordinal_position
+    #     """
+    #     col_df = self.engine.query(col_query)
+    #     all_columns = col_df["column_name"].tolist()
 
-        conflict_cols = ", ".join(f'"{c}"' for c in conflict_key)
-        update_cols = [c for c in all_columns if c not in conflict_key]
-        update_set = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in update_cols)
-        insert_cols = ", ".join(f'"{c}"' for c in all_columns)
+    #     conflict_cols = ", ".join(f'"{c}"' for c in conflict_key)
+    #     update_cols = [c for c in all_columns if c not in conflict_key]
+    #     update_set = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in update_cols)
+    #     insert_cols = ", ".join(f'"{c}"' for c in all_columns)
 
-        upsert_sql = f"""
-            INSERT INTO {fqn} ({insert_cols}, "ingested_at")
-            SELECT {insert_cols}, current_timestamp AT TIME ZONE 'UTC'
-            FROM {staging_table}
-            ON CONFLICT ({conflict_cols}) DO UPDATE SET
-                {update_set},
-                "ingested_at" = current_timestamp AT TIME ZONE 'UTC'
-        """
+    #     upsert_sql = f"""
+    #         INSERT INTO {fqn} ({insert_cols}, "ingested_at")
+    #         SELECT {insert_cols}, current_timestamp AT TIME ZONE 'UTC'
+    #         FROM {staging_table}
+    #         ON CONFLICT ({conflict_cols}) DO UPDATE SET
+    #             {update_set},
+    #             "ingested_at" = current_timestamp AT TIME ZONE 'UTC'
+    #     """
 
-        with self.engine.transaction():
-            self.engine.execute(f"DROP TABLE IF EXISTS {staging_table}")
-            self.engine.execute(
-                f"CREATE TEMP TABLE {staging_table} (LIKE {fqn} EXCLUDING ALL)"
-            )
-            self.engine.execute(
-                f'ALTER TABLE {staging_table} DROP COLUMN IF EXISTS "ingested_at"'
-            )
+    #     with self.engine.transaction():
+    #         self.engine.execute(f"DROP TABLE IF EXISTS {staging_table}")
+    #         self.engine.execute(
+    #             f"CREATE TEMP TABLE {staging_table} (LIKE {fqn} EXCLUDING ALL)"
+    #         )
+    #         self.engine.execute(
+    #             f'ALTER TABLE {staging_table} DROP COLUMN IF EXISTS "ingested_at"'
+    #         )
 
-            with open(filepath, "r") as f:
-                with self.engine.connection.cursor() as cur:
-                    cur.copy_expert(
-                        f"COPY {staging_table} FROM STDIN WITH CSV HEADER", f
-                    )
+    #         with open(filepath, "r") as f:
+    #             with self.engine.connection.cursor() as cur:
+    #                 cur.copy_expert(
+    #                     f"COPY {staging_table} FROM STDIN WITH CSV HEADER", f
+    #                 )
 
-            count_df = self.engine.query(f"SELECT count(*) AS n FROM {staging_table}")
-            staged_rows = int(count_df.iloc[0]["n"])
-            self.engine.execute(upsert_sql)
-            self.engine.execute(f"DROP TABLE IF EXISTS {staging_table}")
+    #         count_df = self.engine.query(f"SELECT count(*) AS n FROM {staging_table}")
+    #         staged_rows = int(count_df.iloc[0]["n"])
+    #         self.engine.execute(upsert_sql)
+    #         self.engine.execute(f"DROP TABLE IF EXISTS {staging_table}")
 
-        return staged_rows
+    #     return staged_rows
 
     def full_refresh_via_api(
         self,
@@ -679,7 +672,7 @@ class SocrataCollector:
             target_schema=target_schema,
             config=IncrementalConfig(
                 incremental_column=":updated_at",
-                conflict_key=None,
+                conflict_key=conflict_key,
             ),
             high_water_mark_override="",  # no filter, fetch everything
         )
@@ -823,107 +816,6 @@ class SocrataCollector:
             return None, None
         best = max(values, key=lambda x: (x[0], x[1]))
         return str(best[0]), best[1]
-
-    # def incremental_update(
-    #     self,
-    #     dataset_id: str,
-    #     target_table: str,
-    #     target_schema: str = "raw_data",
-    #     config: IncrementalConfig | None = None,
-    #     high_water_mark_override: str | None = None,
-    # ) -> int:
-    #     """
-    #     Run an incremental paginated ingest with automatic high-water mark
-    #     management and idempotent upsert.
-
-    #     Args:
-    #         dataset_id:               Socrata 4x4 identifier.
-    #         target_table:             Table name (e.g. "permits").
-    #         target_schema:            Schema name (e.g. "raw_data").
-    #         config:                   IncrementalConfig.
-    #         high_water_mark_override: Use instead of stored HWM.
-
-    #     Returns:
-    #         Total rows ingested.
-    #     """
-    #     hwm = high_water_mark_override or self.tracker.get_high_water_mark(
-    #         self.SOURCE_NAME, dataset_id
-    #     )
-    #     if hwm:
-    #         self.logger.info("Resuming from high_water_mark: %s", hwm)
-    #     else:
-    #         self.logger.info("No prior high_water_mark — full incremental load")
-
-    #     meta = self._get_metadata(dataset_id)
-    #     domain = meta.domain
-    #     fqn = f"{target_schema}.{target_table}"
-
-    #     run_metadata = {
-    #         "mode": "incremental",
-    #         "incremental_column": config.incremental_column,
-    #         "conflict_key": config.conflict_key,
-    #         "prior_high_water_mark": hwm,
-    #         "domain": domain,
-    #     }
-
-    #     with self.tracker.track(
-    #         self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
-    #     ) as run:
-    #         where_parts = []
-    #         if hwm:
-    #             where_parts.append(f"{config.incremental_column} > '{hwm}'")
-    #         if config.where:
-    #             where_parts.append(config.where)
-
-    #         combined_where = " AND ".join(where_parts) if where_parts else None
-    #         order_by = config.order_by or f"{config.incremental_column}, :id"
-
-    #         total_rows = 0
-    #         max_hwm = hwm
-
-    #         for page_num, batch in enumerate(
-    #             self.client.paginate(
-    #                 domain=domain,
-    #                 dataset_id=dataset_id,
-    #                 columns=config.columns,
-    #                 where=combined_where,
-    #                 order_by=order_by,
-    #             ),
-    #             start=1,
-    #         ):
-    #             rows = self.engine.ingest_batch(
-    #                 batch,
-    #                 target_table,
-    #                 table_schema=target_schema,
-    #                 conflict_column=config.conflict_key,
-    #                 conflict_action="UPDATE",
-    #             )
-    #             total_rows += rows
-
-    #             batch_max = self._extract_max_hwm(batch, config.incremental_column)
-    #             if batch_max and (max_hwm is None or batch_max > max_hwm):
-    #                 max_hwm = batch_max
-
-    #             self.logger.info(
-    #                 "Page %d: fetched %d, upserted %d (total: %d, hwm: %s)",
-    #                 page_num,
-    #                 len(batch),
-    #                 rows,
-    #                 total_rows,
-    #                 max_hwm,
-    #             )
-
-    #         run.rows_ingested = total_rows
-    #         run.high_water_mark = max_hwm
-
-    #     return total_rows
-
-    # @staticmethod
-    # def _extract_max_hwm(batch: list[dict[str, Any]], column: str) -> Optional[str]:
-    #     values = [row[column] for row in batch if row.get(column) is not None]
-    #     if not values:
-    #         return None
-    #     return str(max(values))
 
     # ------------------------------------------------------------------
     # Convenience

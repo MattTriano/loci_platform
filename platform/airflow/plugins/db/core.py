@@ -295,6 +295,28 @@ class PostgresEngine:
             total += len(batch)
         return total
 
+    @staticmethod
+    def _normalize_json_values(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        import ast
+        import json
+
+        def _to_json(val: Any) -> Any:
+            if isinstance(val, dict):
+                return json.dumps({k: _to_json(v) for k, v in val.items()})
+            if isinstance(val, str) and val.startswith("{"):
+                try:
+                    parsed = ast.literal_eval(val)
+                    if isinstance(parsed, dict):
+                        return json.dumps({k: _to_json(v) for k, v in parsed.items()})
+                except (ValueError, SyntaxError):
+                    pass
+            return val
+
+        for row in rows:
+            for key, val in row.items():
+                row[key] = _to_json(val)
+        return rows
+
     @pg_retry()
     def ingest_batch(
         self,
@@ -323,7 +345,25 @@ class PostgresEngine:
         """
         if not rows:
             return 0
+        sample = rows[0] if rows else {}
+        for k, v in sample.items():
+            if isinstance(v, (dict, str)) and str(v).startswith("{"):
+                self.logger.info(
+                    "JSON-suspect column=%s type=%s value=%r", k, type(v).__name__, v
+                )
         fqn = f"{target_schema}.{target_table}"
+
+        rows = self._normalize_json_values(rows)
+
+        if rows:
+            for k, v in rows[0].items():
+                if isinstance(v, (dict, str)) and str(v).startswith("{"):
+                    self.logger.info(
+                        "POST-NORMALIZE column=%s type=%s value=%r",
+                        k,
+                        type(v).__name__,
+                        v,
+                    )
 
         columns = list(rows[0].keys())
         col_list = ", ".join(f'"{c}"' for c in columns)
@@ -349,7 +389,12 @@ class PostgresEngine:
                     if v is None:
                         vals.append("\\N")
                     else:
-                        vals.append(str(v).replace("\t", " ").replace("\n", " "))
+                        vals.append(
+                            str(v)
+                            .replace("\\", "\\\\")
+                            .replace("\t", " ")
+                            .replace("\n", " ")
+                        )
                 buf.write("\t".join(vals) + "\n")
             buf.seek(0)
 

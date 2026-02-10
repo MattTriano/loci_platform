@@ -16,9 +16,9 @@ task_logger = logging.getLogger("airflow.task")
 
 
 CONN_ID = "gis_dwh_db"
-DATASET_ID = "ygr5-vcbg"
-DATASET_NAME = "chicago_towed_vehicles"
-DATASET_FULL_UPDATE_CRON = "0 4 1-7 * 0"
+DATASET_ID = "85ca-t3if"
+DATASET_NAME = "chicago_traffic_crashes_crashes"
+DATASET_FULL_UPDATE_CRON = "10 4 1-7 * 0"
 
 
 @dag(
@@ -27,7 +27,7 @@ DATASET_FULL_UPDATE_CRON = "0 4 1-7 * 0"
     catchup=False,
     tags=["socrata", "update"],
 )
-def update_chicago_towed_vehicles():
+def update_chicago_traffic_crashes_crashes():
 
     @task.branch()
     def choose_update_mode(full_update_cron: str) -> str:
@@ -107,4 +107,4 @@ def update_chicago_towed_vehicles():
     chain(_update_mode, _incremental_update, _check_ingestion_log)
 
 
-update_chicago_towed_vehicles()
+update_chicago_traffic_crashes_crashes()
