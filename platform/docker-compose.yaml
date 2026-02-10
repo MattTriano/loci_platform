@@ -129,8 +129,6 @@ services:
         [
           "CMD",
           "pg_isready",
-          "-h",
-          "dwh_db",
           "-d",
           "loci",
           "-U",
@@ -256,7 +254,7 @@ services:
       # yamllint disable rule:line-length
       test:
         - "CMD-SHELL"
-        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$(hostname)"'
       interval: 30s
       timeout: 10s
       retries: 5
