@@ -20,6 +20,8 @@ class IngestionRun:
     target_table: str
     metadata: dict[str, Any] = field(default_factory=dict)
     rows_ingested: int = 0
+    rows_staged: int = 0
+    rows_merged: int = 0
     high_water_mark: Optional[str] = None
     status: str = "running"
     started_at: Optional[datetime] = None
@@ -85,11 +87,13 @@ class IngestionTracker:
                 f"""
                 insert into {self.TABLE_NAME}
                     (source, dataset_id, target_table, status,
-                     rows_ingested, high_water_mark, metadata,
+                     rows_ingested, rows_staged, rows_merged,
+                     high_water_mark, metadata,
                      started_at, completed_at, error_message)
                 values
                     (%(source)s, %(dataset_id)s, %(target_table)s, %(status)s,
-                     %(rows_ingested)s, %(high_water_mark)s, %(metadata)s,
+                     %(rows_ingested)s, %(rows_staged)s, %(rows_merged)s,
+                     %(high_water_mark)s, %(metadata)s,
                      %(started_at)s, %(completed_at)s, %(error_message)s)
                 """,
                 {
@@ -98,6 +102,8 @@ class IngestionTracker:
                     "target_table": run.target_table,
                     "status": run.status,
                     "rows_ingested": run.rows_ingested,
+                    "rows_staged": run.rows_staged,
+                    "rows_merged": run.rows_merged,
                     "high_water_mark": run.high_water_mark,
                     "metadata": json.dumps(run.metadata),
                     "started_at": run.started_at,

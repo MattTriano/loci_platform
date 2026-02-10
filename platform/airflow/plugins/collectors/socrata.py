@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
-import tempfile
 from dataclasses import dataclass
 from functools import cached_property
-from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import requests
@@ -472,13 +470,11 @@ class SocrataCollector:
         engine: Any,
         tracker: IngestionTracker | None = None,
         app_token: str | None = None,
-        download_dir: Path | None = None,
-        page_size: int = 10_000,
+        page_size: int = 25000,
     ) -> None:
         self.engine = engine
         self.tracker = tracker or IngestionTracker(engine=engine)
         self.app_token = app_token
-        self.download_dir = download_dir or Path(tempfile.gettempdir())
         self.page_size = page_size
         self.logger = logging.getLogger("socrata_collector")
 
@@ -515,7 +511,7 @@ class SocrataCollector:
                 incremental_column=":updated_at",
                 conflict_key=conflict_key,
             ),
-            high_water_mark_override="",  # no filter, fetch everything
+            high_water_mark_override="",
         )
 
     def _rename_system_fields(self, rows: list[dict]) -> list[dict]:
@@ -533,11 +529,11 @@ class SocrataCollector:
         high_water_mark_override: str | None = None,
     ) -> int:
         """
-        Run an incremental paginated ingest with automatic high-water mark
-        management and idempotent upsert.
+        Run an incremental paginated ingest using staged_ingest.
 
-        The high_water_mark is stored as "value|id" to support keyset
-        pagination with a tiebreaker, e.g. "2025-02-01T12:34:56.000|12345".
+        All pages are accumulated in a staging table, then merged into the
+        target in a single INSERT ... ON CONFLICT at the end. One
+        IngestionTracker entry is created for the entire run.
         """
         raw_hwm = high_water_mark_override or self.tracker.get_high_water_mark(
             self.SOURCE_NAME, dataset_id
@@ -586,62 +582,180 @@ class SocrataCollector:
             combined_where = (
                 " AND ".join(f"({p})" for p in where_parts) if where_parts else None
             )
-
             order_by = config.order_by or f"{inc_col}, :id"
 
-            total_rows = 0
+            renamed_inc_col = self.SYSTEM_FIELD_RENAMES.get(inc_col, inc_col)
             max_hwm = hwm_value
             max_hwm_id = hwm_id
-            renamed_inc_col = self.SYSTEM_FIELD_RENAMES.get(inc_col, inc_col)
 
-            for page_num, batch in enumerate(
-                self.client.paginate(
-                    domain=domain,
-                    dataset_id=dataset_id,
-                    columns=config.columns,
-                    where=combined_where,
-                    order_by=order_by,
-                    include_system_fields=True,
-                ),
-                start=1,
-            ):
-                renamed_batch = self._rename_system_fields(batch)
-                rows = self.engine.ingest_batch(
-                    renamed_batch,
-                    target_table,
-                    target_schema=target_schema,
-                    conflict_column=None,
-                    conflict_action="NOTHING",
-                )
-                total_rows += rows
-
-                batch_hwm, batch_id = self._extract_max_hwm(
-                    renamed_batch, renamed_inc_col
-                )
-                if batch_hwm and (
-                    max_hwm is None
-                    or batch_hwm > max_hwm
-                    or (batch_hwm == max_hwm and batch_id > (max_hwm_id or ""))
+            with self.engine.staged_ingest(
+                target_table=target_table,
+                target_schema=target_schema,
+                conflict_column=config.conflict_key,
+                conflict_action="NOTHING",
+            ) as stager:
+                for page_num, batch in enumerate(
+                    self.client.paginate(
+                        domain=domain,
+                        dataset_id=dataset_id,
+                        columns=config.columns,
+                        where=combined_where,
+                        order_by=order_by,
+                        include_system_fields=True,
+                    ),
+                    start=1,
                 ):
-                    max_hwm = batch_hwm
-                    max_hwm_id = batch_id
+                    renamed_batch = self._rename_system_fields(batch)
+                    stager.write_batch(renamed_batch)
 
-                self.logger.info(
-                    "Page %d: fetched %d, upserted %d (total: %d, hwm: %s|%s)",
-                    page_num,
-                    len(renamed_batch),
-                    rows,
-                    total_rows,
-                    max_hwm,
-                    max_hwm_id,
-                )
+                    batch_hwm, batch_id = self._extract_max_hwm(
+                        renamed_batch, renamed_inc_col
+                    )
+                    if batch_hwm and (
+                        max_hwm is None
+                        or batch_hwm > max_hwm
+                        or (batch_hwm == max_hwm and batch_id > (max_hwm_id or ""))
+                    ):
+                        max_hwm = batch_hwm
+                        max_hwm_id = batch_id
 
-            run.rows_ingested = total_rows
+                    self.logger.info(
+                        "Page %d: fetched %d (staged total: %d, hwm: %s|%s)",
+                        page_num,
+                        len(renamed_batch),
+                        stager.rows_staged,
+                        max_hwm,
+                        max_hwm_id,
+                    )
+
+            # stager has now merged — record results on the run
+            run.rows_staged = stager.rows_staged
+            run.rows_merged = stager.rows_merged
+            run.rows_ingested = stager.rows_merged
             run.high_water_mark = (
                 f"{max_hwm}|{max_hwm_id}" if max_hwm and max_hwm_id else max_hwm
             )
 
-        return total_rows
+        return stager.rows_merged
+
+    # def incremental_update(
+    #     self,
+    #     dataset_id: str,
+    #     target_table: str,
+    #     target_schema: str = "raw_data",
+    #     config: IncrementalConfig | None = None,
+    #     high_water_mark_override: str | None = None,
+    # ) -> int:
+    #     """
+    #     Run an incremental paginated ingest with automatic high-water mark
+    #     management and idempotent upsert.
+
+    #     The high_water_mark is stored as "value|id" to support keyset
+    #     pagination with a tiebreaker, e.g. "2025-02-01T12:34:56.000|12345".
+    #     """
+    #     raw_hwm = high_water_mark_override or self.tracker.get_high_water_mark(
+    #         self.SOURCE_NAME, dataset_id
+    #     )
+
+    #     hwm_value, hwm_id = None, None
+    #     if raw_hwm and "|" in raw_hwm:
+    #         hwm_value, hwm_id = raw_hwm.rsplit("|", 1)
+    #     elif raw_hwm:
+    #         hwm_value = raw_hwm
+
+    #     if hwm_value:
+    #         self.logger.info(
+    #             "Resuming from high_water_mark: %s (id: %s)", hwm_value, hwm_id
+    #         )
+    #     else:
+    #         self.logger.info("No prior high_water_mark — full incremental load")
+
+    #     meta = self._get_metadata(dataset_id)
+    #     domain = meta.domain
+    #     fqn = f"{target_schema}.{target_table}"
+    #     inc_col = config.incremental_column
+
+    #     run_metadata = {
+    #         "mode": "incremental",
+    #         "incremental_column": inc_col,
+    #         "conflict_key": config.conflict_key,
+    #         "prior_high_water_mark": raw_hwm,
+    #         "domain": domain,
+    #     }
+
+    #     with self.tracker.track(
+    #         self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
+    #     ) as run:
+    #         where_parts = []
+    #         if hwm_value and hwm_id:
+    #             where_parts.append(
+    #                 f"({inc_col} = '{hwm_value}' AND :id > '{hwm_id}') "
+    #                 f"OR ({inc_col} > '{hwm_value}')"
+    #             )
+    #         elif hwm_value:
+    #             where_parts.append(f"{inc_col} > '{hwm_value}'")
+    #         if config.where:
+    #             where_parts.append(config.where)
+
+    #         combined_where = (
+    #             " AND ".join(f"({p})" for p in where_parts) if where_parts else None
+    #         )
+
+    #         order_by = config.order_by or f"{inc_col}, :id"
+
+    #         total_rows = 0
+    #         max_hwm = hwm_value
+    #         max_hwm_id = hwm_id
+    #         renamed_inc_col = self.SYSTEM_FIELD_RENAMES.get(inc_col, inc_col)
+
+    #         for page_num, batch in enumerate(
+    #             self.client.paginate(
+    #                 domain=domain,
+    #                 dataset_id=dataset_id,
+    #                 columns=config.columns,
+    #                 where=combined_where,
+    #                 order_by=order_by,
+    #                 include_system_fields=True,
+    #             ),
+    #             start=1,
+    #         ):
+    #             renamed_batch = self._rename_system_fields(batch)
+    #             rows = self.engine.ingest_batch(
+    #                 renamed_batch,
+    #                 target_table,
+    #                 target_schema=target_schema,
+    #                 conflict_column=None,
+    #                 conflict_action="NOTHING",
+    #             )
+    #             total_rows += rows
+
+    #             batch_hwm, batch_id = self._extract_max_hwm(
+    #                 renamed_batch, renamed_inc_col
+    #             )
+    #             if batch_hwm and (
+    #                 max_hwm is None
+    #                 or batch_hwm > max_hwm
+    #                 or (batch_hwm == max_hwm and batch_id > (max_hwm_id or ""))
+    #             ):
+    #                 max_hwm = batch_hwm
+    #                 max_hwm_id = batch_id
+
+    #             self.logger.info(
+    #                 "Page %d: fetched %d, upserted %d (total: %d, hwm: %s|%s)",
+    #                 page_num,
+    #                 len(renamed_batch),
+    #                 rows,
+    #                 total_rows,
+    #                 max_hwm,
+    #                 max_hwm_id,
+    #             )
+
+    #         run.rows_ingested = total_rows
+    #         run.high_water_mark = (
+    #             f"{max_hwm}|{max_hwm_id}" if max_hwm and max_hwm_id else max_hwm
+    #         )
+
+    #     return total_rows
 
     @staticmethod
     def _extract_max_hwm(
@@ -667,6 +781,7 @@ class SocrataCollector:
         dataset_id: str,
         limit: int = 5,
         columns: list[str] | None = None,
+        include_system_fields: bool = True,
     ) -> list[dict[str, Any]]:
         meta = self._get_metadata(dataset_id)
         return self.client.query(
@@ -674,6 +789,7 @@ class SocrataCollector:
             dataset_id=dataset_id,
             select=", ".join(columns) if columns else None,
             limit=limit,
+            include_system_fields=include_system_fields,
         )
 
     def print_ddl(

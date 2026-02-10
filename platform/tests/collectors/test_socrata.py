@@ -31,12 +31,47 @@ def _make_batch(*rows: dict) -> list[dict]:
     return list(rows)
 
 
+class FakeStager:
+    """
+    A lightweight fake for StagedIngest that tracks write_batch calls
+    and lets tests set rows_staged / rows_merged.
+    """
+
+    def __init__(self):
+        self.batches: list[list[dict]] = []
+        self.rows_staged = 0
+        self.rows_merged = 0
+
+    def write_batch(self, rows: list[dict]) -> int:
+        self.batches.append(rows)
+        self.rows_staged += len(rows)
+        return len(rows)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        # Simulate merge: rows_merged = rows_staged unless overridden
+        if self.rows_merged == 0:
+            self.rows_merged = self.rows_staged
+        return False
+
+
 @pytest.fixture
 def mock_engine():
-    """A mock PostgresEngine with common methods stubbed."""
+    """A mock PostgresEngine with staged_ingest returning a FakeStager."""
     engine = MagicMock()
-    engine.ingest_batch.return_value = 0
     engine.execute.return_value = None
+
+    # Each call to staged_ingest returns a fresh FakeStager
+    engine._stagers = []
+
+    def make_stager(**kwargs):
+        stager = FakeStager()
+        engine._stagers.append(stager)
+        return stager
+
+    engine.staged_ingest.side_effect = make_stager
     return engine
 
 
@@ -48,11 +83,7 @@ def tracker(mock_engine):
 @pytest.fixture
 def collector(mock_engine, tmp_path):
     """SocrataCollector with mocked engine and auto-created tracker."""
-    return SocrataCollector(
-        engine=mock_engine,
-        download_dir=tmp_path,
-        page_size=100,
-    )
+    return SocrataCollector(engine=mock_engine, page_size=100)
 
 
 def _attach_mock_client(collector, pages: list[list[dict]]):
@@ -104,6 +135,44 @@ class TestIngestionTracker:
             pass
         assert len(tracker.runs) == 2
 
+    def test_persist_run_records_rows_staged_and_merged(self, tracker, mock_engine):
+        with tracker.track("socrata", "abcd-1234", "raw.table") as run:
+            run.rows_staged = 100
+            run.rows_merged = 95
+            run.rows_ingested = 95
+
+        # Check the params passed to engine.execute for the INSERT
+        insert_call = mock_engine.execute.call_args
+        params = insert_call[0][1]
+        assert params["rows_staged"] == 100
+        assert params["rows_merged"] == 95
+        assert params["rows_ingested"] == 95
+
+    def test_persist_run_caches_hwm(self, tracker, mock_engine):
+        with tracker.track("socrata", "abcd-1234", "raw.table") as run:
+            run.high_water_mark = "2024-06-01|abc"
+
+        cached = tracker.get_high_water_mark("socrata", "abcd-1234")
+        assert cached == "2024-06-01|abc"
+
+    def test_persist_run_does_not_cache_null_hwm(self, tracker, mock_engine):
+        with tracker.track("socrata", "abcd-1234", "raw.table") as run:
+            pass  # no HWM set
+
+        assert tracker.get_high_water_mark("socrata", "abcd-1234") is None
+
+    def test_persist_handles_engine_error_gracefully(self, tracker, mock_engine):
+        mock_engine.execute.side_effect = RuntimeError("db down")
+        # Should not raise — just logs
+        with tracker.track("socrata", "abcd-1234", "raw.table") as run:
+            run.rows_ingested = 10
+
+        assert run.status == "success"
+
+    def test_last_run_is_none_when_empty(self):
+        tracker = IngestionTracker(engine=None)
+        assert tracker.last_run is None
+
 
 # ---------------------------------------------------------------------------
 # IngestionRun tests
@@ -125,6 +194,15 @@ class TestIngestionRun:
                 raise RuntimeError("test error")
         assert run.status == "failed"
         assert "test error" in run.error
+
+    def test_default_values(self):
+        run = IngestionRun(source="s", dataset_id="d", target_table="t")
+        assert run.rows_ingested == 0
+        assert run.rows_staged == 0
+        assert run.rows_merged == 0
+        assert run.status == "running"
+        assert run.high_water_mark is None
+        assert run.error is None
 
 
 # ---------------------------------------------------------------------------
@@ -191,14 +269,24 @@ class TestIncrementalUpdate:
             {"id": "3", "updated_on": "2024-01-03", "val": "c"},
         )
         _attach_mock_client(collector, [page1, page2])
-        mock_engine.ingest_batch.side_effect = [2, 1]
 
         total = collector.incremental_update(
             "abcd-1234", "test", "raw_data", self.CONFIG
         )
 
         assert total == 3
-        assert mock_engine.ingest_batch.call_count == 2
+        # Verify staged_ingest was called with correct params
+        mock_engine.staged_ingest.assert_called_once_with(
+            target_table="test",
+            target_schema="raw_data",
+            conflict_column=["id"],
+            conflict_action="NOTHING",
+        )
+        # Verify both pages were written
+        stager = mock_engine._stagers[0]
+        assert len(stager.batches) == 2
+        assert len(stager.batches[0]) == 2
+        assert len(stager.batches[1]) == 1
 
     def test_hwm_override_appears_in_where_clause(self, collector, mock_engine):
         collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
@@ -245,14 +333,14 @@ class TestIncrementalUpdate:
             {"id": "3", "updated_on": "2024-02-10"},
         )
         _attach_mock_client(collector, [batch])
-        mock_engine.ingest_batch.return_value = 3
 
         collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG)
 
         run = collector.tracker.last_run
         assert run.status == "success"
         assert run.rows_ingested == 3
-        # HWM should reflect the max updated_on value
+        assert run.rows_staged == 3
+        assert run.rows_merged == 3
         assert run.high_water_mark is not None
         assert "2024-03-15" in run.high_water_mark
 
@@ -285,7 +373,6 @@ class TestIncrementalUpdate:
             {":id": "row1", ":updated_at": "2024-01-01T00:00:00", "val": "x"},
         )
         _attach_mock_client(collector, [batch])
-        mock_engine.ingest_batch.return_value = 1
 
         config = IncrementalConfig(
             incremental_column=":updated_at",
@@ -293,12 +380,27 @@ class TestIncrementalUpdate:
         )
         collector.incremental_update("abcd-1234", "test", "raw_data", config)
 
-        ingested_batch = mock_engine.ingest_batch.call_args[0][0]
-        row = ingested_batch[0]
+        stager = mock_engine._stagers[0]
+        assert len(stager.batches) == 1
+        row = stager.batches[0][0]
         assert "socrata_id" in row
         assert "socrata_updated_at" in row
         assert ":id" not in row
         assert ":updated_at" not in row
+
+    def test_keyset_hwm_with_pipe_id(self, collector, mock_engine):
+        """HWM stored as 'value|id' should produce keyset pagination."""
+        collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
+
+        # Simulate a prior HWM
+        collector.tracker._hwm_cache[("socrata", "abcd-1234")] = "2024-06-01|row99"
+
+        mock_client = _attach_mock_client(collector, [])
+        collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG)
+
+        where = mock_client.paginate.call_args[1]["where"]
+        assert "2024-06-01" in where
+        assert "row99" in where
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +416,6 @@ class TestFullRefreshViaApi:
         total = collector.full_refresh_via_api("abcd-1234", "test", "raw_data")
 
         assert total == 0
-        # Should have called paginate (via incremental_update)
         collector._client.paginate.assert_called_once()
 
 
@@ -339,6 +440,7 @@ class TestPreview:
             dataset_id="wxyz-5678",
             select="col",
             limit=3,
+            include_system_fields=True,
         )
 
 

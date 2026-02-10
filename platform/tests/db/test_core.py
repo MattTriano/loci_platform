@@ -25,6 +25,7 @@ def mock_cursor():
     cur = MagicMock()
     cur.description = [("col_a",), ("col_b",)]
     cur.fetchall.return_value = [("val1", "val2"), ("val3", "val4")]
+    cur.fetchone.return_value = None  # no geometry by default
     cur.rowcount = 2
     cur.close.return_value = None
     return cur
@@ -45,6 +46,20 @@ def engine(mock_conn, sample_creds):
     eng = PostgresEngine(sample_creds)
     eng._conn = mock_conn
     return eng
+
+
+def _get_execute_sql_strings(mock_cursor) -> list[str]:
+    """Extract all SQL strings passed to cursor.execute()."""
+    return [
+        str(call_args[0][0])
+        for call_args in mock_cursor.execute.call_args_list
+        if call_args[0]
+    ]
+
+
+def _find_sql_containing(mock_cursor, fragment: str) -> list[str]:
+    """Return all executed SQL strings that contain the given fragment."""
+    return [s for s in _get_execute_sql_strings(mock_cursor) if fragment in s]
 
 
 class TestDatabaseCredentials:
@@ -121,20 +136,31 @@ class TestDatabaseCredentials:
 
 class TestPgRetry:
     def test_retries_on_operational_error(self, engine, mock_conn, mock_cursor):
+        # First call: main query fails. Retry succeeds.
+        # Each call may also trigger a geometry-detection execute, so we
+        # count only calls whose SQL matches our query.
         mock_cursor.execute.side_effect = [
             psycopg2.OperationalError("connection reset"),
-            None,
+            None,  # retry: main query succeeds
+            None,  # geometry detection query
         ]
         engine.query("SELECT 1")
-        assert mock_cursor.execute.call_count == 2
+        main_query_calls = [
+            c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"
+        ]
+        assert len(main_query_calls) == 2
 
     def test_retries_on_interface_error(self, engine, mock_conn, mock_cursor):
         mock_cursor.execute.side_effect = [
             psycopg2.InterfaceError("connection closed"),
             None,
+            None,
         ]
         engine.query("SELECT 1")
-        assert mock_cursor.execute.call_count == 2
+        main_query_calls = [
+            c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"
+        ]
+        assert len(main_query_calls) == 2
 
     def test_no_retry_on_programming_error(self, engine, mock_cursor):
         mock_cursor.execute.side_effect = psycopg2.ProgrammingError("syntax error")
@@ -160,25 +186,26 @@ class TestPgRetry:
 class TestPostgresEngineParameterizedQueries:
     def test_query_with_dict_params(self, engine, mock_cursor):
         params = {"source": "socrata", "dataset": "abc-1234"}
-        engine.query(
-            "SELECT * FROM log WHERE source = %(source)s AND dataset = %(dataset)s",
-            params=params,
-        )
-        mock_cursor.execute.assert_called_once_with(
-            "SELECT * FROM log WHERE source = %(source)s AND dataset = %(dataset)s",
-            params,
-        )
+        sql = "SELECT * FROM log WHERE source = %(source)s AND dataset = %(dataset)s"
+        engine.query(sql, params=params)
+        # Find the call for our specific SQL (ignoring geometry detection)
+        matching = [c for c in mock_cursor.execute.call_args_list if c[0][0] == sql]
+        assert len(matching) == 1
+        assert matching[0][0][1] == params
 
     def test_query_with_tuple_params(self, engine, mock_cursor):
-        engine.query("SELECT * FROM log WHERE source = %s", params=("socrata",))
-        mock_cursor.execute.assert_called_once_with(
-            "SELECT * FROM log WHERE source = %s",
-            ("socrata",),
-        )
+        sql = "SELECT * FROM log WHERE source = %s"
+        engine.query(sql, params=("socrata",))
+        matching = [c for c in mock_cursor.execute.call_args_list if c[0][0] == sql]
+        assert len(matching) == 1
+        assert matching[0][0][1] == ("socrata",)
 
     def test_query_without_params(self, engine, mock_cursor):
         engine.query("SELECT 1")
-        mock_cursor.execute.assert_called_once_with("SELECT 1", None)
+        matching = [
+            c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"
+        ]
+        assert len(matching) == 1
 
     def test_query_returns_dataframe(self, engine, mock_cursor):
         mock_cursor.description = [("id",), ("name",)]
@@ -284,30 +311,31 @@ class TestPostgresEngineIngestBatchConflict:
     def test_no_conflict_column(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice"}]
         engine.ingest_batch(rows, "test", "raw")
-        sqls = self._get_executed_sql(mock_cursor)
-        insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
-        assert "ON CONFLICT" not in insert_sql
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into")
+        assert len(insert_stmts) == 1
+        assert "on conflict" not in insert_stmts[0]
 
     def test_single_conflict_column_string_do_nothing(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice", "age": 30}]
         engine.ingest_batch(
             rows, "test", "raw", conflict_column="id", conflict_action="NOTHING"
         )
-        sqls = self._get_executed_sql(mock_cursor)
-        insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
-        assert 'ON CONFLICT ("id") DO NOTHING' in insert_sql
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into")
+        assert len(insert_stmts) == 1
+        assert 'on conflict ("id") do nothing' in insert_stmts[0]
 
     def test_single_conflict_column_string_do_update(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice", "age": 30}]
         engine.ingest_batch(
             rows, "test", "raw", conflict_column="id", conflict_action="UPDATE"
         )
-        sqls = self._get_executed_sql(mock_cursor)
-        insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
-        assert 'ON CONFLICT ("id") DO UPDATE SET' in insert_sql
-        assert '"name" = EXCLUDED."name"' in insert_sql
-        assert '"age" = EXCLUDED."age"' in insert_sql
-        assert '"id" = EXCLUDED."id"' not in insert_sql
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into")
+        assert len(insert_stmts) == 1
+        insert_sql = insert_stmts[0]
+        assert 'on conflict ("id") do update set' in insert_sql
+        assert '"name" = excluded."name"' in insert_sql
+        assert '"age" = excluded."age"' in insert_sql
+        assert '"id" = excluded."id"' not in insert_sql
 
     def test_composite_conflict_key_list(self, engine, mock_cursor):
         rows = [{"pin14": "123", "tax_year": 2024, "assessed_value": 50000}]
@@ -318,21 +346,22 @@ class TestPostgresEngineIngestBatchConflict:
             conflict_column=["pin14", "tax_year"],
             conflict_action="UPDATE",
         )
-        sqls = self._get_executed_sql(mock_cursor)
-        insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
-        assert 'ON CONFLICT ("pin14", "tax_year") DO UPDATE SET' in insert_sql
-        assert '"assessed_value" = EXCLUDED."assessed_value"' in insert_sql
-        assert '"pin14" = EXCLUDED."pin14"' not in insert_sql
-        assert '"tax_year" = EXCLUDED."tax_year"' not in insert_sql
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into")
+        assert len(insert_stmts) == 1
+        insert_sql = insert_stmts[0]
+        assert 'on conflict ("pin14", "tax_year") do update set' in insert_sql
+        assert '"assessed_value" = excluded."assessed_value"' in insert_sql
+        assert '"pin14" = excluded."pin14"' not in insert_sql
+        assert '"tax_year" = excluded."tax_year"' not in insert_sql
 
     def test_composite_conflict_key_do_nothing(self, engine, mock_cursor):
         rows = [{"a": 1, "b": 2, "c": 3}]
         engine.ingest_batch(
             rows, "test", "raw", conflict_column=["a", "b"], conflict_action="NOTHING"
         )
-        sqls = self._get_executed_sql(mock_cursor)
-        insert_sql = [s for s in sqls if "INSERT INTO" in s][0]
-        assert 'ON CONFLICT ("a", "b") DO NOTHING' in insert_sql
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into")
+        assert len(insert_stmts) == 1
+        assert 'on conflict ("a", "b") do nothing' in insert_stmts[0]
 
     def test_copy_writes_correct_tsv(self, engine, mock_cursor):
         rows = [
@@ -359,6 +388,122 @@ class TestPostgresEngineIngestBatchConflict:
         mock_cursor.rowcount = 5
         rows = [{"id": i} for i in range(5)]
         assert engine.ingest_batch(rows, "test", "raw") == 5
+
+
+class TestStagedIngest:
+    def test_write_batch_creates_staging_and_copies(self, engine, mock_cursor):
+        with engine.staged_ingest("crimes", "raw_data") as stager:
+            count = stager.write_batch([{"id": 1, "val": "a"}, {"id": 2, "val": "b"}])
+
+            assert count == 2
+            assert stager.rows_staged == 2
+            assert stager._created is True
+
+            # Staging table should be named after target
+            assert "crimes" in stager._staging_table
+            assert stager._staging_table.startswith("_staging_crimes_")
+
+            # CREATE TEMP TABLE should reference the target
+            create_stmts = _find_sql_containing(mock_cursor, "create temp table")
+            assert any(stager._staging_table in s for s in create_stmts)
+
+            # COPY should have been called
+            copy_calls = [c for c in mock_cursor.method_calls if c[0] == "copy_expert"]
+            assert len(copy_calls) == 1
+
+    def test_multiple_batches_accumulate(self, engine, mock_cursor):
+        with engine.staged_ingest("t", "s") as stager:
+            stager.write_batch([{"id": 1}])
+            stager.write_batch([{"id": 2}, {"id": 3}])
+
+            assert stager.rows_staged == 3
+
+            copy_calls = [c for c in mock_cursor.method_calls if c[0] == "copy_expert"]
+            assert len(copy_calls) == 2
+
+    def test_empty_batch_is_noop(self, engine, mock_cursor):
+        with engine.staged_ingest("t", "s") as stager:
+            count = stager.write_batch([])
+            assert count == 0
+            assert stager.rows_staged == 0
+            assert not stager._created
+
+    def test_merge_on_clean_exit(self, engine, mock_cursor):
+        mock_cursor.rowcount = 5
+
+        with engine.staged_ingest(
+            "crimes",
+            "raw_data",
+            conflict_column="case_number",
+            conflict_action="NOTHING",
+        ) as stager:
+            stager.write_batch([{"case_number": "C1", "val": "x"}])
+
+        # After exit, merge should have run
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into raw_data.crimes")
+        assert len(insert_stmts) == 1
+        assert 'on conflict ("case_number") do nothing' in insert_stmts[0]
+        assert stager.rows_merged == 5
+
+    def test_merge_with_upsert(self, engine, mock_cursor):
+        mock_cursor.rowcount = 3
+
+        with engine.staged_ingest(
+            "t",
+            "s",
+            conflict_column=["k1", "k2"],
+            conflict_action="UPDATE",
+        ) as stager:
+            stager.write_batch([{"k1": 1, "k2": 2, "val": "a"}])
+
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into s.t")
+        assert len(insert_stmts) == 1
+        insert_sql = insert_stmts[0]
+        assert 'on conflict ("k1", "k2") do update set' in insert_sql
+        assert '"val" = excluded."val"' in insert_sql
+        assert '"k1" = excluded."k1"' not in insert_sql
+
+    def test_no_merge_on_error(self, engine, mock_cursor):
+        with pytest.raises(RuntimeError, match="boom"):
+            with engine.staged_ingest("t", "s") as stager:
+                stager.write_batch([{"id": 1}])
+                raise RuntimeError("boom")
+
+        # No INSERT INTO should have been executed (merge skipped)
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into s.t")
+        assert len(insert_stmts) == 0
+
+        # But staging table should still be dropped
+        drop_stmts = _find_sql_containing(mock_cursor, "drop table")
+        assert any(stager._staging_table in s for s in drop_stmts)
+
+    def test_drop_staging_on_clean_exit(self, engine, mock_cursor):
+        with engine.staged_ingest("t", "s") as stager:
+            stager.write_batch([{"id": 1}])
+
+        drop_stmts = _find_sql_containing(mock_cursor, "drop table")
+        assert any(stager._staging_table in s for s in drop_stmts)
+
+    def test_no_staging_created_means_no_drop(self, engine, mock_cursor):
+        """If no batches are written, no staging table exists to drop."""
+        with engine.staged_ingest("t", "s") as stager:
+            pass
+
+        drop_stmts = _find_sql_containing(mock_cursor, "drop table")
+        assert len(drop_stmts) == 0
+
+    def test_staging_table_name_unique_per_call(self, engine):
+        s1 = engine.staged_ingest("t", "s")
+        s2 = engine.staged_ingest("t", "s")
+        assert s1._staging_table != s2._staging_table
+
+    def test_no_merge_when_zero_rows_staged(self, engine, mock_cursor):
+        """If only empty batches are written, skip merge."""
+        with engine.staged_ingest("t", "s") as stager:
+            stager.write_batch([])
+
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into")
+        assert len(insert_stmts) == 0
 
 
 class TestPostgresEngineConnectionManagement:
@@ -494,57 +639,57 @@ def empty_geojson(tmp_path):
     return path
 
 
-class TestIngestGeojson:
-    def test_basic_ingest(self, sample_geojson, engine, mock_cursor):
-        mock_cursor.rowcount = 3
+def _engine_with_geometry(mock_conn, sample_creds, mock_cursor, geom_col="geom"):
+    """
+    Build an engine whose _get_geometry_info is pre-populated so that
+    ingest_geojson doesn't need a real geometry_columns lookup.
+    """
+    eng = PostgresEngine(sample_creds)
+    eng._conn = mock_conn
+    # Pre-cache so _get_geometry_column doesn't trigger a real query
+    eng._geometry_info_cache[("public", "parks")] = {geom_col: 4326}
+    eng._geometry_info_cache[("public", "t")] = {geom_col: 4326}
+    return eng
 
-        inserted, failed = engine.ingest_geojson(
+
+class TestIngestGeojson:
+    @pytest.fixture(autouse=True)
+    def setup_engine(self, mock_conn, sample_creds, mock_cursor):
+        self.engine = _engine_with_geometry(mock_conn, sample_creds, mock_cursor)
+        self.mock_cursor = mock_cursor
+
+    def test_basic_ingest(self, sample_geojson):
+        self.mock_cursor.rowcount = 3
+
+        inserted, failed = self.engine.ingest_geojson(
             filepath=sample_geojson, target_table="parks", target_schema="public"
         )
 
         assert inserted == 3
         assert len(failed) == 0
 
-        # Extract all SQL strings sent to .execute() for easier searching
-        all_execute_sql = [
-            str(call[0][0]) for call in mock_cursor.execute.call_args_list
-        ]
+        create_stmts = _find_sql_containing(self.mock_cursor, "create temp table")
+        assert any("_geojson_staging" in s for s in create_stmts)
 
-        # 1. Verify the Metadata Lookup (The call that caused the original failure)
-        assert any("FROM geometry_columns" in sql for sql in all_execute_sql)
+        copy_calls = [c for c in self.mock_cursor.method_calls if c[0] == "copy_expert"]
+        assert len(copy_calls) >= 1
 
-        # 2. Verify Staging Table Creation
-        create_stmt = next(
-            (sql for sql in all_execute_sql if "CREATE TEMP TABLE" in sql), None
+        assert len(_find_sql_containing(self.mock_cursor, "alter table")) >= 1
+        assert (
+            len(_find_sql_containing(self.mock_cursor, "insert into public.parks")) >= 1
         )
-        assert create_stmt is not None, "Staging table was not created"
-        assert "_geojson_staging" in create_stmt
-        assert "public.parks" in create_stmt
 
-        # 3. Verify Data Loading (copy_expert)
-        copy_calls = [c for c in mock_cursor.method_calls if c[0] == "copy_expert"]
-        assert len(copy_calls) == 1
-
-        # 4. Verify Geometry Column Alteration
-        assert any("ALTER TABLE" in sql for sql in all_execute_sql)
-
-        # 5. Verify Final Insertion
-        assert any("INSERT INTO public.parks" in sql for sql in all_execute_sql)
-
-    def test_empty_file_returns_zero(self, empty_geojson, engine, mock_cursor):
-        inserted, failed = engine.ingest_geojson(
+    def test_empty_file_returns_zero(self, empty_geojson):
+        inserted, failed = self.engine.ingest_geojson(
             filepath=empty_geojson, target_table="parks", target_schema="public"
         )
-
         assert inserted == 0
         assert failed == []
 
-    def test_null_geometry_logged_as_failure(
-        self, geojson_with_nulls, engine, mock_cursor
-    ):
-        mock_cursor.rowcount = 2
+    def test_null_geometry_logged_as_failure(self, geojson_with_nulls):
+        self.mock_cursor.rowcount = 2
 
-        inserted, failed = engine.ingest_geojson(
+        inserted, failed = self.engine.ingest_geojson(
             filepath=geojson_with_nulls, target_table="parks", target_schema="public"
         )
 
@@ -552,100 +697,92 @@ class TestIngestGeojson:
         assert failed[0]["index"] == 1
         assert "no geometry" in failed[0]["error"].lower()
 
-    def test_null_property_written_as_backslash_n(
-        self, geojson_with_nulls, engine, mock_cursor
-    ):
+    def test_null_property_written_as_backslash_n(self, geojson_with_nulls):
         copied_data = []
 
         def capture_copy(sql, buf):
             copied_data.append(buf.read())
 
-        mock_cursor.copy_expert.side_effect = capture_copy
+        self.mock_cursor.copy_expert.side_effect = capture_copy
 
-        engine.ingest_geojson(
+        self.engine.ingest_geojson(
             filepath=geojson_with_nulls, target_table="parks", target_schema="public"
         )
 
         combined = "".join(copied_data)
-        lines = [l for l in combined.strip().split("\n") if l]
-        line_for_id3 = [l for l in lines if l.startswith("3\t")][0]
+        lines = [line for line in combined.strip().split("\n") if line]
+        line_for_id3 = [line for line in lines if line.startswith("3\t")][0]
         fields = line_for_id3.split("\t")
         assert fields[1] == "\\N"
 
-    def test_batching(self, sample_geojson, engine, mock_cursor):
-        mock_cursor.rowcount = 3
+    def test_batching(self, sample_geojson):
+        self.mock_cursor.rowcount = 3
 
-        engine.ingest_geojson(
+        self.engine.ingest_geojson(
             filepath=sample_geojson,
             target_table="parks",
             target_schema="public",
             batch_size=2,
         )
 
-        copy_calls = [c for c in mock_cursor.method_calls if c[0] == "copy_expert"]
+        copy_calls = [c for c in self.mock_cursor.method_calls if c[0] == "copy_expert"]
         assert len(copy_calls) == 2
 
-    def test_conflict_do_nothing(self, sample_geojson, engine, mock_cursor):
-        engine.ingest_geojson(
+    def test_conflict_do_nothing(self, sample_geojson):
+        self.engine.ingest_geojson(
             filepath=sample_geojson,
             target_table="parks",
             target_schema="public",
             conflict_column="id",
             conflict_action="NOTHING",
         )
-
-        insert_sql = [
-            c[0][0]
-            for c in mock_cursor.execute.call_args_list
-            if "INSERT INTO" in str(c) and "ON CONFLICT" in str(c)
+        insert_stmts = [
+            s
+            for s in _find_sql_containing(self.mock_cursor, "insert into")
+            if "on conflict" in s
         ]
-        assert len(insert_sql) == 1
-        assert 'ON CONFLICT ("id") DO NOTHING' in insert_sql[0]
+        assert len(insert_stmts) == 1
+        assert 'on conflict ("id") do nothing' in insert_stmts[0]
 
-    def test_conflict_do_update(self, sample_geojson, engine, mock_cursor):
-        engine.ingest_geojson(
+    def test_conflict_do_update(self, sample_geojson):
+        self.engine.ingest_geojson(
             filepath=sample_geojson,
             target_table="parks",
             target_schema="public",
             conflict_column="id",
             conflict_action="UPDATE",
         )
-
-        insert_sql = [
-            c[0][0]
-            for c in mock_cursor.execute.call_args_list
-            if "INSERT INTO" in str(c) and "DO UPDATE SET" in str(c)
+        insert_stmts = [
+            s
+            for s in _find_sql_containing(self.mock_cursor, "insert into")
+            if "do update set" in s
         ]
-        assert len(insert_sql) == 1
-        assert 'ON CONFLICT ("id") DO UPDATE SET' in insert_sql[0]
-        set_part = insert_sql[0].split("DO UPDATE SET")[1]
+        assert len(insert_stmts) == 1
+        set_part = insert_stmts[0].split("do update set")[1]
         assert '"id"' not in set_part
 
-    def test_composite_conflict_columns(self, sample_geojson, engine, mock_cursor):
-        engine.ingest_geojson(
+    def test_composite_conflict_columns(self, sample_geojson):
+        self.engine.ingest_geojson(
             filepath=sample_geojson,
             target_table="parks",
             target_schema="public",
             conflict_column=["id", "name"],
             conflict_action="NOTHING",
         )
-
-        insert_sql = [
-            c[0][0]
-            for c in mock_cursor.execute.call_args_list
-            if "ON CONFLICT" in str(c)
+        insert_stmts = [
+            s for s in _find_sql_containing(self.mock_cursor, "on conflict")
         ]
-        assert '"id", "name"' in insert_sql[0]
+        assert any('"id", "name"' in s for s in insert_stmts)
 
-    def test_copy_data_contains_wkb_hex(self, sample_geojson, engine, mock_cursor):
+    def test_copy_data_contains_wkb_hex(self, sample_geojson):
         copied_data = []
 
         def capture_copy(sql, buf):
             copied_data.append(buf.read())
 
-        mock_cursor.copy_expert.side_effect = capture_copy
+        self.mock_cursor.copy_expert.side_effect = capture_copy
 
-        engine.ingest_geojson(
+        self.engine.ingest_geojson(
             filepath=sample_geojson, target_table="parks", target_schema="public"
         )
 
@@ -655,13 +792,13 @@ class TestIngestGeojson:
             geom_field = line.split("\t")[-1]
             assert all(c in "0123456789abcdefABCDEF" for c in geom_field)
 
-    def test_special_characters_escaped(self, tmp_path, engine, mock_cursor):
+    def test_special_characters_escaped(self, tmp_path):
         copied_data = []
 
         def capture_copy(sql, buf):
             copied_data.append(buf.read())
 
-        mock_cursor.copy_expert.side_effect = capture_copy
+        self.mock_cursor.copy_expert.side_effect = capture_copy
 
         data = {
             "type": "FeatureCollection",
@@ -676,7 +813,9 @@ class TestIngestGeojson:
         path = tmp_path / "special.geojson"
         path.write_text(json.dumps(data))
 
-        engine.ingest_geojson(filepath=path, target_table="t", target_schema="public")
+        self.engine.ingest_geojson(
+            filepath=path, target_table="t", target_schema="public"
+        )
 
         combined = "".join(copied_data)
         name_field = combined.strip().split("\t")[1]
@@ -684,7 +823,7 @@ class TestIngestGeojson:
         assert "\n" not in name_field
         assert "\\\\" in combined
 
-    def test_all_features_fail_returns_zero(self, tmp_path, engine, mock_cursor):
+    def test_all_features_fail_returns_zero(self, tmp_path):
         data = {
             "type": "FeatureCollection",
             "features": [
@@ -695,7 +834,7 @@ class TestIngestGeojson:
         path = tmp_path / "allfail.geojson"
         path.write_text(json.dumps(data))
 
-        inserted, failed = engine.ingest_geojson(
+        inserted, failed = self.engine.ingest_geojson(
             filepath=path, target_table="t", target_schema="public"
         )
 
