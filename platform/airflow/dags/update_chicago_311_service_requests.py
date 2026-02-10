@@ -4,7 +4,7 @@ import logging
 from airflow.sdk import dag
 
 from sources.update_configs import (
-    CHICAGO_TRAFFIC_CRASHES_CRASHES as UPDATE_CONFIG,
+    CHICAGO_311_SERVICE_REQUESTS as UPDATE_CONFIG,
 )
 from tasks.socrata_tasks import update_socrata_table
 
@@ -21,10 +21,10 @@ CONN_ID = "gis_dwh_db"
     catchup=False,
     tags=["socrata", "update"],
 )
-def update_chicago_traffic_crashes_crashes():
+def update_chicago_311_service_requests():
     update_socrata_table(
         update_config=UPDATE_CONFIG, conn_id=CONN_ID, task_logger=task_logger
     )
 
 
-update_chicago_traffic_crashes_crashes()
+update_chicago_311_service_requests()

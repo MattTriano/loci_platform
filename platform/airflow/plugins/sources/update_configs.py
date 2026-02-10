@@ -24,9 +24,9 @@ CHICAGO_RED_LIGHT_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
 )
 
 CHICAGO_311_SERVICE_REQUESTS = DatasetUpdateConfig(
-    dataset_id="spqx-js37",
+    dataset_id="v6vf-nfxy",
     dataset_name="chicago_311_service_requests",
-    full_update_cron="30 4 1-7 * 0",
+    full_update_cron="0 0 1-7 1,4,7,10 0",
     update_cron="30 4 * * 1,4",
 )
 
@@ -35,4 +35,11 @@ CHICAGO_TOWED_VEHICLES = DatasetUpdateConfig(
     dataset_name="chicago_towed_vehicles",
     full_update_cron="0 4 1-7 * 0",
     update_cron="0 4 * * 1,4",
+)
+
+CHICAGO_TRAFFIC_CRASHES_CRASHES = DatasetUpdateConfig(
+    dataset_id="85ca-t3if",
+    dataset_name="chicago_traffic_crashes_crashes",
+    full_update_cron="10 3 1-7 * 0",
+    update_cron="10 3 * * 1,4",
 )
