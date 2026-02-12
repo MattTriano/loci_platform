@@ -20,6 +20,8 @@ def dbt_build_dag():
                 "build",
                 "--project-dir",
                 "/opt/airflow/dbt",
+                "--select",
+                "chicago_homicide_and_non_fatal_shooting_victimizations",
             ],
             capture_output=True,
             text=True,

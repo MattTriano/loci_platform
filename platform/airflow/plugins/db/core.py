@@ -231,9 +231,26 @@ class StagedIngest:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         try:
-            if exc_type is None and self.rows_staged > 0:
+            if self.rows_staged > 0:
                 self._cast_geometry_if_needed()
                 self._merge()
+                if exc_type is not None:
+                    self._engine.logger.warning(
+                        "StagedIngest: merged %d rows from %s despite error: %s",
+                        self.rows_merged,
+                        self._staging_table,
+                        exc_val,
+                    )
+        except Exception as merge_err:
+            self._engine.logger.error(
+                "StagedIngest: merge failed for %s: %s",
+                self._staging_table,
+                merge_err,
+            )
+            # If the original exit was clean but merge itself failed,
+            # let the merge error propagate
+            if exc_type is None:
+                raise
         finally:
             self._drop_staging_table()
         return False
@@ -432,24 +449,6 @@ class PostgresEngine:
             conflict_action=conflict_action,
         )
 
-    # @pg_retry()
-    # def query(
-    #     self,
-    #     sql: str,
-    #     params: dict[str, Any] | tuple | None = None,
-    # ) -> pd.DataFrame:
-    #     """
-    #     Execute a SELECT and return results as a DataFrame.
-
-    #     Args:
-    #         sql:    SQL string. Use %(name)s for named params or %s for positional.
-    #         params: Dict for named params, tuple for positional, or None.
-    #     """
-    #     with self.cursor() as cur:
-    #         cur.execute(sql, params)
-    #         columns = [desc[0] for desc in cur.description]
-    #         return pd.DataFrame(cur.fetchall(), columns=columns)
-
     @pg_retry()
     def query(
         self,
@@ -487,41 +486,19 @@ class PostgresEngine:
         """
         Check whether any column in the result set is a known geometry column.
 
-        Scans the geometry_columns catalog for every schema.table pair that
-        has been cached. Falls back to a direct catalog query matching on
-        column name alone if no cache hit is found.
+        Only matches against tables already present in _geometry_info_cache
+        (populated by staged_ingest, ingest_geojson, or manual calls to
+        _get_geometry_info). This avoids false positives from PostGIS
+        extension functions like normalize_address whose output columns
+        happen to share names with geometry_columns entries.
 
         Returns (geometry_column_name, srid) or (None, 0).
         """
-        # Check against already-cached tables first (free)
+        column_set = set(columns)
         for (_schema, _table), info in self._geometry_info_cache.items():
             for col_name, srid in info.items():
-                if col_name in columns:
+                if col_name in column_set:
                     return col_name, srid
-
-        # Lightweight catalog query: do any of the result column names
-        # appear as geometry columns in PostGIS?
-        placeholders = ", ".join(["%s"] * len(columns))
-        try:
-            with self.cursor() as cur:
-                cur.execute(
-                    f"""
-                    select f_geometry_column, srid,
-                           f_table_schema, f_table_name
-                    from geometry_columns
-                    where f_geometry_column in ({placeholders})
-                    limit 1
-                    """,
-                    tuple(columns),
-                )
-                row = cur.fetchone()
-                if row:
-                    col_name, srid, schema, table = row
-                    # Populate cache for future queries
-                    self._get_geometry_info(table, schema)
-                    return col_name, srid
-        except Exception:
-            pass
 
         return None, 0
 
@@ -781,23 +758,6 @@ class PostgresEngine:
                 from _staging
             """)
             return cur.rowcount
-
-    # def _get_geometry_column(self, target_table: str, target_schema: str) -> str:
-    #     """Look up the geometry column name from PostGIS metadata."""
-    #     df = self.query(
-    #         """
-    #         SELECT f_geometry_column
-    #         FROM geometry_columns
-    #         WHERE f_table_schema = %(schema)s AND f_table_name = %(table)s
-    #         LIMIT 1
-    #         """,
-    #         {"schema": target_schema, "table": target_table},
-    #     )
-    #     if df.empty:
-    #         raise ValueError(
-    #             f"No geometry column found for {target_schema}.{target_table}"
-    #         )
-    #     return df.iloc[0, 0]
 
     @pg_retry()
     def ingest_geojson(

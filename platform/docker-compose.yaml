@@ -79,6 +79,7 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    PYTHONDONTWRITEBYTECODE: 1
   volumes:
     - ./airflow/dags:/opt/airflow/dags:U
     - ./airflow/logs:/opt/airflow/logs:U
@@ -168,7 +169,7 @@ services:
       - FLYWAY_LOCATIONS=filesystem:/flyway/sql
       - FLYWAY_BASELINE_ON_MIGRATE=true
     depends_on:
-      postgres:
+      postgis:
         condition: service_healthy
 
   flyway-mysql:

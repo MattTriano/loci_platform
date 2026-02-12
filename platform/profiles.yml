@@ -1,0 +1,12 @@
+loci:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgis
+      user: loci
+      password: loci
+      port: 5432
+      dbname: loci
+      schema: staging
+      threads: 4

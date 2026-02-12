@@ -463,17 +463,21 @@ class TestStagedIngest:
         assert '"val" = excluded."val"' in insert_sql
         assert '"k1" = excluded."k1"' not in insert_sql
 
-    def test_no_merge_on_error(self, engine, mock_cursor):
+    def test_merges_partial_data_on_error(self, engine, mock_cursor):
+        """On error, staged rows are still merged before re-raising."""
+        mock_cursor.rowcount = 1
+
         with pytest.raises(RuntimeError, match="boom"):
             with engine.staged_ingest("t", "s") as stager:
                 stager.write_batch([{"id": 1}])
                 raise RuntimeError("boom")
 
-        # No INSERT INTO should have been executed (merge skipped)
+        # Merge SHOULD have happened with the partial data
         insert_stmts = _find_sql_containing(mock_cursor, "insert into s.t")
-        assert len(insert_stmts) == 0
+        assert len(insert_stmts) == 1
+        assert stager.rows_merged == 1
 
-        # But staging table should still be dropped
+        # Staging table should still be dropped
         drop_stmts = _find_sql_containing(mock_cursor, "drop table")
         assert any(stager._staging_table in s for s in drop_stmts)
 
