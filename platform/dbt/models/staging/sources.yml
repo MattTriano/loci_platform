@@ -1,0 +1,39 @@
+sources:
+  - name: raw_data
+    database: loci
+    schema: raw_data
+    tags:
+      - raw
+    tables:
+      - name: chicago_311_service_requests
+      - name: chicago_additional_dwelling_unit_preapproval_applications
+      - name: chicago_arrests
+      - name: chicago_boundaries_zip_codes
+      - name: chicago_building_permits
+      - name: chicago_business_licenses
+      - name: chicago_business_owners
+      - name: chicago_crimes
+      - name: chicago_divvy_bicycle_stations
+      - name: chicago_food_inspections
+      - name: chicago_homicide_and_non_fatal_shooting_victimizations
+      - name: chicago_lending_equity_residential_lending
+      - name: chicago_park_district_activities
+      - name: chicago_potholes_patched
+      - name: chicago_red_light_camera_locations
+      - name: chicago_red_light_camera_violations
+      - name: chicago_relocated_vehicles
+      - name: chicago_sidewalk_cafe_permits
+      - name: chicago_speed_camera_locations
+      - name: chicago_speed_camera_violations
+      - name: chicago_towed_vehicles
+      - name: chicago_traffic_crashes_crashes
+      - name: chicago_traffic_crashes_people
+      - name: chicago_traffic_crashes_vehicles
+      - name: cook_county_assessed_parcel_values
+      - name: cook_county_commercial_valuation_data
+      - name: cook_county_neighborhood_boundaries
+      - name: cook_county_parcel_addresses
+      - name: cook_county_residential_condominium_unit_characteristics
+      - name: cook_county_single_and_multi_family_improvement_characteristics
+      - name: cta_ridership_daily_boarding_totals
+      - name: open_air_chicago_individual_measurements

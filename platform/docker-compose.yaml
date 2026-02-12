@@ -79,12 +79,15 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    PYTHONDONTWRITEBYTECODE: 1
   volumes:
     - ./airflow/dags:/opt/airflow/dags:U
     - ./airflow/logs:/opt/airflow/logs:U
     - ./airflow/config:/opt/airflow/config:U
     - ./airflow/plugins:/opt/airflow/plugins:U
     - ./raw_data:/opt/airflow/raw_data:U
+    - ./dbt:/opt/airflow/dbt:U
+    - ./profiles.yml:/home/airflow/.dbt/profiles.yml
   user: "50000:0"
   depends_on:
     &airflow-common-depends-on
@@ -127,8 +130,6 @@ services:
         [
           "CMD",
           "pg_isready",
-          "-h",
-          "dwh_db",
           "-d",
           "loci",
           "-U",
@@ -164,27 +165,11 @@ services:
       - FLYWAY_URL=jdbc:postgresql://postgis:5432/loci
       - FLYWAY_USER=loci
       - FLYWAY_PASSWORD=loci
-      - FLYWAY_SCHEMAS=raw_data,marts,public
+      - FLYWAY_SCHEMAS=raw_data,marts,meta,public
       - FLYWAY_LOCATIONS=filesystem:/flyway/sql
       - FLYWAY_BASELINE_ON_MIGRATE=true
     depends_on:
-      postgres:
-        condition: service_healthy
-
-  flyway-postgres:
-    image: flyway/flyway:11
-    command: migrate
-    volumes:
-      - ./migrations/postgres:/flyway/sql
-    environment:
-      - FLYWAY_URL=jdbc:postgresql://postgres:5432/airflow
-      - FLYWAY_USER=airflow
-      - FLYWAY_PASSWORD=airflow
-      - FLYWAY_SCHEMAS=raw_data,marts,public
-      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
-      - FLYWAY_BASELINE_ON_MIGRATE=true
-    depends_on:
-      postgres:
+      postgis:
         condition: service_healthy
 
   flyway-mysql:
@@ -270,7 +255,7 @@ services:
       # yamllint disable rule:line-length
       test:
         - "CMD-SHELL"
-        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$(hostname)"'
       interval: 30s
       timeout: 10s
       retries: 5

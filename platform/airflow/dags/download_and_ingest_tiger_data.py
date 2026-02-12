@@ -7,7 +7,7 @@ from typing import Optional
 from airflow.sdk import dag, task
 from airflow.sdk.bases.hook import BaseHook
 
-from db.core import get_postgres_engine
+from db.af_utils import get_postgres_engine
 
 task_logger = logging.getLogger("airflow.task")
 

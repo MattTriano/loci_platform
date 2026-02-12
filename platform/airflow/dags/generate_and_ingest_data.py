@@ -7,7 +7,7 @@ from pathlib import Path
 from airflow.sdk import dag, task
 from airflow.sdk.bases.operator import chain
 
-from db.core import get_postgres_engine, get_mysql_engine
+from db.af_utils import get_postgres_engine, get_mysql_engine
 from datagen.data_model_mocker import DataFaker
 
 task_logger = logging.getLogger("airflow.task")
@@ -58,15 +58,19 @@ def generate_and_ingest_data():
         trading_files = [p for p in file_paths if "trading_partnership" in p.name]
         for fp in addr_files:
             task_logger.info(f"Ingesting {fp.name}")
-            results = pg_engine.ingest_csv(filepath=fp, schema="raw_data", table_name="addresses")
+            results = pg_engine.ingest_csv(
+                filepath=fp, schema="raw_data", table_name="addresses"
+            )
             print(results)
-            task_logger.info(f"File ingested")
+            task_logger.info("File ingested")
 
         for fp in biz_files:
             task_logger.info(f"Ingesting {fp.name}")
-            results = pg_engine.ingest_csv(filepath=fp, schema="raw_data", table_name="businesses")
+            results = pg_engine.ingest_csv(
+                filepath=fp, schema="raw_data", table_name="businesses"
+            )
             print(results)
-            task_logger.info(f"File ingested")
+            task_logger.info("File ingested")
 
         for fp in trading_files:
             task_logger.info(f"Ingesting {fp.name}")
@@ -74,7 +78,7 @@ def generate_and_ingest_data():
                 filepath=fp, schema="raw_data", table_name="trading_partnerships"
             )
             print(results)
-            task_logger.info(f"File ingested")
+            task_logger.info("File ingested")
         return True
 
     @task
