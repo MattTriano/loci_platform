@@ -4,7 +4,7 @@ import logging
 from airflow.sdk import dag
 
 from sources.update_configs import (
-    CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS as UPDATE_CONFIG,
+    CHICAGO_TRAFFIC_CRASHES_CRASHES as UPDATE_CONFIG,
 )
 from tasks.socrata_tasks import update_socrata_table
 
@@ -19,12 +19,12 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
-    tags=["socrata", "update"],
+    tags=["socrata", "update", "chicago", "traffic", "crashes"],
 )
-def update_chicago_homicide_and_non_fatal_shooting_victimizations():
+def update_chicago_traffic_crashes_crashes():
     update_socrata_table(
         update_config=UPDATE_CONFIG, conn_id=CONN_ID, task_logger=task_logger
     )
 
 
-update_chicago_homicide_and_non_fatal_shooting_victimizations()
+update_chicago_traffic_crashes_crashes()
