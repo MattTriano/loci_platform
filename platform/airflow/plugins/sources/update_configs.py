@@ -16,6 +16,13 @@ CHICAGO_SPEED_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
     update_cron="5 4 * * 1,4",
 )
 
+CHICAGO_DIVVY_BICYCLE_STATIONS = DatasetUpdateConfig(
+    dataset_id="bbyy-e7gq",
+    dataset_name="chicago_divvy_bicycle_stations",
+    full_update_cron="15 4 1-7 * 0",
+    update_cron="15 4 * * 1,4",
+)
+
 CHICAGO_RED_LIGHT_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
     dataset_id="spqx-js37",
     dataset_name="chicago_red_light_camera_violations",
@@ -114,6 +121,14 @@ COOK_COUNTY_PARCEL_SALES = DatasetUpdateConfig(
     update_cron="40 5 * * *",
 )
 
+COOK_COUNTY_ASSESSED_PARCEL_VALUES = DatasetUpdateConfig(
+    dataset_id="uzyt-m557",
+    dataset_name="cook_county_assessed_parcel_values",
+    full_update_cron="0 2 1-7 * 1",
+    update_cron="30 1 * * 1,4",
+)
+
+
 COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES = DatasetUpdateConfig(
     dataset_id="pcdw-pxtg",
     dataset_name="cook_county_neighborhood_boundaries",
@@ -133,4 +148,18 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
     dataset_name="chicago_homicide_and_non_fatal_shooting_victimizations",
     full_update_cron="0 1 1-7 * 0",
     update_cron="0 1 * * *",
+)
+
+CHICAGO_CRIMES = DatasetUpdateConfig(
+    dataset_id="ijzp-q8t2",
+    dataset_name="chicago_crimes",
+    full_update_cron="0 1 1-7 * 1",
+    update_cron="10 1 * * *",
+)
+
+CHICAGO_ARRESTS = DatasetUpdateConfig(
+    dataset_id="dpt3-jri9",
+    dataset_name="chicago_arrests",
+    full_update_cron="0 2 1-7 * 1",
+    update_cron="20 1 * * *",
 )

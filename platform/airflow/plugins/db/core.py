@@ -172,7 +172,11 @@ class StagedIngest:
 
         # Use a short random suffix so parallel ingests don't collide
         suffix = uuid.uuid4().hex[:8]
-        self._staging_table = f"_staging_{target_table}_{suffix}"
+
+        max_len = 63
+        prefix = "_staging_"
+        max_table_len = max_len - len(prefix) - len(suffix)
+        self._staging_table = f"{prefix}{target_table[:max_table_len]}{suffix}"
 
         self._columns: list[str] | None = None
         self._col_list: str | None = None

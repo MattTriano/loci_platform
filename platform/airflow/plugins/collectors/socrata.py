@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -7,6 +8,13 @@ from functools import cached_property
 from typing import Any, Iterator, Optional
 
 import requests
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    before_sleep_log,
+)
 
 from collectors.ingestion_tracker import IngestionTracker
 
@@ -102,6 +110,12 @@ class SocrataClient:
             params["$limit"] = str(limit)
         return self._request(domain, dataset_id, params, include_system_fields)
 
+    @retry(
+        retry=retry_if_exception_type(json.JSONDecodeError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=10),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
     def _request(
         self,
         domain: str,
@@ -114,16 +128,22 @@ class SocrataClient:
         if include_system_fields and "$select" not in params:
             params["$$exclude_system_fields"] = "false"
         self.logger.debug("GET %s  params=%s", url, params)
-
         resp = self._session.get(url, params=params, timeout=self.request_timeout)
         resp.raise_for_status()
-
         if "X-Rate-Limit-Remaining" in resp.headers:
             self.logger.debug(
                 "Rate limit remaining: %s", resp.headers["X-Rate-Limit-Remaining"]
             )
-
-        return resp.json()
+        try:
+            return resp.json()
+        except json.JSONDecodeError as e:
+            self.logger.warning(
+                "Bad JSON on char %d of %d: ...%s...",
+                e.pos,
+                len(resp.text),
+                resp.text[max(0, e.pos - 200) : e.pos + 200],
+            )
+            raise
 
 
 @dataclass
@@ -637,125 +657,6 @@ class SocrataCollector:
             )
 
         return stager.rows_merged
-
-    # def incremental_update(
-    #     self,
-    #     dataset_id: str,
-    #     target_table: str,
-    #     target_schema: str = "raw_data",
-    #     config: IncrementalConfig | None = None,
-    #     high_water_mark_override: str | None = None,
-    # ) -> int:
-    #     """
-    #     Run an incremental paginated ingest with automatic high-water mark
-    #     management and idempotent upsert.
-
-    #     The high_water_mark is stored as "value|id" to support keyset
-    #     pagination with a tiebreaker, e.g. "2025-02-01T12:34:56.000|12345".
-    #     """
-    #     raw_hwm = high_water_mark_override or self.tracker.get_high_water_mark(
-    #         self.SOURCE_NAME, dataset_id
-    #     )
-
-    #     hwm_value, hwm_id = None, None
-    #     if raw_hwm and "|" in raw_hwm:
-    #         hwm_value, hwm_id = raw_hwm.rsplit("|", 1)
-    #     elif raw_hwm:
-    #         hwm_value = raw_hwm
-
-    #     if hwm_value:
-    #         self.logger.info(
-    #             "Resuming from high_water_mark: %s (id: %s)", hwm_value, hwm_id
-    #         )
-    #     else:
-    #         self.logger.info("No prior high_water_mark — full incremental load")
-
-    #     meta = self._get_metadata(dataset_id)
-    #     domain = meta.domain
-    #     fqn = f"{target_schema}.{target_table}"
-    #     inc_col = config.incremental_column
-
-    #     run_metadata = {
-    #         "mode": "incremental",
-    #         "incremental_column": inc_col,
-    #         "conflict_key": config.conflict_key,
-    #         "prior_high_water_mark": raw_hwm,
-    #         "domain": domain,
-    #     }
-
-    #     with self.tracker.track(
-    #         self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
-    #     ) as run:
-    #         where_parts = []
-    #         if hwm_value and hwm_id:
-    #             where_parts.append(
-    #                 f"({inc_col} = '{hwm_value}' AND :id > '{hwm_id}') "
-    #                 f"OR ({inc_col} > '{hwm_value}')"
-    #             )
-    #         elif hwm_value:
-    #             where_parts.append(f"{inc_col} > '{hwm_value}'")
-    #         if config.where:
-    #             where_parts.append(config.where)
-
-    #         combined_where = (
-    #             " AND ".join(f"({p})" for p in where_parts) if where_parts else None
-    #         )
-
-    #         order_by = config.order_by or f"{inc_col}, :id"
-
-    #         total_rows = 0
-    #         max_hwm = hwm_value
-    #         max_hwm_id = hwm_id
-    #         renamed_inc_col = self.SYSTEM_FIELD_RENAMES.get(inc_col, inc_col)
-
-    #         for page_num, batch in enumerate(
-    #             self.client.paginate(
-    #                 domain=domain,
-    #                 dataset_id=dataset_id,
-    #                 columns=config.columns,
-    #                 where=combined_where,
-    #                 order_by=order_by,
-    #                 include_system_fields=True,
-    #             ),
-    #             start=1,
-    #         ):
-    #             renamed_batch = self._rename_system_fields(batch)
-    #             rows = self.engine.ingest_batch(
-    #                 renamed_batch,
-    #                 target_table,
-    #                 target_schema=target_schema,
-    #                 conflict_column=None,
-    #                 conflict_action="NOTHING",
-    #             )
-    #             total_rows += rows
-
-    #             batch_hwm, batch_id = self._extract_max_hwm(
-    #                 renamed_batch, renamed_inc_col
-    #             )
-    #             if batch_hwm and (
-    #                 max_hwm is None
-    #                 or batch_hwm > max_hwm
-    #                 or (batch_hwm == max_hwm and batch_id > (max_hwm_id or ""))
-    #             ):
-    #                 max_hwm = batch_hwm
-    #                 max_hwm_id = batch_id
-
-    #             self.logger.info(
-    #                 "Page %d: fetched %d, upserted %d (total: %d, hwm: %s|%s)",
-    #                 page_num,
-    #                 len(renamed_batch),
-    #                 rows,
-    #                 total_rows,
-    #                 max_hwm,
-    #                 max_hwm_id,
-    #             )
-
-    #         run.rows_ingested = total_rows
-    #         run.high_water_mark = (
-    #             f"{max_hwm}|{max_hwm_id}" if max_hwm and max_hwm_id else max_hwm
-    #         )
-
-    #     return total_rows
 
     @staticmethod
     def _extract_max_hwm(
