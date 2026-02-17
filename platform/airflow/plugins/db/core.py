@@ -604,20 +604,38 @@ class PostgresEngine:
     def _detect_geometry_in_result(self, columns: list[str]) -> tuple[str | None, int]:
         """
         Check whether any column in the result set is a known geometry column.
-
-        Only matches against tables already present in _geometry_info_cache
-        (populated by staged_ingest, ingest_geojson, or manual calls to
-        _get_geometry_info). This avoids false positives from PostGIS
-        extension functions like normalize_address whose output columns
-        happen to share names with geometry_columns entries.
+        Checks the cache first, then falls back to querying the PostGIS
+        geometry_columns catalog directly.
 
         Returns (geometry_column_name, srid) or (None, 0).
         """
         column_set = set(columns)
+
+        # Check cache first
         for (_schema, _table), info in self._geometry_info_cache.items():
             for col_name, srid in info.items():
                 if col_name in column_set:
                     return col_name, srid
+
+        # Fall back to geometry_columns catalog
+        if not column_set:
+            return None, 0
+
+        try:
+            placeholders = ", ".join(["%s"] * len(column_set))
+            with self.cursor() as cur:
+                cur.execute(
+                    f"select f_geometry_column, srid "
+                    f"from geometry_columns "
+                    f"where f_geometry_column in ({placeholders}) "
+                    f"limit 1",
+                    tuple(column_set),
+                )
+                row = cur.fetchone()
+                if row:
+                    return row[0], row[1]
+        except Exception:
+            pass
 
         return None, 0
 

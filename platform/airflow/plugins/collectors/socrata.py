@@ -550,6 +550,30 @@ class SocrataCollector:
             self._metadata_cache[dataset_id] = SocrataTableMetadata(dataset_id)
         return self._metadata_cache[dataset_id]
 
+    def _get_table_columns(self, target_table: str, target_schema: str) -> set[str]:
+        df = self.engine.query(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = %(schema)s and table_name = %(table)s
+            """,
+            {"schema": target_schema, "table": target_table},
+        )
+        return set(df["column_name"])
+
+    def _filter_to_table_columns(
+        self, rows: list[dict[str, Any]], table_columns: set[str]
+    ) -> list[dict[str, Any]]:
+        dropped = set()
+        for row in rows:
+            extra = set(row.keys()) - table_columns
+            for k in extra:
+                del row[k]
+            dropped.update(extra)
+        if dropped:
+            self.logger.warning("Dropped columns not in target table: %s", dropped)
+        return rows
+
     def full_refresh(
         self,
         dataset_id: str,
@@ -642,6 +666,10 @@ class SocrataCollector:
                 else:
                     batches = parse_csv(filepath)
 
+                location_columns = self._get_location_columns(dataset_id)
+                table_columns = self._get_table_columns(target_table, target_schema)
+                self.logger.info("Table columns: %s ", table_columns)
+                first_batch = True
                 with self.engine.staged_ingest(
                     target_table=target_table,
                     target_schema=target_schema,
@@ -651,6 +679,12 @@ class SocrataCollector:
                     for batch in batches:
                         batch = self._rename_file_columns(batch, dataset_id)
                         batch = self._add_system_field_defaults(batch, now_utc)
+                        batch = self._filter_to_table_columns(batch, table_columns)
+                        if first_batch:
+                            self.logger.info("First batch cols: %s ", batch[0])
+                            first_batch = False
+                        if location_columns:
+                            self._convert_location_fields(batch, location_columns)
                         stager.write_batch(batch)
 
                 run.rows_staged = stager.rows_staged
@@ -708,6 +742,44 @@ class SocrataCollector:
             tmp.close()
             Path(tmp.name).unlink(missing_ok=True)
             raise
+
+    @staticmethod
+    def _convert_location_fields(
+        rows: list[dict[str, Any]], location_columns: set[str]
+    ) -> list[dict[str, Any]]:
+        """Convert Socrata location/point JSON objects to EWKT strings."""
+        import json
+
+        for row in rows:
+            for col in location_columns:
+                val = row.get(col)
+                if val is None:
+                    continue
+                if isinstance(val, str):
+                    try:
+                        val = json.loads(val)
+                    except (json.JSONDecodeError, TypeError):
+                        row[col] = None
+                        continue
+                if isinstance(val, dict):
+                    lat = val.get("latitude")
+                    lon = val.get("longitude")
+                    if lat is not None and lon is not None:
+                        row[col] = f"SRID=4326;POINT({lon} {lat})"
+                    else:
+                        row[col] = None
+                else:
+                    row[col] = None
+        return rows
+
+    def _get_location_columns(self, dataset_id: str) -> set[str]:
+        """Get columns that are Socrata location or point type."""
+        meta = self._get_metadata(dataset_id)
+        return {
+            col.field_name
+            for col in meta.columns
+            if col.datatype in ("location", "point")
+        }
 
     def full_refresh_via_api(
         self,
@@ -824,6 +896,7 @@ class SocrataCollector:
             renamed_inc_col = self.SYSTEM_FIELD_RENAMES.get(inc_col, inc_col)
             max_hwm = hwm_value
             max_hwm_id = hwm_id
+            location_columns = self._get_location_columns(dataset_id)
 
             with self.engine.staged_ingest(
                 target_table=target_table,
@@ -842,6 +915,8 @@ class SocrataCollector:
                     ),
                     start=1,
                 ):
+                    if location_columns:
+                        self._convert_location_fields(batch, location_columns)
                     renamed_batch = self._rename_system_fields(batch)
                     stager.write_batch(renamed_batch)
 
