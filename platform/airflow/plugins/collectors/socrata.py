@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import requests
+from requests.exceptions import ChunkedEncodingError, ConnectionError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -715,6 +716,12 @@ class SocrataCollector:
             return rows
         return [{rename_map.get(k, k): v for k, v in row.items()} for row in rows]
 
+    @retry(
+        retry=retry_if_exception_type((ChunkedEncodingError, ConnectionError)),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=30, max=300),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
     def _download_to_tempfile(self, url: str, download_format: str) -> Path:
         """Download a URL to a temporary file. Returns the file path."""
         suffix = ".geojson" if download_format == "GeoJSON" else ".csv"
