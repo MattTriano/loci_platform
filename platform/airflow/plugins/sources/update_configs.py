@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -7,6 +7,8 @@ class DatasetUpdateConfig:
     dataset_name: str
     full_update_cron: str
     update_cron: str
+    entity_key: list[str] = field(default_factory=list)
+    full_update_mode: str = "api"  # "api" or "file_download"
 
 
 CHICAGO_SPEED_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
@@ -141,6 +143,8 @@ COOK_COUNTY_PARCEL_ADDRESSES = DatasetUpdateConfig(
     dataset_name="cook_county_parcel_addresses",
     full_update_cron="50 5 1-7 * 0",
     update_cron="50 5 * * *",
+    entity_key=["row_id"],
+    full_update_mode="file_download"
 )
 
 CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
@@ -148,6 +152,8 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
     dataset_name="chicago_homicide_and_non_fatal_shooting_victimizations",
     full_update_cron="0 1 1-7 * 0",
     update_cron="0 1 * * *",
+    entity_key=["unique_id"],
+    full_update_mode="api"
 )
 
 CHICAGO_CRIMES = DatasetUpdateConfig(

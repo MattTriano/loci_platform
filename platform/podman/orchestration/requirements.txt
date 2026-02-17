@@ -5,10 +5,12 @@ apache-airflow-providers-mysql
 asyncpg
 faker
 geopandas
+ijson
 pandas
 psycopg2-binary
 pyarrow
 PyMySQL
 requests
+shapely
 sqlalchemy
 tenacity

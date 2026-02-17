@@ -157,6 +157,8 @@ class StagedIngest:
         target_schema: str,
         conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
+        entity_key: list[str] | None = None,
+        metadata_columns: set[str] | None = None,
     ) -> None:
         self._engine = engine
         self._target_table = target_table
@@ -169,6 +171,15 @@ class StagedIngest:
             self._conflict_columns = conflict_column
 
         self._conflict_action = conflict_action
+
+        # SCD2 config
+        self._entity_key = entity_key
+        self._metadata_columns = metadata_columns
+
+        if entity_key and conflict_column:
+            raise ValueError(
+                "Specify either entity_key (SCD2) or conflict_column (simple merge), not both."
+            )
 
         # Use a short random suffix so parallel ingests don't collide
         suffix = uuid.uuid4().hex[:8]
@@ -186,9 +197,10 @@ class StagedIngest:
         self.rows_merged = 0
 
         self._engine.logger.info(
-            "StagedIngest: staging table %s for target %s",
+            "StagedIngest: staging table %s for target %s (mode: %s)",
             self._staging_table,
             self._fqn,
+            "scd2" if entity_key else "simple",
         )
 
     # ------------------------------------------------------------------
@@ -237,7 +249,10 @@ class StagedIngest:
         try:
             if self.rows_staged > 0:
                 self._cast_geometry_if_needed()
-                self._merge()
+                if self._entity_key:
+                    self._scd2_merge()
+                else:
+                    self._merge()
                 if exc_type is not None:
                     self._engine.logger.warning(
                         "StagedIngest: merged %d rows from %s despite error: %s",
@@ -251,13 +266,130 @@ class StagedIngest:
                 self._staging_table,
                 merge_err,
             )
-            # If the original exit was clean but merge itself failed,
-            # let the merge error propagate
             if exc_type is None:
                 raise
         finally:
             self._drop_staging_table()
         return False
+
+    # ------------------------------------------------------------------
+    # Simple merge
+    # ------------------------------------------------------------------
+
+    def _merge(self) -> None:
+        """INSERT from staging into target, with optional ON CONFLICT."""
+        insert_sql = (
+            f"insert into {self._fqn} ({self._col_list}) "
+            f"select {self._col_list} from {self._staging_table}"
+        )
+
+        if self._conflict_columns:
+            conflict_clause = ", ".join(f'"{c}"' for c in self._conflict_columns)
+
+            if self._conflict_action.upper() == "UPDATE":
+                update_cols = [
+                    c for c in self._columns if c not in self._conflict_columns
+                ]
+                set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
+                insert_sql += (
+                    f" on conflict ({conflict_clause}) do update set {set_clause}"
+                )
+            else:
+                insert_sql += f" on conflict ({conflict_clause}) do nothing"
+
+        with self._engine.cursor() as cur:
+            cur.execute(insert_sql)
+            self.rows_merged = cur.rowcount
+
+        self._engine.logger.info(
+            "Merged %d rows into %s (staged %d)",
+            self.rows_merged,
+            self._fqn,
+            self.rows_staged,
+        )
+
+    # ------------------------------------------------------------------
+    # SCD2 merge
+    # ------------------------------------------------------------------
+
+    def _scd2_merge(self) -> None:
+        """
+        SCD Type 2 merge:
+        1. Compute record_hash on staging rows
+        2. Close out current versions in target whose hash differs
+        3. Insert new versions (new entities + changed entities)
+        Skips rows whose (entity_key, record_hash) already exists in target.
+        """
+        hash_columns = self._get_hash_columns()
+        hash_expr = self._build_hash_expression(hash_columns)
+        entity_join = " and ".join(f't."{k}" = s."{k}"' for k in self._entity_key)
+        entity_conflict = ", ".join(f'"{k}"' for k in self._entity_key)
+
+        with self._engine.cursor() as cur:
+            # 1. Compute record_hash on staging rows
+            cur.execute(
+                f'alter table {self._staging_table} add column if not exists "record_hash" text'
+            )
+            cur.execute(f'update {self._staging_table} set "record_hash" = {hash_expr}')
+
+            # 2. Close out current versions that have a new incoming version
+            #    (entity exists in both, but hash differs)
+            cur.execute(f"""
+                update {self._fqn} t
+                set "valid_to" = now() at time zone 'utc'
+                where "valid_to" is null
+                  and exists (
+                    select 1 from {self._staging_table} s
+                    where {entity_join}
+                      and s."record_hash" != t."record_hash"
+                  )
+            """)
+            rows_closed = cur.rowcount
+            self._engine.logger.info(
+                "SCD2: closed out %d superseded versions in %s",
+                rows_closed,
+                self._fqn,
+            )
+
+            # 3. Insert new versions, skipping any (entity_key, record_hash)
+            #    that already exists in the target
+            select_cols = ", ".join(f's."{c}"' for c in self._columns)
+            insert_col_list = f'{self._col_list}, "record_hash"'
+
+            cur.execute(f"""
+                insert into {self._fqn} ({insert_col_list})
+                select {select_cols}, s."record_hash"
+                from {self._staging_table} s
+                on conflict ({entity_conflict}, "record_hash") do nothing
+            """)
+            self.rows_merged = cur.rowcount
+
+        self._engine.logger.info(
+            "SCD2: inserted %d new versions into %s (staged %d, closed %d)",
+            self.rows_merged,
+            self._fqn,
+            self.rows_staged,
+            rows_closed,
+        )
+
+    def _get_hash_columns(self) -> list[str]:
+        """Determine which columns to include in the record hash."""
+        exclude = set(self._entity_key) | set(self._metadata_columns)
+        hash_cols = [c for c in self._columns if c not in exclude]
+        if not hash_cols:
+            raise ValueError(
+                f"No columns to hash after excluding entity_key {self._entity_key} "
+                f"and metadata columns {self._metadata_columns}"
+            )
+        self._engine.logger.info("SCD2: hashing columns: %s", hash_cols)
+        return hash_cols
+
+    @staticmethod
+    def _build_hash_expression(columns: list[str]) -> str:
+        """Build a SQL MD5 expression over the given columns."""
+        parts = [f"""coalesce("{c}"::text, '')""" for c in columns]
+        concatenated = " || '|' || ".join(parts)
+        return f"md5({concatenated})"
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -269,6 +401,11 @@ class StagedIngest:
                 f"create temp table {self._staging_table} "
                 f"(like {self._fqn} including defaults)"
             )
+            if self._entity_key:
+                cur.execute(
+                    f"alter table {self._staging_table} "
+                    f'alter column "record_hash" drop not null'
+                )
         self._created = True
         self._engine.logger.info("Created staging table %s", self._staging_table)
 
@@ -321,38 +458,6 @@ class StagedIngest:
                 f'alter column "{geom_col}" type geometry '
                 f'using "{geom_col}"::geometry'
             )
-
-    def _merge(self) -> None:
-        """INSERT from staging into target, with optional ON CONFLICT."""
-        insert_sql = (
-            f"insert into {self._fqn} ({self._col_list}) "
-            f"select {self._col_list} from {self._staging_table}"
-        )
-
-        if self._conflict_columns:
-            conflict_clause = ", ".join(f'"{c}"' for c in self._conflict_columns)
-
-            if self._conflict_action.upper() == "UPDATE":
-                update_cols = [
-                    c for c in self._columns if c not in self._conflict_columns
-                ]
-                set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
-                insert_sql += (
-                    f" on conflict ({conflict_clause}) do update set {set_clause}"
-                )
-            else:
-                insert_sql += f" on conflict ({conflict_clause}) do nothing"
-
-        with self._engine.cursor() as cur:
-            cur.execute(insert_sql)
-            self.rows_merged = cur.rowcount
-
-        self._engine.logger.info(
-            "Merged %d rows into %s (staged %d)",
-            self.rows_merged,
-            self._fqn,
-            self.rows_staged,
-        )
 
 
 def pg_retry():
@@ -432,18 +537,25 @@ class PostgresEngine:
         target_schema: str,
         conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
+        entity_key: list[str] | None = None,
+        metadata_columns: set[str] | None = None,
     ) -> StagedIngest:
         """
         Return a StagedIngest context manager that accumulates batches
         into a staging table, then merges into the target on exit.
 
-        Usage:
+        For simple upsert:
             with engine.staged_ingest("crimes", "raw_data",
                                        conflict_column=["case_number"],
                                        conflict_action="UPDATE") as stager:
                 stager.write_batch(rows)
 
-            print(stager.rows_staged, stager.rows_merged)
+        For SCD Type 2:
+            with engine.staged_ingest("crimes", "raw_data",
+                                       entity_key=["case_number"]) as stager:
+                stager.write_batch(rows)
+
+        print(stager.rows_staged, stager.rows_merged)
         """
         return StagedIngest(
             engine=self,
@@ -451,6 +563,8 @@ class PostgresEngine:
             target_schema=target_schema,
             conflict_column=conflict_column,
             conflict_action=conflict_action,
+            entity_key=entity_key,
+            metadata_columns=metadata_columns,
         )
 
     @pg_retry()

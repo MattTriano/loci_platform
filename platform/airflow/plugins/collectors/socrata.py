@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+import tempfile
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import requests
@@ -17,6 +19,9 @@ from tenacity import (
 )
 
 from collectors.ingestion_tracker import IngestionTracker
+from parsers.csv_parser import parse_csv
+from parsers.geojson import parse_geojson
+from sources.update_configs import DatasetUpdateConfig
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +256,14 @@ class SocrataTableMetadata:
             self._columns = self._parse_columns()
         return self._columns
 
+    @cached_property
+    def column_rename_map(self) -> dict[str, str]:
+        return {
+            col.name: col.field_name
+            for col in self.columns
+            if col.name != col.field_name
+        }
+
     def _parse_columns(self) -> list[SocrataColumnInfo]:
         raw_columns = self.views_metadata.get("columns", [])
         if not raw_columns:
@@ -484,6 +497,16 @@ class SocrataCollector:
         ":created_at": "socrata_created_at",
         ":version": "socrata_version",
     }
+    METADATA_COLUMNS = {
+        "socrata_id",
+        "socrata_updated_at",
+        "socrata_created_at",
+        "socrata_version",
+        "ingested_at",
+        "record_hash",
+        "valid_from",
+        "valid_to",
+    }
 
     def __init__(
         self,
@@ -510,17 +533,188 @@ class SocrataCollector:
             )
         return self._client
 
+    @staticmethod
+    def _add_system_field_defaults(
+        rows: list[dict[str, Any]], timestamp: str
+    ) -> list[dict[str, Any]]:
+        """Add default values for Socrata system fields not present in file exports."""
+        for row in rows:
+            row.setdefault("socrata_updated_at", timestamp)
+            row.setdefault("socrata_created_at", None)
+            row.setdefault("socrata_id", None)
+            row.setdefault("socrata_version", None)
+        return rows
+
     def _get_metadata(self, dataset_id: str) -> SocrataTableMetadata:
         if dataset_id not in self._metadata_cache:
             self._metadata_cache[dataset_id] = SocrataTableMetadata(dataset_id)
         return self._metadata_cache[dataset_id]
+
+    def full_refresh(
+        self,
+        dataset_id: str,
+        target_table: str,
+        target_schema: str = "raw_data",
+        config: DatasetUpdateConfig | None = None,
+    ) -> int:
+        """
+        Dispatch a full refresh based on config.full_update_mode.
+
+        Args:
+            dataset_id:     Socrata 4x4 identifier.
+            target_table:   Target table name.
+            target_schema:  Target schema name.
+            config:         DatasetUpdateConfig. If None, defaults to API mode.
+
+        Returns:
+            Number of rows merged.
+        """
+        mode = config.full_update_mode if config else "api"
+        entity_key = config.entity_key if config else None
+
+        if mode == "file_download":
+            return self.full_refresh_via_file(
+                dataset_id=dataset_id,
+                target_table=target_table,
+                target_schema=target_schema,
+                entity_key=entity_key,
+            )
+        else:
+            return self.full_refresh_via_api(
+                dataset_id=dataset_id,
+                target_table=target_table,
+                target_schema=target_schema,
+                conflict_key=entity_key,
+            )
+
+    def full_refresh_via_file(
+        self,
+        dataset_id: str,
+        target_table: str,
+        target_schema: str = "raw_data",
+        entity_key: list[str] | None = None,
+    ) -> int:
+        """
+        Full refresh by downloading the dataset export file (CSV or GeoJSON),
+        parsing it with a streaming parser, and ingesting via staged_ingest.
+
+        System fields (socrata_updated_at) are set to the current timestamp
+        since they are not available in bulk exports.
+        """
+        from datetime import datetime, timezone
+
+        meta = self._get_metadata(dataset_id)
+        download_url = meta.data_download_url
+        download_format = meta.download_format
+        fqn = f"{target_schema}.{target_table}"
+
+        run_metadata = {
+            "mode": "full_refresh_file",
+            "download_format": download_format,
+            "download_url": download_url,
+            "entity_key": entity_key,
+            "domain": meta.domain,
+        }
+
+        self.logger.info(
+            "Starting file download full refresh for %s (%s format)",
+            dataset_id,
+            download_format,
+        )
+
+        with self.tracker.track(
+            self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
+        ) as run:
+            filepath = self._download_to_tempfile(download_url, download_format)
+
+            try:
+                now_utc = datetime.now(timezone.utc).isoformat()
+                geojson_result = None
+
+                if download_format == "GeoJSON":
+                    geometry_column = self.engine._get_geometry_column(
+                        target_table, target_schema
+                    )
+                    batches, geojson_result = parse_geojson(
+                        filepath,
+                        geometry_column=geometry_column,
+                    )
+                else:
+                    batches = parse_csv(filepath)
+
+                with self.engine.staged_ingest(
+                    target_table=target_table,
+                    target_schema=target_schema,
+                    entity_key=entity_key,
+                    metadata_columns=self.METADATA_COLUMNS,
+                ) as stager:
+                    for batch in batches:
+                        batch = self._rename_file_columns(batch, dataset_id)
+                        batch = self._add_system_field_defaults(batch, now_utc)
+                        stager.write_batch(batch)
+
+                run.rows_staged = stager.rows_staged
+                run.rows_merged = stager.rows_merged
+                run.rows_ingested = stager.rows_merged
+                run.high_water_mark = now_utc
+
+                if geojson_result and geojson_result.features_failed > 0:
+                    run.metadata["parse_failures"] = geojson_result.features_failed
+                    run.metadata["first_parse_error"] = geojson_result.failures[0][
+                        "error"
+                    ]
+
+                if geojson_result and geojson_result.unknown_properties:
+                    run.metadata["unknown_properties"] = dict(
+                        geojson_result.unknown_properties
+                    )
+
+            finally:
+                filepath.unlink(missing_ok=True)
+
+        return stager.rows_merged
+
+    def _rename_file_columns(self, rows: list[dict], dataset_id: str) -> list[dict]:
+        """Rename file export column names to API field names."""
+        rename_map = self._get_metadata(dataset_id).column_rename_map
+        if not rename_map:
+            return rows
+        return [{rename_map.get(k, k): v for k, v in row.items()} for row in rows]
+
+    def _download_to_tempfile(self, url: str, download_format: str) -> Path:
+        """Download a URL to a temporary file. Returns the file path."""
+        suffix = ".geojson" if download_format == "GeoJSON" else ".csv"
+
+        self.logger.info("Downloading %s", url)
+        resp = self.client._session.get(url, stream=True, timeout=600)
+        resp.raise_for_status()
+
+        tmp = tempfile.NamedTemporaryFile(
+            suffix=suffix, prefix="socrata_", delete=False
+        )
+        try:
+            for chunk in resp.iter_content(chunk_size=8192):
+                tmp.write(chunk)
+            tmp.close()
+            filepath = Path(tmp.name)
+            self.logger.info(
+                "Downloaded %s to %s (%.1f MB)",
+                url,
+                filepath,
+                filepath.stat().st_size / (1024 * 1024),
+            )
+            return filepath
+        except Exception:
+            tmp.close()
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
 
     def full_refresh_via_api(
         self,
         dataset_id: str,
         target_table: str,
         target_schema: str = "raw_data",
-        conflict_key: list[str] | None = None,
+        entity_key: list[str] | None = None,
     ) -> int:
         """Full refresh using paginated SODA API (includes system fields)."""
         return self.incremental_update(
@@ -529,8 +723,9 @@ class SocrataCollector:
             target_schema=target_schema,
             config=IncrementalConfig(
                 incremental_column=":updated_at",
-                conflict_key=conflict_key,
+                conflict_key=entity_key or [],
             ),
+            entity_key=entity_key,
             high_water_mark_override="",
         )
 
@@ -546,6 +741,7 @@ class SocrataCollector:
         target_table: str,
         target_schema: str = "raw_data",
         config: IncrementalConfig | None = None,
+        entity_key: list[str] | None = None,
         high_water_mark_override: str | None = None,
     ) -> int:
         """
@@ -554,6 +750,9 @@ class SocrataCollector:
         All pages are accumulated in a staging table, then merged into the
         target in a single INSERT ... ON CONFLICT at the end. One
         IngestionTracker entry is created for the entire run.
+
+        If entity_key is provided, uses SCD2 merge (hash-based versioning).
+        Otherwise, uses simple INSERT with optional ON CONFLICT from config.
         """
         raw_hwm = high_water_mark_override or self.tracker.get_high_water_mark(
             self.SOURCE_NAME, dataset_id
@@ -578,12 +777,30 @@ class SocrataCollector:
         inc_col = config.incremental_column
 
         run_metadata = {
-            "mode": "incremental",
+            "mode": "incremental"
+            if not high_water_mark_override == ""
+            else "full_refresh_api",
             "incremental_column": inc_col,
             "conflict_key": config.conflict_key,
+            "entity_key": entity_key,
             "prior_high_water_mark": raw_hwm,
             "domain": domain,
         }
+
+        # Determine merge strategy
+        if entity_key:
+            # SCD2 path
+            staged_ingest_kwargs = {
+                "entity_key": entity_key,
+            }
+        elif config.conflict_key:
+            # Simple conflict path
+            staged_ingest_kwargs = {
+                "conflict_column": config.conflict_key,
+                "conflict_action": "NOTHING",
+            }
+        else:
+            staged_ingest_kwargs = {}
 
         with self.tracker.track(
             self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata
@@ -611,8 +828,8 @@ class SocrataCollector:
             with self.engine.staged_ingest(
                 target_table=target_table,
                 target_schema=target_schema,
-                conflict_column=config.conflict_key,
-                conflict_action="NOTHING",
+                metadata_columns=self.METADATA_COLUMNS,
+                **staged_ingest_kwargs,
             ) as stager:
                 for page_num, batch in enumerate(
                     self.client.paginate(
