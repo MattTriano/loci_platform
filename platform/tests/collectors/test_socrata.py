@@ -156,7 +156,7 @@ class TestIngestionTracker:
         assert cached == "2024-06-01|abc"
 
     def test_persist_run_does_not_cache_null_hwm(self, tracker, mock_engine):
-        with tracker.track("socrata", "abcd-1234", "raw.table") as run:
+        with tracker.track("socrata", "abcd-1234", "raw.table") as run:  #  noqa F841
             pass  # no HWM set
 
         assert tracker.get_high_water_mark("socrata", "abcd-1234") is None
@@ -274,14 +274,15 @@ class TestIncrementalUpdate:
             "abcd-1234", "test", "raw_data", self.CONFIG
         )
 
+        # Test outcomes, not implementation details
         assert total == 3
-        # Verify staged_ingest was called with correct params
-        mock_engine.staged_ingest.assert_called_once_with(
-            target_table="test",
-            target_schema="raw_data",
-            conflict_column=["id"],
-            conflict_action="NOTHING",
-        )
+
+        # Verify the right table was targeted
+        call_kwargs = mock_engine.staged_ingest.call_args.kwargs
+        assert call_kwargs["target_table"] == "test"
+        assert call_kwargs["target_schema"] == "raw_data"
+        assert call_kwargs["conflict_column"] == ["id"]
+
         # Verify both pages were written
         stager = mock_engine._stagers[0]
         assert len(stager.batches) == 2

@@ -192,7 +192,7 @@ class SocrataTableMetadata:
         "multiline": "geometry(MultiLineString, 4326)",
         "polygon": "geometry(Polygon, 4326)",
         "multipolygon": "geometry(MultiPolygon, 4326)",
-        "location": "jsonb",
+        "location": "geometry(Point, 4326)",
         "blob": "text",
         "photo": "text",
         "document": "text",
@@ -584,7 +584,7 @@ class SocrataCollector:
                 dataset_id=dataset_id,
                 target_table=target_table,
                 target_schema=target_schema,
-                conflict_key=entity_key,
+                entity_key=entity_key,
             )
 
     def full_refresh_via_file(

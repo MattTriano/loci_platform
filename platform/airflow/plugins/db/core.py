@@ -3,6 +3,7 @@ import uuid
 import logging
 import os
 import re
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,7 @@ def get_logger(
     log_format = log_format or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     formatter = logging.Formatter(log_format)
 
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
@@ -858,188 +859,6 @@ class PostgresEngine:
 
         self.logger.info("Inserted %d rows into %s", count, fqn)
         return count
-
-    @pg_retry()
-    def ingest_csv(
-        self, filepath: str | Path, target_table: str, target_schema: str
-    ) -> int:
-        fqn = f"{target_schema}.{target_table}"
-        with self.cursor() as cur:
-            cur.execute("drop table if exists _staging")
-            cur.execute(f"create temp table _staging (like {fqn} excluding all)")
-            cur.execute('alter table _staging drop column if exists "ingested_at"')
-            with open(filepath, "r") as f:
-                cur.copy_expert("copy _staging from stdin with csv header", f)
-            cur.execute(f"""
-                insert into {fqn}
-                select *, current_timestamp at time zone 'UTC'
-                from _staging
-            """)
-            return cur.rowcount
-
-    @pg_retry()
-    def ingest_geojson(
-        self,
-        filepath: str | Path,
-        target_table: str,
-        target_schema: str,
-        conflict_column: str | list[str] | None = None,
-        conflict_action: str = "NOTHING",
-        batch_size: int = 5000,
-        srid: int = 4326,
-    ) -> tuple[int, list[dict]]:
-        """
-        Stream-ingest a GeoJSON file into target_table via a staging table.
-
-        Uses ijson for constant-memory parsing regardless of file size.
-
-        Args:
-            filepath:          Path to .geojson file.
-            target_table:      Fully-qualified table name (e.g. "public.parcels").
-            conflict_column:   Column(s) for ON CONFLICT. None = plain INSERT.
-            conflict_action:   "NOTHING" or "UPDATE".
-            batch_size:        Rows per COPY batch.
-            srid:              Spatial reference ID (default 4326/WGS84).
-            geometry_column:   Name of the geometry column in the target table.
-
-        Returns:
-            (inserted_count, failed_features) — failed_features contains dicts
-            with 'index', 'feature', and 'error' keys.
-        """
-        import ijson
-        from shapely.geometry import shape
-        from shapely import wkb as shapely_wkb
-
-        filepath = Path(filepath)
-        fqn = f"{target_schema}.{target_table}"
-        geometry_column = self._get_geometry_column(target_table, target_schema)
-        self.logger.info(f"Detected geometry column '{geometry_column}' in {fqn}")
-        failed: list[dict] = []
-
-        if isinstance(conflict_column, str):
-            conflict_columns = [conflict_column]
-        else:
-            conflict_columns = conflict_column
-
-        columns: list[str] | None = None
-        col_list: str | None = None
-
-        with self.cursor() as cur:
-            cur.execute(f"""
-                create temp table _geojson_staging (like {fqn} including defaults)
-                on commit drop
-            """)
-
-            def _flush_batch(buf: io.StringIO, col_list: str) -> None:
-                buf.seek(0)
-                cur.copy_expert(
-                    f"copy _geojson_staging ({col_list}) from stdin with (format text, NULL '\\N')",
-                    buf,
-                )
-
-            buf = io.StringIO()
-            batch_count = 0
-            feature_index = 0
-
-            with open(filepath, "rb") as f:
-                for feat in ijson.items(f, "features.item"):
-                    try:
-                        props = feat.get("properties") or {}
-                        geom = feat.get("geometry")
-                        if geom is None:
-                            raise ValueError("Feature has no geometry")
-
-                        wkb_hex = shapely_wkb.dumps(shape(geom), hex=True, srid=srid)
-
-                        # Discover columns from the first valid feature
-                        if columns is None:
-                            columns = list(props.keys()) + [geometry_column]
-                            col_list = ", ".join(f'"{c}"' for c in columns)
-
-                        prop_columns = columns[:-1]  # all except geometry
-                        vals = []
-                        for c in prop_columns:
-                            v = props.get(c)
-                            if v is None:
-                                vals.append("\\N")
-                            else:
-                                vals.append(
-                                    str(v)
-                                    .replace("\\", "\\\\")
-                                    .replace("\t", " ")
-                                    .replace("\n", " ")
-                                )
-                        vals.append(wkb_hex)
-                        buf.write("\t".join(vals) + "\n")
-                        batch_count += 1
-
-                        if batch_count >= batch_size:
-                            _flush_batch(buf, col_list)
-                            buf.close()
-                            buf = io.StringIO()
-                            batch_count = 0
-
-                    except Exception as e:
-                        self.logger.debug("Skipping feature %d: %s", feature_index, e)
-                        failed.append(
-                            {
-                                "index": feature_index,
-                                "feature": feat,
-                                "error": str(e),
-                            }
-                        )
-
-                    feature_index += 1
-                if failed:
-                    self.logger.warning(
-                        "Skipped %d features in %s (first error: %s)",
-                        len(failed),
-                        filepath.name,
-                        failed[0]["error"],
-                    )
-
-            # Flush remaining rows
-            if batch_count > 0 and col_list is not None:
-                _flush_batch(buf, col_list)
-            buf.close()
-
-            if columns is None:
-                self.logger.error("No valid features found in %s", filepath)
-                return 0, failed
-
-            # Cast geometry text → PostGIS geometry
-            cur.execute(f"""
-                alter table _geojson_staging
-                alter column "{geometry_column}" type geometry
-                using "{geometry_column}"::geometry
-            """)
-
-            # Merge staging → target
-            insert_sql = (
-                f"insert into {fqn} ({col_list}) "
-                f"select {col_list} from _geojson_staging"
-            )
-
-            if conflict_columns:
-                conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
-                if conflict_action.upper() == "UPDATE":
-                    update_cols = [c for c in columns if c not in conflict_columns]
-                    set_clause = ", ".join(
-                        f'"{c}" = excluded."{c}"' for c in update_cols
-                    )
-                    insert_sql += (
-                        f" on conflict ({conflict_clause}) do update set {set_clause}"
-                    )
-                else:
-                    insert_sql += f" on conflict ({conflict_clause}) do nothing"
-
-            cur.execute(insert_sql)
-            inserted = cur.rowcount
-
-        self.logger.info(
-            "Inserted %d rows into %s (%d failed)", inserted, fqn, len(failed)
-        )
-        return inserted, failed
 
     def __enter__(self):
         return self
