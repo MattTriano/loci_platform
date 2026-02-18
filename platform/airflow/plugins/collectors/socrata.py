@@ -4,25 +4,26 @@ import json
 import logging
 import re
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 import requests
+from collectors.ingestion_tracker import IngestionTracker
+from parsers.csv_parser import parse_csv
+from parsers.geojson import parse_geojson
 from requests.exceptions import ChunkedEncodingError, ConnectionError
+from sources.update_configs import DatasetUpdateConfig
 from tenacity import (
+    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    before_sleep_log,
 )
-
-from collectors.ingestion_tracker import IngestionTracker
-from parsers.csv_parser import parse_csv
-from parsers.geojson import parse_geojson
-from sources.update_configs import DatasetUpdateConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class SocrataClient:
 
     def __init__(
         self,
-        app_token: Optional[str] = None,
+        app_token: str | None = None,
         page_size: int = 10000,
         request_timeout: int = 120,
     ) -> None:
@@ -207,9 +208,9 @@ class SocrataTableMetadata:
         self.dataset_id = dataset_id
         self.logger = logging.getLogger("socrata_table_metadata")
 
-        self._catalog_metadata: Optional[dict] = None
-        self._views_metadata: Optional[dict] = None
-        self._columns: Optional[list[SocrataColumnInfo]] = None
+        self._catalog_metadata: dict | None = None
+        self._views_metadata: dict | None = None
+        self._columns: list[SocrataColumnInfo] | None = None
 
     @cached_property
     def catalog_metadata(self) -> dict:
@@ -279,6 +280,8 @@ class SocrataTableMetadata:
             flags = col.get("flags", [])
             if "hidden" in flags:
                 continue
+            if col.get("fieldName", "").startswith(":@computed_region"):
+                continue
 
             datatype = col.get("dataTypeName", "text").lower()
             pg_type = self.SOCRATA_TO_PG_TYPE.get(datatype, self.DEFAULT_PG_TYPE)
@@ -335,22 +338,37 @@ class SocrataTableMetadata:
         table_name: str | None = None,
         include_ingested_at: bool = True,
         include_comments: bool = True,
+        scd2_config: SCD2Config | None = None,
     ) -> str:
         """
-        Generate a CREATE TABLE IF NOT EXISTS statement from the dataset's columns.
+        Generate a CREATE TABLE statement from the dataset's Socrata metadata.
 
         Args:
-            schema:              Target schema name.
-            table_name:          Target table name. Defaults to a sanitized version
-                                 of the dataset name from the metadata.
-            include_ingested_at: If True, appends an 'ingested_at' TIMESTAMPTZ column
-                                 with a default of now().
-            include_comments:    If True, adds COMMENT ON COLUMN statements for columns
-                                 that have descriptions in the metadata.
+            schema:           Target schema name.
+            table_name:       Target table name. Defaults to a sanitized version
+                              of the dataset name from the metadata.
+            include_ingested_at: If True, appends an 'ingested_at' column.
+            include_comments: If True, adds COMMENT ON COLUMN statements for
+                              columns that have descriptions in the metadata.
+            scd2_config:      If provided, adds record_hash, valid_from, valid_to
+                              columns plus a unique constraint and current-version
+                              index based on the entity key.
 
         Returns:
             The full DDL string.
         """
+        SYSTEM_COLUMNS = [
+            '"socrata_id" text',
+            '"socrata_updated_at" timestamptz',
+            '"socrata_created_at" timestamptz',
+            '"socrata_version" text',
+        ]
+
+        SCD2_COLUMNS = [
+            '"record_hash" text not null',
+            "\"valid_from\" timestamptz not null default (now() at time zone 'utc')",
+            '"valid_to" timestamptz',
+        ]
         if table_name is None:
             table_name = self._default_table_name()
 
@@ -362,9 +380,30 @@ class SocrataTableMetadata:
                 "    \"ingested_at\" timestamptz not null default (now() at time zone 'UTC')"
             )
 
+        col_defs.extend(f"    {c}" for c in SYSTEM_COLUMNS)
+
+        if scd2_config:
+            col_defs.extend(f"    {c}" for c in SCD2_COLUMNS)
+
         ddl = f"create table if not exists {fqn} (\n"
         ddl += ",\n".join(col_defs)
         ddl += "\n);\n"
+
+        if scd2_config:
+            ek_cols = ", ".join(scd2_config.entity_key)
+            constraint_name = f"uq_{table_name}_entity_hash"
+            index_name = f"ix_{table_name}_current"
+
+            ddl += (
+                f"\nalter table {fqn}\n"
+                f"    add constraint {constraint_name}\n"
+                f"    unique ({ek_cols}, record_hash);\n"
+            )
+            ddl += (
+                f"\ncreate index if not exists {index_name}\n"
+                f"    on {fqn} ({ek_cols})\n"
+                f"    where valid_to is null;\n"
+            )
 
         if include_comments:
             for col in self.columns:
@@ -486,6 +525,27 @@ class IncrementalConfig:
     where: str | None = None
 
 
+@dataclass
+class SCD2Config:
+    """
+    Configuration for SCD2 (slowly changing dimension type 2) table generation.
+
+    When provided to generate_ddl, adds record_hash, valid_from, and valid_to
+    columns, a unique constraint on (entity_key, record_hash), and an index
+    for efficient current-version queries (WHERE valid_to IS NULL).
+
+    Attributes:
+        entity_key: Column(s) forming the natural key that identifies an entity
+                    across versions. e.g. ["sr_number"] or ["pin14", "tax_year"].
+    """
+
+    entity_key: list[str]
+
+
+class SchemaDriftError(Exception):
+    """Source schema has diverged from the target table."""
+
+
 class SocrataCollector:
     """
     High-level orchestrator for Socrata dataset ingestion.
@@ -522,7 +582,7 @@ class SocrataCollector:
         self.page_size = page_size
         self.logger = logging.getLogger("socrata_collector")
 
-        self._client: Optional[SocrataClient] = None
+        self._client: SocrataClient | None = None
         self._metadata_cache: dict[str, SocrataTableMetadata] = {}
 
     @property
@@ -626,7 +686,7 @@ class SocrataCollector:
         System fields (socrata_updated_at) are set to the current timestamp
         since they are not available in bulk exports.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         meta = self._get_metadata(dataset_id)
         download_url = meta.data_download_url
@@ -653,7 +713,7 @@ class SocrataCollector:
             filepath = self._download_to_tempfile(download_url, download_format)
 
             try:
-                now_utc = datetime.now(timezone.utc).isoformat()
+                now_utc = datetime.now(UTC).isoformat()
                 geojson_result = None
 
                 if download_format == "GeoJSON":
@@ -814,6 +874,51 @@ class SocrataCollector:
             for row in rows
         ]
 
+    @staticmethod
+    def _drop_computed_region_columns(
+        rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Remove Socrata computed region columns from rows."""
+        for row in rows:
+            keys_to_drop = [k for k in row if k.startswith(":@computed_region")]
+            for k in keys_to_drop:
+                del row[k]
+        return rows
+
+    def _preflight_column_check(
+        self,
+        source_columns: set[str],
+        target_table: str,
+        target_schema: str,
+    ) -> None:
+        """
+        Compare source columns against the target table schema.
+        Raises on new columns (schema drift). Logs warnings for
+        columns present in the table but missing from the source.
+        """
+        table_columns = self._get_table_columns(target_table, target_schema)
+
+        # Ignore metadata columns — they're added by our ingestion code, not the source
+        data_columns_in_table = table_columns - self.METADATA_COLUMNS
+        source_columns = source_columns - self.METADATA_COLUMNS
+
+        new_in_source = source_columns - data_columns_in_table
+        missing_from_source = data_columns_in_table - source_columns
+
+        if missing_from_source:
+            self.logger.warning(
+                "Columns in %s.%s but not in source: %s",
+                target_schema,
+                target_table,
+                missing_from_source,
+            )
+
+        if new_in_source:
+            raise SchemaDriftError(
+                f"Source has columns not in {target_schema}.{target_table}: "
+                f"{new_in_source}. Add them via migration, then re-run."
+            )
+
     def incremental_update(
         self,
         dataset_id: str,
@@ -925,6 +1030,12 @@ class SocrataCollector:
                     if location_columns:
                         self._convert_location_fields(batch, location_columns)
                     renamed_batch = self._rename_system_fields(batch)
+                    renamed_batch = self._drop_computed_region_columns(renamed_batch)
+                    if page_num == 1:
+                        source_columns = set(renamed_batch[0].keys())
+                        self._preflight_column_check(
+                            source_columns, target_table, target_schema
+                        )
                     stager.write_batch(renamed_batch)
 
                     batch_hwm, batch_id = self._extract_max_hwm(
