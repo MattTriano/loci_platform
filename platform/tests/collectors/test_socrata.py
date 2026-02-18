@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
-
 from collectors.ingestion_tracker import IngestionRun, IngestionTracker
 from collectors.socrata import (
     IncrementalConfig,
+    SchemaDriftError,
     SocrataClient,
     SocrataCollector,
     SocrataTableMetadata,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -23,12 +23,18 @@ def _make_metadata_mock(domain: str = "data.example.org"):
     meta = MagicMock(spec=SocrataTableMetadata)
     meta.table_id = "abcd-1234"
     meta.domain = domain
+    meta.columns = []
     return meta
 
 
 def _make_batch(*rows: dict) -> list[dict]:
     """Convenience: build a batch list from row dicts."""
     return list(rows)
+
+
+def _columns_df(column_names: list[str]) -> pd.DataFrame:
+    """Build a DataFrame mimicking information_schema.columns output."""
+    return pd.DataFrame({"column_name": column_names})
 
 
 class FakeStager:
@@ -63,6 +69,11 @@ def mock_engine():
     engine = MagicMock()
     engine.execute.return_value = None
 
+    # Default: query returns an empty DataFrame (safe for most tests).
+    # Tests that need _get_table_columns should override via
+    # _stub_table_columns().
+    engine.query.return_value = pd.DataFrame({"column_name": []})
+
     # Each call to staged_ingest returns a fresh FakeStager
     engine._stagers = []
 
@@ -75,14 +86,35 @@ def mock_engine():
     return engine
 
 
+def _stub_table_columns(mock_engine, columns: list[str]):
+    """
+    Configure mock_engine.query to return the given columns when the
+    preflight check queries information_schema.columns, while still
+    returning an empty DataFrame for other queries.
+    """
+    info_schema_result = _columns_df(columns)
+
+    def query_side_effect(sql, *args, **kwargs):
+        if "information_schema.columns" in sql:
+            return info_schema_result
+        return pd.DataFrame()
+
+    mock_engine.query.side_effect = query_side_effect
+
+
 @pytest.fixture
 def tracker(mock_engine):
     return IngestionTracker(engine=mock_engine)
 
 
+# @pytest.fixture
+# def collector(mock_engine, tmp_path):
+#     return SocrataCollector(engine=mock_engine, page_size=100)
+
+
 @pytest.fixture
-def collector(mock_engine, tmp_path):
-    """SocrataCollector with mocked engine and auto-created tracker."""
+def collector(mock_engine):
+    """SocrataCollector with mocked engine."""
     return SocrataCollector(engine=mock_engine, page_size=100)
 
 
@@ -248,8 +280,86 @@ class TestExtractMaxHwm:
 
 
 # ---------------------------------------------------------------------------
+# Preflight column check tests
+# ---------------------------------------------------------------------------
+
+
+class TestPreflightColumnCheck:
+    """Tests for the schema drift detection that runs on the first batch."""
+
+    def test_raises_on_unknown_source_columns(self, collector, mock_engine):
+        """Columns in the source but not the target table cause SchemaDriftError."""
+        collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
+
+        # Target table only has "id" — source will also have "extra_col"
+        _stub_table_columns(mock_engine, ["id", "socrata_id", "socrata_updated_at"])
+
+        batch = _make_batch(
+            {
+                "id": "1",
+                "extra_col": "surprise",
+                ":id": "r1",
+                ":updated_at": "2024-01-01",
+            },
+        )
+        _attach_mock_client(collector, [batch])
+
+        config = IncrementalConfig(
+            incremental_column=":updated_at",
+            conflict_key=["id"],
+        )
+        with pytest.raises(SchemaDriftError, match="extra_col"):
+            collector.incremental_update("abcd-1234", "test", "raw_data", config)
+
+    def test_metadata_columns_are_ignored_in_drift_check(self, collector, mock_engine):
+        """System/metadata columns shouldn't trigger schema drift."""
+        collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
+
+        # Target has only data columns — metadata columns are excluded from check
+        _stub_table_columns(
+            mock_engine,
+            [
+                "id",
+                "val",
+                "socrata_id",
+                "socrata_updated_at",
+                "socrata_created_at",
+                "socrata_version",
+                "ingested_at",
+            ],
+        )
+
+        batch = _make_batch(
+            {"id": "1", "val": "a", ":id": "r1", ":updated_at": "2024-01-01"},
+        )
+        _attach_mock_client(collector, [batch])
+
+        config = IncrementalConfig(
+            incremental_column=":updated_at",
+            conflict_key=["id"],
+        )
+        # Should not raise — all source data columns exist in target
+        total = collector.incremental_update("abcd-1234", "test", "raw_data", config)
+        assert total == 1
+
+
+# ---------------------------------------------------------------------------
 # SocrataCollector.incremental_update tests
 # ---------------------------------------------------------------------------
+
+
+# Columns that appear in most test batches after system field renaming.
+# Used to satisfy the preflight check without repeating the list everywhere.
+_STANDARD_TABLE_COLUMNS = [
+    "id",
+    "val",
+    "updated_on",
+    "socrata_id",
+    "socrata_updated_at",
+    "socrata_created_at",
+    "socrata_version",
+    "ingested_at",
+]
 
 
 class TestIncrementalUpdate:
@@ -258,8 +368,16 @@ class TestIncrementalUpdate:
         conflict_key=["id"],
     )
 
+    def _setup_preflight(self, mock_engine, extra_columns: list[str] | None = None):
+        """Stub table columns so the preflight check passes."""
+        cols = list(_STANDARD_TABLE_COLUMNS)
+        if extra_columns:
+            cols.extend(extra_columns)
+        _stub_table_columns(mock_engine, cols)
+
     def test_basic_multi_page_ingest(self, collector, mock_engine):
         collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
+        self._setup_preflight(mock_engine)
 
         page1 = _make_batch(
             {"id": "1", "updated_on": "2024-01-01", "val": "a"},
@@ -274,16 +392,13 @@ class TestIncrementalUpdate:
             "abcd-1234", "test", "raw_data", self.CONFIG
         )
 
-        # Test outcomes, not implementation details
         assert total == 3
 
-        # Verify the right table was targeted
         call_kwargs = mock_engine.staged_ingest.call_args.kwargs
         assert call_kwargs["target_table"] == "test"
         assert call_kwargs["target_schema"] == "raw_data"
         assert call_kwargs["conflict_column"] == ["id"]
 
-        # Verify both pages were written
         stager = mock_engine._stagers[0]
         assert len(stager.batches) == 2
         assert len(stager.batches[0]) == 2
@@ -327,6 +442,7 @@ class TestIncrementalUpdate:
 
     def test_hwm_tracked_after_successful_run(self, collector, mock_engine):
         collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
+        self._setup_preflight(mock_engine)
 
         batch = _make_batch(
             {"id": "1", "updated_on": "2024-01-01"},
@@ -369,6 +485,17 @@ class TestIncrementalUpdate:
 
     def test_system_fields_renamed_in_batches(self, collector, mock_engine):
         collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
+        _stub_table_columns(
+            mock_engine,
+            [
+                "val",
+                "socrata_id",
+                "socrata_updated_at",
+                "socrata_created_at",
+                "socrata_version",
+                "ingested_at",
+            ],
+        )
 
         batch = _make_batch(
             {":id": "row1", ":updated_at": "2024-01-01T00:00:00", "val": "x"},

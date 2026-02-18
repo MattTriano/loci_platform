@@ -30,7 +30,7 @@ CHICAGO_FOOD_INSPECTIONS = DatasetUpdateConfig(
 )
 
 CHICAGO_SIDEWALK_CAFE_PERMITS = DatasetUpdateConfig(
-    dataset_id="4ijn-s7e5",
+    dataset_id="nxj5-ix6z",
     dataset_name="chicago_sidewalk_cafe_permits",
     full_update_cron="5 5 1-7 * 0",
     update_cron="5 5 * * *",
@@ -124,8 +124,7 @@ CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS = DatasetUpdateConfig(
 COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS = DatasetUpdateConfig(
     dataset_id="3r7i-mrz4",
     dataset_name="cook_county_residential_condominium_unit_characteristics",
-    # full_update_cron="10 5 1-7 * 6",
-    full_update_cron="* * * * *",
+    full_update_cron="10 5 1-7 * 6",
     update_cron="10 5 * * *",
     entity_key=["row_id"],
     full_update_mode="file_download",
