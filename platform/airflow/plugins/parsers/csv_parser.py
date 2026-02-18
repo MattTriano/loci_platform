@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import csv
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,10 @@ def parse_csv(
     filepath = Path(filepath)
     batch: list[dict[str, Any]] = []
 
-    with open(filepath, "r", encoding=encoding, newline="") as f:
+    with open(filepath, encoding=encoding, newline="") as f:
         reader = csv.DictReader(f, delimiter=delimiter)
         for row in reader:
-            batch.append(dict(row))
+            batch.append({k: (v if v != "" else None) for k, v in row.items()})
 
             if len(batch) >= batch_size:
                 yield batch

@@ -3,7 +3,6 @@
 import csv
 from pathlib import Path
 
-
 from parsers.csv_parser import parse_csv
 
 
@@ -46,12 +45,11 @@ class TestBasicParsing:
         assert rows[0]["city"] == "Chicago"
         assert rows[2]["city"] == "Portland"
 
-    def test_empty_file_yields_nothing(self, tmp_path):
-        filepath = tmp_path / "empty.csv"
-        filepath.write_text("name,age\n")
-
+    def test_empty_field_values(self, tmp_path):
+        filepath = tmp_path / "blanks.csv"
+        filepath.write_text("a,b,c\n1,,3\n")
         rows = _collect_all_rows(parse_csv(filepath))
-        assert rows == []
+        assert rows[0]["b"] is None
 
     def test_rows_are_keyed_by_header(self, tmp_path):
         filepath = _write_csv(
@@ -62,6 +60,37 @@ class TestBasicParsing:
         rows = _collect_all_rows(parse_csv(filepath))
 
         assert set(rows[0].keys()) == {"first_name", "last_name"}
+
+
+# ── Null handling ──────────────────────────────────────────────────
+
+
+class TestNullHandling:
+    def test_empty_strings_become_none(self, tmp_path):
+        filepath = tmp_path / "nulls.csv"
+        filepath.write_text("name,age,score\nalice,30,95.5\nbob,,\ncharlie,25,\n")
+
+        rows = _collect_all_rows(parse_csv(filepath))
+
+        assert rows[0] == {"name": "alice", "age": "30", "score": "95.5"}
+        assert rows[1] == {"name": "bob", "age": None, "score": None}
+        assert rows[2] == {"name": "charlie", "age": "25", "score": None}
+
+    def test_whitespace_values_not_treated_as_null(self, tmp_path):
+        filepath = tmp_path / "spaces.csv"
+        filepath.write_text("name,val\nalice, \n")
+
+        rows = _collect_all_rows(parse_csv(filepath))
+
+        assert rows[0]["val"] == " "
+
+    def test_all_fields_empty(self, tmp_path):
+        filepath = tmp_path / "all_empty.csv"
+        filepath.write_text("a,b,c\n,,\n")
+
+        rows = _collect_all_rows(parse_csv(filepath))
+
+        assert rows[0] == {"a": None, "b": None, "c": None}
 
 
 # ── Batching ───────────────────────────────────────────────────────
@@ -165,7 +194,7 @@ class TestEdgeCases:
 
         rows = _collect_all_rows(parse_csv(filepath))
 
-        assert rows[0]["b"] == ""
+        assert rows[0]["b"] is None
 
     def test_whitespace_in_values_is_preserved(self, tmp_path):
         filepath = tmp_path / "spaces.csv"
