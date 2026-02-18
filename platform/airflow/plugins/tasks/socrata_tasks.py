@@ -1,10 +1,9 @@
-import datetime as dt
 import os
 from logging import Logger
 
 import pendulum
 from airflow.models.taskinstance import TaskInstance
-from airflow.sdk import dag, task, task_group, get_current_context
+from airflow.sdk import task, task_group, get_current_context
 from airflow.sdk.bases.operator import chain
 from airflow.task.trigger_rule import TriggerRule
 from croniter import croniter
@@ -21,6 +20,16 @@ def get_task_group_id_prefix(task_instance: TaskInstance) -> str:
         return ".".join(task_id_parts[:-1]) + "."
     else:
         return ""
+
+
+def _get_collector(conn_id: str, task_logger: Logger) -> SocrataCollector:
+    pg_engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
+    tracker = IngestionTracker(engine=pg_engine)
+    return SocrataCollector(
+        engine=pg_engine,
+        tracker=tracker,
+        app_token=os.environ["SOCRATA_APP_TOKEN"],
+    )
 
 
 @task.branch()
@@ -40,20 +49,15 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
 def run_full_update(
     conn_id: str, update_config: DatasetUpdateConfig, task_logger: Logger
 ) -> bool:
-    pg_engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
-    tracker = IngestionTracker(engine=pg_engine)
-    socrata_collector = SocrataCollector(
-        engine=pg_engine,
-        tracker=tracker,
-        app_token=os.environ["SOCRATA_APP_TOKEN"],
-    )
-    rows = socrata_collector.full_refresh_via_api(
+    collector = _get_collector(conn_id, task_logger)
+    rows = collector.full_refresh(
         dataset_id=update_config.dataset_id,
         target_table=update_config.dataset_name,
         target_schema="raw_data",
+        config=update_config,
     )
     task_logger.info(
-        f"Ingested {rows} rows into table raw_data.{update_config.dataset_name} "
+        f"Full refresh: ingested {rows} rows into raw_data.{update_config.dataset_name}"
     )
     return True
 
@@ -62,24 +66,19 @@ def run_full_update(
 def run_incremental_update(
     conn_id: str, update_config: DatasetUpdateConfig, task_logger: Logger
 ) -> bool:
-    pg_engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
-    tracker = IngestionTracker(engine=pg_engine)
-    socrata_collector = SocrataCollector(
-        engine=pg_engine,
-        tracker=tracker,
-        app_token=os.environ["SOCRATA_APP_TOKEN"],
-    )
-    rows = socrata_collector.incremental_update(
+    collector = _get_collector(conn_id, task_logger)
+    rows = collector.incremental_update(
         dataset_id=update_config.dataset_id,
         target_table=update_config.dataset_name,
         target_schema="raw_data",
         config=IncrementalConfig(
             incremental_column=":updated_at",
-            conflict_key=None,
+            conflict_key=update_config.entity_key or None,
         ),
+        entity_key=update_config.entity_key or None,
     )
     task_logger.info(
-        f"Ingested {rows} rows into table raw_data.{update_config.dataset_name} "
+        f"Incremental: ingested {rows} rows into raw_data.{update_config.dataset_name}"
     )
     return True
 

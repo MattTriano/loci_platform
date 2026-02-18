@@ -3,6 +3,7 @@ import uuid
 import logging
 import os
 import re
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,7 @@ def get_logger(
     log_format = log_format or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     formatter = logging.Formatter(log_format)
 
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
@@ -157,6 +158,8 @@ class StagedIngest:
         target_schema: str,
         conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
+        entity_key: list[str] | None = None,
+        metadata_columns: set[str] | None = None,
     ) -> None:
         self._engine = engine
         self._target_table = target_table
@@ -169,6 +172,15 @@ class StagedIngest:
             self._conflict_columns = conflict_column
 
         self._conflict_action = conflict_action
+
+        # SCD2 config
+        self._entity_key = entity_key
+        self._metadata_columns = metadata_columns
+
+        if entity_key and conflict_column:
+            raise ValueError(
+                "Specify either entity_key (SCD2) or conflict_column (simple merge), not both."
+            )
 
         # Use a short random suffix so parallel ingests don't collide
         suffix = uuid.uuid4().hex[:8]
@@ -186,9 +198,10 @@ class StagedIngest:
         self.rows_merged = 0
 
         self._engine.logger.info(
-            "StagedIngest: staging table %s for target %s",
+            "StagedIngest: staging table %s for target %s (mode: %s)",
             self._staging_table,
             self._fqn,
+            "scd2" if entity_key else "simple",
         )
 
     # ------------------------------------------------------------------
@@ -237,7 +250,10 @@ class StagedIngest:
         try:
             if self.rows_staged > 0:
                 self._cast_geometry_if_needed()
-                self._merge()
+                if self._entity_key:
+                    self._scd2_merge()
+                else:
+                    self._merge()
                 if exc_type is not None:
                     self._engine.logger.warning(
                         "StagedIngest: merged %d rows from %s despite error: %s",
@@ -251,13 +267,130 @@ class StagedIngest:
                 self._staging_table,
                 merge_err,
             )
-            # If the original exit was clean but merge itself failed,
-            # let the merge error propagate
             if exc_type is None:
                 raise
         finally:
             self._drop_staging_table()
         return False
+
+    # ------------------------------------------------------------------
+    # Simple merge
+    # ------------------------------------------------------------------
+
+    def _merge(self) -> None:
+        """INSERT from staging into target, with optional ON CONFLICT."""
+        insert_sql = (
+            f"insert into {self._fqn} ({self._col_list}) "
+            f"select {self._col_list} from {self._staging_table}"
+        )
+
+        if self._conflict_columns:
+            conflict_clause = ", ".join(f'"{c}"' for c in self._conflict_columns)
+
+            if self._conflict_action.upper() == "UPDATE":
+                update_cols = [
+                    c for c in self._columns if c not in self._conflict_columns
+                ]
+                set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
+                insert_sql += (
+                    f" on conflict ({conflict_clause}) do update set {set_clause}"
+                )
+            else:
+                insert_sql += f" on conflict ({conflict_clause}) do nothing"
+
+        with self._engine.cursor() as cur:
+            cur.execute(insert_sql)
+            self.rows_merged = cur.rowcount
+
+        self._engine.logger.info(
+            "Merged %d rows into %s (staged %d)",
+            self.rows_merged,
+            self._fqn,
+            self.rows_staged,
+        )
+
+    # ------------------------------------------------------------------
+    # SCD2 merge
+    # ------------------------------------------------------------------
+
+    def _scd2_merge(self) -> None:
+        """
+        SCD Type 2 merge:
+        1. Compute record_hash on staging rows
+        2. Close out current versions in target whose hash differs
+        3. Insert new versions (new entities + changed entities)
+        Skips rows whose (entity_key, record_hash) already exists in target.
+        """
+        hash_columns = self._get_hash_columns()
+        hash_expr = self._build_hash_expression(hash_columns)
+        entity_join = " and ".join(f't."{k}" = s."{k}"' for k in self._entity_key)
+        entity_conflict = ", ".join(f'"{k}"' for k in self._entity_key)
+
+        with self._engine.cursor() as cur:
+            # 1. Compute record_hash on staging rows
+            cur.execute(
+                f'alter table {self._staging_table} add column if not exists "record_hash" text'
+            )
+            cur.execute(f'update {self._staging_table} set "record_hash" = {hash_expr}')
+
+            # 2. Close out current versions that have a new incoming version
+            #    (entity exists in both, but hash differs)
+            cur.execute(f"""
+                update {self._fqn} t
+                set "valid_to" = now() at time zone 'utc'
+                where "valid_to" is null
+                  and exists (
+                    select 1 from {self._staging_table} s
+                    where {entity_join}
+                      and s."record_hash" != t."record_hash"
+                  )
+            """)
+            rows_closed = cur.rowcount
+            self._engine.logger.info(
+                "SCD2: closed out %d superseded versions in %s",
+                rows_closed,
+                self._fqn,
+            )
+
+            # 3. Insert new versions, skipping any (entity_key, record_hash)
+            #    that already exists in the target
+            select_cols = ", ".join(f's."{c}"' for c in self._columns)
+            insert_col_list = f'{self._col_list}, "record_hash"'
+
+            cur.execute(f"""
+                insert into {self._fqn} ({insert_col_list})
+                select {select_cols}, s."record_hash"
+                from {self._staging_table} s
+                on conflict ({entity_conflict}, "record_hash") do nothing
+            """)
+            self.rows_merged = cur.rowcount
+
+        self._engine.logger.info(
+            "SCD2: inserted %d new versions into %s (staged %d, closed %d)",
+            self.rows_merged,
+            self._fqn,
+            self.rows_staged,
+            rows_closed,
+        )
+
+    def _get_hash_columns(self) -> list[str]:
+        """Determine which columns to include in the record hash."""
+        exclude = set(self._entity_key) | set(self._metadata_columns)
+        hash_cols = [c for c in self._columns if c not in exclude]
+        if not hash_cols:
+            raise ValueError(
+                f"No columns to hash after excluding entity_key {self._entity_key} "
+                f"and metadata columns {self._metadata_columns}"
+            )
+        self._engine.logger.info("SCD2: hashing columns: %s", hash_cols)
+        return hash_cols
+
+    @staticmethod
+    def _build_hash_expression(columns: list[str]) -> str:
+        """Build a SQL MD5 expression over the given columns."""
+        parts = [f"""coalesce("{c}"::text, '')""" for c in columns]
+        concatenated = " || '|' || ".join(parts)
+        return f"md5({concatenated})"
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -269,6 +402,11 @@ class StagedIngest:
                 f"create temp table {self._staging_table} "
                 f"(like {self._fqn} including defaults)"
             )
+            if self._entity_key:
+                cur.execute(
+                    f"alter table {self._staging_table} "
+                    f'alter column "record_hash" drop not null'
+                )
         self._created = True
         self._engine.logger.info("Created staging table %s", self._staging_table)
 
@@ -321,38 +459,6 @@ class StagedIngest:
                 f'alter column "{geom_col}" type geometry '
                 f'using "{geom_col}"::geometry'
             )
-
-    def _merge(self) -> None:
-        """INSERT from staging into target, with optional ON CONFLICT."""
-        insert_sql = (
-            f"insert into {self._fqn} ({self._col_list}) "
-            f"select {self._col_list} from {self._staging_table}"
-        )
-
-        if self._conflict_columns:
-            conflict_clause = ", ".join(f'"{c}"' for c in self._conflict_columns)
-
-            if self._conflict_action.upper() == "UPDATE":
-                update_cols = [
-                    c for c in self._columns if c not in self._conflict_columns
-                ]
-                set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
-                insert_sql += (
-                    f" on conflict ({conflict_clause}) do update set {set_clause}"
-                )
-            else:
-                insert_sql += f" on conflict ({conflict_clause}) do nothing"
-
-        with self._engine.cursor() as cur:
-            cur.execute(insert_sql)
-            self.rows_merged = cur.rowcount
-
-        self._engine.logger.info(
-            "Merged %d rows into %s (staged %d)",
-            self.rows_merged,
-            self._fqn,
-            self.rows_staged,
-        )
 
 
 def pg_retry():
@@ -432,18 +538,25 @@ class PostgresEngine:
         target_schema: str,
         conflict_column: str | list[str] | None = None,
         conflict_action: str = "NOTHING",
+        entity_key: list[str] | None = None,
+        metadata_columns: set[str] | None = None,
     ) -> StagedIngest:
         """
         Return a StagedIngest context manager that accumulates batches
         into a staging table, then merges into the target on exit.
 
-        Usage:
+        For simple upsert:
             with engine.staged_ingest("crimes", "raw_data",
                                        conflict_column=["case_number"],
                                        conflict_action="UPDATE") as stager:
                 stager.write_batch(rows)
 
-            print(stager.rows_staged, stager.rows_merged)
+        For SCD Type 2:
+            with engine.staged_ingest("crimes", "raw_data",
+                                       entity_key=["case_number"]) as stager:
+                stager.write_batch(rows)
+
+        print(stager.rows_staged, stager.rows_merged)
         """
         return StagedIngest(
             engine=self,
@@ -451,6 +564,8 @@ class PostgresEngine:
             target_schema=target_schema,
             conflict_column=conflict_column,
             conflict_action=conflict_action,
+            entity_key=entity_key,
+            metadata_columns=metadata_columns,
         )
 
     @pg_retry()
@@ -489,20 +604,38 @@ class PostgresEngine:
     def _detect_geometry_in_result(self, columns: list[str]) -> tuple[str | None, int]:
         """
         Check whether any column in the result set is a known geometry column.
-
-        Only matches against tables already present in _geometry_info_cache
-        (populated by staged_ingest, ingest_geojson, or manual calls to
-        _get_geometry_info). This avoids false positives from PostGIS
-        extension functions like normalize_address whose output columns
-        happen to share names with geometry_columns entries.
+        Checks the cache first, then falls back to querying the PostGIS
+        geometry_columns catalog directly.
 
         Returns (geometry_column_name, srid) or (None, 0).
         """
         column_set = set(columns)
+
+        # Check cache first
         for (_schema, _table), info in self._geometry_info_cache.items():
             for col_name, srid in info.items():
                 if col_name in column_set:
                     return col_name, srid
+
+        # Fall back to geometry_columns catalog
+        if not column_set:
+            return None, 0
+
+        try:
+            placeholders = ", ".join(["%s"] * len(column_set))
+            with self.cursor() as cur:
+                cur.execute(
+                    f"select f_geometry_column, srid "
+                    f"from geometry_columns "
+                    f"where f_geometry_column in ({placeholders}) "
+                    f"limit 1",
+                    tuple(column_set),
+                )
+                row = cur.fetchone()
+                if row:
+                    return row[0], row[1]
+        except Exception:
+            pass
 
         return None, 0
 
@@ -744,188 +877,6 @@ class PostgresEngine:
 
         self.logger.info("Inserted %d rows into %s", count, fqn)
         return count
-
-    @pg_retry()
-    def ingest_csv(
-        self, filepath: str | Path, target_table: str, target_schema: str
-    ) -> int:
-        fqn = f"{target_schema}.{target_table}"
-        with self.cursor() as cur:
-            cur.execute("drop table if exists _staging")
-            cur.execute(f"create temp table _staging (like {fqn} excluding all)")
-            cur.execute('alter table _staging drop column if exists "ingested_at"')
-            with open(filepath, "r") as f:
-                cur.copy_expert("copy _staging from stdin with csv header", f)
-            cur.execute(f"""
-                insert into {fqn}
-                select *, current_timestamp at time zone 'UTC'
-                from _staging
-            """)
-            return cur.rowcount
-
-    @pg_retry()
-    def ingest_geojson(
-        self,
-        filepath: str | Path,
-        target_table: str,
-        target_schema: str,
-        conflict_column: str | list[str] | None = None,
-        conflict_action: str = "NOTHING",
-        batch_size: int = 5000,
-        srid: int = 4326,
-    ) -> tuple[int, list[dict]]:
-        """
-        Stream-ingest a GeoJSON file into target_table via a staging table.
-
-        Uses ijson for constant-memory parsing regardless of file size.
-
-        Args:
-            filepath:          Path to .geojson file.
-            target_table:      Fully-qualified table name (e.g. "public.parcels").
-            conflict_column:   Column(s) for ON CONFLICT. None = plain INSERT.
-            conflict_action:   "NOTHING" or "UPDATE".
-            batch_size:        Rows per COPY batch.
-            srid:              Spatial reference ID (default 4326/WGS84).
-            geometry_column:   Name of the geometry column in the target table.
-
-        Returns:
-            (inserted_count, failed_features) — failed_features contains dicts
-            with 'index', 'feature', and 'error' keys.
-        """
-        import ijson
-        from shapely.geometry import shape
-        from shapely import wkb as shapely_wkb
-
-        filepath = Path(filepath)
-        fqn = f"{target_schema}.{target_table}"
-        geometry_column = self._get_geometry_column(target_table, target_schema)
-        self.logger.info(f"Detected geometry column '{geometry_column}' in {fqn}")
-        failed: list[dict] = []
-
-        if isinstance(conflict_column, str):
-            conflict_columns = [conflict_column]
-        else:
-            conflict_columns = conflict_column
-
-        columns: list[str] | None = None
-        col_list: str | None = None
-
-        with self.cursor() as cur:
-            cur.execute(f"""
-                create temp table _geojson_staging (like {fqn} including defaults)
-                on commit drop
-            """)
-
-            def _flush_batch(buf: io.StringIO, col_list: str) -> None:
-                buf.seek(0)
-                cur.copy_expert(
-                    f"copy _geojson_staging ({col_list}) from stdin with (format text, NULL '\\N')",
-                    buf,
-                )
-
-            buf = io.StringIO()
-            batch_count = 0
-            feature_index = 0
-
-            with open(filepath, "rb") as f:
-                for feat in ijson.items(f, "features.item"):
-                    try:
-                        props = feat.get("properties") or {}
-                        geom = feat.get("geometry")
-                        if geom is None:
-                            raise ValueError("Feature has no geometry")
-
-                        wkb_hex = shapely_wkb.dumps(shape(geom), hex=True, srid=srid)
-
-                        # Discover columns from the first valid feature
-                        if columns is None:
-                            columns = list(props.keys()) + [geometry_column]
-                            col_list = ", ".join(f'"{c}"' for c in columns)
-
-                        prop_columns = columns[:-1]  # all except geometry
-                        vals = []
-                        for c in prop_columns:
-                            v = props.get(c)
-                            if v is None:
-                                vals.append("\\N")
-                            else:
-                                vals.append(
-                                    str(v)
-                                    .replace("\\", "\\\\")
-                                    .replace("\t", " ")
-                                    .replace("\n", " ")
-                                )
-                        vals.append(wkb_hex)
-                        buf.write("\t".join(vals) + "\n")
-                        batch_count += 1
-
-                        if batch_count >= batch_size:
-                            _flush_batch(buf, col_list)
-                            buf.close()
-                            buf = io.StringIO()
-                            batch_count = 0
-
-                    except Exception as e:
-                        self.logger.debug("Skipping feature %d: %s", feature_index, e)
-                        failed.append(
-                            {
-                                "index": feature_index,
-                                "feature": feat,
-                                "error": str(e),
-                            }
-                        )
-
-                    feature_index += 1
-                if failed:
-                    self.logger.warning(
-                        "Skipped %d features in %s (first error: %s)",
-                        len(failed),
-                        filepath.name,
-                        failed[0]["error"],
-                    )
-
-            # Flush remaining rows
-            if batch_count > 0 and col_list is not None:
-                _flush_batch(buf, col_list)
-            buf.close()
-
-            if columns is None:
-                self.logger.error("No valid features found in %s", filepath)
-                return 0, failed
-
-            # Cast geometry text → PostGIS geometry
-            cur.execute(f"""
-                alter table _geojson_staging
-                alter column "{geometry_column}" type geometry
-                using "{geometry_column}"::geometry
-            """)
-
-            # Merge staging → target
-            insert_sql = (
-                f"insert into {fqn} ({col_list}) "
-                f"select {col_list} from _geojson_staging"
-            )
-
-            if conflict_columns:
-                conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
-                if conflict_action.upper() == "UPDATE":
-                    update_cols = [c for c in columns if c not in conflict_columns]
-                    set_clause = ", ".join(
-                        f'"{c}" = excluded."{c}"' for c in update_cols
-                    )
-                    insert_sql += (
-                        f" on conflict ({conflict_clause}) do update set {set_clause}"
-                    )
-                else:
-                    insert_sql += f" on conflict ({conflict_clause}) do nothing"
-
-            cur.execute(insert_sql)
-            inserted = cur.rowcount
-
-        self.logger.info(
-            "Inserted %d rows into %s (%d failed)", inserted, fqn, len(failed)
-        )
-        return inserted, failed
 
     def __enter__(self):
         return self
