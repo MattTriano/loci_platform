@@ -919,6 +919,44 @@ class SocrataCollector:
                 f"{new_in_source}. Add them via migration, then re-run."
             )
 
+    def _get_hwm_from_table(
+        self, target_table: str, target_schema: str
+    ) -> tuple[str | None, str | None]:
+        """
+        Query the target table for the max socrata_updated_at and the
+        max socrata_id at that timestamp. Returns (hwm_value, hwm_id).
+        """
+        fqn = f"{target_schema}.{target_table}"
+
+        df = self.engine.query(
+            f"""
+            select to_char(socrata_updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') as hwm_value
+            from {fqn}
+            where socrata_updated_at is not null
+            order by socrata_updated_at desc
+            limit 1
+            """,
+        )
+        if df.empty:
+            return None, None
+
+        hwm_value = df["hwm_value"].iloc[0]
+
+        df_id = self.engine.query(
+            f"""
+            select socrata_id
+            from {fqn}
+            where to_char(socrata_updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') = %(hwm_value)s
+              and socrata_id is not null
+            order by socrata_id desc
+            limit 1
+            """,
+            {"hwm_value": hwm_value},
+        )
+        hwm_id = df_id["socrata_id"].iloc[0] if not df_id.empty else None
+
+        return hwm_value, str(hwm_id) if hwm_id is not None else None
+
     def incremental_update(
         self,
         dataset_id: str,
@@ -938,15 +976,15 @@ class SocrataCollector:
         If entity_key is provided, uses SCD2 merge (hash-based versioning).
         Otherwise, uses simple INSERT with optional ON CONFLICT from config.
         """
-        raw_hwm = high_water_mark_override or self.tracker.get_high_water_mark(
-            self.SOURCE_NAME, dataset_id
-        )
-
-        hwm_value, hwm_id = None, None
-        if raw_hwm and "|" in raw_hwm:
-            hwm_value, hwm_id = raw_hwm.rsplit("|", 1)
-        elif raw_hwm:
-            hwm_value = raw_hwm
+        if high_water_mark_override is not None:
+            raw_hwm = high_water_mark_override
+            hwm_value, hwm_id = None, None
+            if raw_hwm and "|" in raw_hwm:
+                hwm_value, hwm_id = raw_hwm.rsplit("|", 1)
+            elif raw_hwm:
+                hwm_value = raw_hwm
+        else:
+            hwm_value, hwm_id = self._get_hwm_from_table(target_table, target_schema)
 
         if hwm_value:
             self.logger.info(
@@ -967,7 +1005,7 @@ class SocrataCollector:
             "incremental_column": inc_col,
             "conflict_key": config.conflict_key,
             "entity_key": entity_key,
-            "prior_high_water_mark": raw_hwm,
+            "prior_high_water_mark": f"{hwm_value}|{hwm_id}" if hwm_id else hwm_value,
             "domain": domain,
         }
 

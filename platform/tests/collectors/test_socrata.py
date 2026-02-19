@@ -517,11 +517,10 @@ class TestIncrementalUpdate:
         assert ":updated_at" not in row
 
     def test_keyset_hwm_with_pipe_id(self, collector, mock_engine):
-        """HWM stored as 'value|id' should produce keyset pagination."""
+        """HWM from target table should produce keyset pagination."""
         collector._metadata_cache["abcd-1234"] = _make_metadata_mock()
 
-        # Simulate a prior HWM
-        collector.tracker._hwm_cache[("socrata", "abcd-1234")] = "2024-06-01|row99"
+        collector._get_hwm_from_table = lambda *args: ("2024-06-01", "row99")
 
         mock_client = _attach_mock_client(collector, [])
         collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG)
