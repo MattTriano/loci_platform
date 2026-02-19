@@ -80,7 +80,7 @@ CHICAGO_TRAFFIC_CRASHES_CRASHES = DatasetUpdateConfig(
     dataset_name="chicago_traffic_crashes_crashes",
     full_update_cron="10 3 1-7 * 0",
     update_cron="10 3 * * 1,4",
-    # entity_key=["crash_record_id"],
+    entity_key=["crash_record_id"],
     full_update_mode="api",
 )
 
@@ -89,6 +89,8 @@ CHICAGO_TRAFFIC_CRASHES_PEOPLE = DatasetUpdateConfig(
     dataset_name="chicago_traffic_crashes_people",
     full_update_cron="40 2 1-7 * 0",
     update_cron="40 2 * * 1,4",
+    entity_key=["person_id"],
+    full_update_mode="api",
 )
 
 CHICAGO_TRAFFIC_CRASHES_VEHICLES = DatasetUpdateConfig(
@@ -96,6 +98,8 @@ CHICAGO_TRAFFIC_CRASHES_VEHICLES = DatasetUpdateConfig(
     dataset_name="chicago_traffic_crashes_vehicles",
     full_update_cron="50 2 1-7 * 0",
     update_cron="50 2 * * 1,4",
+    entity_key=["crash_unit_id"],
+    full_update_mode="api",
 )
 
 CTA_RIDERSHIP_DAILY_BOARDING_TOTALS = DatasetUpdateConfig(

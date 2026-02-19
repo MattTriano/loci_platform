@@ -15,7 +15,7 @@ import requests
 from collectors.ingestion_tracker import IngestionTracker
 from parsers.csv_parser import parse_csv
 from parsers.geojson import parse_geojson
-from requests.exceptions import ChunkedEncodingError, ConnectionError
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from sources.update_configs import DatasetUpdateConfig
 from tenacity import (
     before_sleep_log,
@@ -118,7 +118,9 @@ class SocrataClient:
         return self._request(domain, dataset_id, params, include_system_fields)
 
     @retry(
-        retry=retry_if_exception_type(json.JSONDecodeError),
+        retry=retry_if_exception_type(
+            (json.JSONDecodeError, ConnectionError, ReadTimeout)
+        ),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         before_sleep=before_sleep_log(logger, logging.WARNING),
