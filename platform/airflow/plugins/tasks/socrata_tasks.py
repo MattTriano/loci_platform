@@ -3,15 +3,16 @@ from logging import Logger
 
 import pendulum
 from airflow.models.taskinstance import TaskInstance
-from airflow.sdk import task, task_group, get_current_context
+from airflow.sdk import get_current_context, task, task_group
 from airflow.sdk.bases.operator import chain
 from airflow.task.trigger_rule import TriggerRule
 from croniter import croniter
 
+from collectors.config import IncrementalConfig
+from collectors.socrata.collector import SocrataCollector
 from db.af_utils import get_postgres_engine
-from collectors.socrata import SocrataCollector, IncrementalConfig
-from collectors.ingestion_tracker import IngestionTracker
 from sources.update_configs import DatasetUpdateConfig
+from tracking.ingestion_tracker import IngestionTracker
 
 
 def get_task_group_id_prefix(task_instance: TaskInstance) -> str:
@@ -46,9 +47,7 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
 
 
 @task
-def run_full_update(
-    conn_id: str, update_config: DatasetUpdateConfig, task_logger: Logger
-) -> bool:
+def run_full_update(conn_id: str, update_config: DatasetUpdateConfig, task_logger: Logger) -> bool:
     collector = _get_collector(conn_id, task_logger)
     rows = collector.full_refresh(
         dataset_id=update_config.dataset_id,
@@ -105,9 +104,7 @@ def check_ingestion_log(
 def update_socrata_table(
     update_config: DatasetUpdateConfig, conn_id: str, task_logger: Logger
 ) -> None:
-    _update_mode = choose_update_mode(
-        update_config=update_config, task_logger=task_logger
-    )
+    _update_mode = choose_update_mode(update_config=update_config, task_logger=task_logger)
     _full_update = run_full_update(
         conn_id=conn_id, update_config=update_config, task_logger=task_logger
     )

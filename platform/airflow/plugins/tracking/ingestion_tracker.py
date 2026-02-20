@@ -4,9 +4,8 @@ import json
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Optional
-
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +21,18 @@ class IngestionRun:
     rows_ingested: int = 0
     rows_staged: int = 0
     rows_merged: int = 0
-    high_water_mark: Optional[str] = None
+    high_water_mark: str | None = None
     status: str = "running"
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
 
-    def __enter__(self) -> "IngestionRun":
-        self.started_at = datetime.now(timezone.utc)
+    def __enter__(self) -> IngestionRun:
+        self.started_at = datetime.now(UTC)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        self.completed_at = datetime.now(timezone.utc)
+        self.completed_at = datetime.now(UTC)
         if exc_type is not None:
             self.status = "failed"
             self.error = str(exc_val)
@@ -116,7 +115,7 @@ class IngestionTracker:
         except Exception as e:
             self.logger.error("Failed to persist ingestion run: %s", e)
 
-    def get_high_water_mark(self, source: str, dataset_id: str) -> Optional[str]:
+    def get_high_water_mark(self, source: str, dataset_id: str) -> str | None:
         """Look up the last successful high-water mark for a dataset."""
         cache_key = (source, dataset_id)
         if cache_key in self._hwm_cache:
@@ -154,5 +153,5 @@ class IngestionTracker:
         return list(self._runs)
 
     @property
-    def last_run(self) -> Optional[IngestionRun]:
+    def last_run(self) -> IngestionRun | None:
         return self._runs[-1] if self._runs else None
