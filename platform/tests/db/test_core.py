@@ -5,7 +5,7 @@ import pandas as pd
 import psycopg2
 import pytest
 
-from db.core import PostgresEngine, DatabaseCredentials
+from db.core import DatabaseCredentials, PostgresEngine
 
 
 @pytest.fixture
@@ -50,9 +50,7 @@ def engine(mock_conn, sample_creds):
 def _get_execute_sql_strings(mock_cursor) -> list[str]:
     """Extract all SQL strings passed to cursor.execute()."""
     return [
-        str(call_args[0][0])
-        for call_args in mock_cursor.execute.call_args_list
-        if call_args[0]
+        str(call_args[0][0]) for call_args in mock_cursor.execute.call_args_list if call_args[0]
     ]
 
 
@@ -107,10 +105,7 @@ class TestDatabaseCredentials:
             username="admin",
             password="plainpass",
         )
-        assert (
-            creds.connection_string
-            == "postgresql://admin:plainpass@localhost:5432/mydb"
-        )
+        assert creds.connection_string == "postgresql://admin:plainpass@localhost:5432/mydb"
 
     # -- redacted_connection_string ----------------------------------------
 
@@ -144,9 +139,7 @@ class TestPgRetry:
             None,  # geometry detection query
         ]
         engine.query("SELECT 1")
-        main_query_calls = [
-            c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"
-        ]
+        main_query_calls = [c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"]
         assert len(main_query_calls) == 2
 
     def test_retries_on_interface_error(self, engine, mock_conn, mock_cursor):
@@ -156,9 +149,7 @@ class TestPgRetry:
             None,
         ]
         engine.query("SELECT 1")
-        main_query_calls = [
-            c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"
-        ]
+        main_query_calls = [c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"]
         assert len(main_query_calls) == 2
 
     def test_no_retry_on_programming_error(self, engine, mock_cursor):
@@ -201,17 +192,13 @@ class TestPostgresEngineParameterizedQueries:
 
     def test_query_without_params(self, engine, mock_cursor):
         engine.query("SELECT 1")
-        matching = [
-            c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"
-        ]
+        matching = [c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"]
         assert len(matching) == 1
 
     def test_query_returns_dataframe(self, engine, mock_cursor):
         mock_cursor.description = [("id",), ("name",)]
         mock_cursor.fetchall.return_value = [(1, "alice"), (2, "bob")]
-        df = engine.query(
-            "SELECT id, name FROM users WHERE active = %s", params=(True,)
-        )
+        df = engine.query("SELECT id, name FROM users WHERE active = %s", params=(True,))
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["id", "name"]
         assert len(df) == 2
@@ -298,11 +285,7 @@ class TestPostgresEngineStreamToDestination:
 
 class TestPostgresEngineIngestBatchConflict:
     def _get_executed_sql(self, mock_cursor) -> list[str]:
-        return [
-            call_args[0][0]
-            for call_args in mock_cursor.execute.call_args_list
-            if call_args[0]
-        ]
+        return [call_args[0][0] for call_args in mock_cursor.execute.call_args_list if call_args[0]]
 
     def test_empty_rows_returns_zero(self, engine):
         assert engine.ingest_batch([], "test", "raw") == 0
@@ -316,18 +299,14 @@ class TestPostgresEngineIngestBatchConflict:
 
     def test_single_conflict_column_string_do_nothing(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice", "age": 30}]
-        engine.ingest_batch(
-            rows, "test", "raw", conflict_column="id", conflict_action="NOTHING"
-        )
+        engine.ingest_batch(rows, "test", "raw", conflict_column="id", conflict_action="NOTHING")
         insert_stmts = _find_sql_containing(mock_cursor, "insert into")
         assert len(insert_stmts) == 1
         assert 'on conflict ("id") do nothing' in insert_stmts[0]
 
     def test_single_conflict_column_string_do_update(self, engine, mock_cursor):
         rows = [{"id": 1, "name": "alice", "age": 30}]
-        engine.ingest_batch(
-            rows, "test", "raw", conflict_column="id", conflict_action="UPDATE"
-        )
+        engine.ingest_batch(rows, "test", "raw", conflict_column="id", conflict_action="UPDATE")
         insert_stmts = _find_sql_containing(mock_cursor, "insert into")
         assert len(insert_stmts) == 1
         insert_sql = insert_stmts[0]
@@ -336,7 +315,7 @@ class TestPostgresEngineIngestBatchConflict:
         assert '"age" = excluded."age"' in insert_sql
         assert '"id" = excluded."id"' not in insert_sql
 
-    def test_composite_conflict_key_list(self, engine, mock_cursor):
+    def test_composite_entity_key_list(self, engine, mock_cursor):
         rows = [{"pin14": "123", "tax_year": 2024, "assessed_value": 50000}]
         engine.ingest_batch(
             rows,
@@ -353,7 +332,7 @@ class TestPostgresEngineIngestBatchConflict:
         assert '"pin14" = excluded."pin14"' not in insert_sql
         assert '"tax_year" = excluded."tax_year"' not in insert_sql
 
-    def test_composite_conflict_key_do_nothing(self, engine, mock_cursor):
+    def test_composite_entity_key_do_nothing(self, engine, mock_cursor):
         rows = [{"a": 1, "b": 2, "c": 3}]
         engine.ingest_batch(
             rows, "test", "raw", conflict_column=["a", "b"], conflict_action="NOTHING"
