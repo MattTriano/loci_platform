@@ -84,7 +84,7 @@ class TestPreflightColumnCheck:
 
         config = IncrementalConfig(
             incremental_column=":updated_at",
-            conflict_key=["id"],
+            entity_key=["id"],
         )
         with pytest.raises(SchemaDriftError, match="extra_col"):
             collector.incremental_update("abcd-1234", "test", "raw_data", config)
@@ -113,7 +113,7 @@ class TestPreflightColumnCheck:
 
         config = IncrementalConfig(
             incremental_column=":updated_at",
-            conflict_key=["id"],
+            entity_key=["id"],
         )
         total = collector.incremental_update("abcd-1234", "test", "raw_data", config)
         assert total == 1
@@ -139,7 +139,7 @@ _STANDARD_TABLE_COLUMNS = [
 class TestIncrementalUpdate:
     CONFIG = IncrementalConfig(
         incremental_column="updated_on",
-        conflict_key=["id"],
+        entity_key=["id"],
     )
 
     def _setup_preflight(self, mock_engine, extra_columns: list[str] | None = None):
@@ -195,7 +195,7 @@ class TestIncrementalUpdate:
         collector._metadata_cache["abcd-1234"] = make_metadata_mock()
         config = IncrementalConfig(
             incremental_column="updated_on",
-            conflict_key=["id"],
+            entity_key=["id"],
             where="status = 'active'",
         )
         mock_client = attach_mock_client(collector, [])
@@ -274,7 +274,7 @@ class TestIncrementalUpdate:
 
         config = IncrementalConfig(
             incremental_column=":updated_at",
-            conflict_key=["socrata_id"],
+            entity_key=["socrata_id"],
         )
         collector.incremental_update("abcd-1234", "test", "raw_data", config)
 

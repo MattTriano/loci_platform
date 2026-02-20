@@ -72,7 +72,7 @@ def run_incremental_update(
         target_schema="raw_data",
         config=IncrementalConfig(
             incremental_column=":updated_at",
-            conflict_key=update_config.entity_key or None,
+            entity_key=update_config.entity_key or None,
         ),
         entity_key=update_config.entity_key or None,
     )

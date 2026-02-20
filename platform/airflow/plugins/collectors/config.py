@@ -11,7 +11,7 @@ class IncrementalConfig:
     Attributes:
         incremental_column:  The Socrata column to filter on (e.g. "updated_on").
                              Should be monotonically increasing for new/changed rows.
-        conflict_key:        Column(s) forming the natural key for upsert.
+        entity_key:          Column(s) forming the natural key for upsert.
                              e.g. ["case_number"] or ["pin14", "tax_year"].
         columns:             Optional subset of columns to SELECT. None = all.
         order_by:            Explicit $order clause. Defaults to incremental_column.
@@ -20,7 +20,7 @@ class IncrementalConfig:
     """
 
     incremental_column: str
-    conflict_key: list[str]
+    entity_key: list[str]
     columns: list[str] | None = None
     order_by: str | None = None
     where: str | None = None

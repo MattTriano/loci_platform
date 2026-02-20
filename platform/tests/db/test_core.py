@@ -315,7 +315,7 @@ class TestPostgresEngineIngestBatchConflict:
         assert '"age" = excluded."age"' in insert_sql
         assert '"id" = excluded."id"' not in insert_sql
 
-    def test_composite_conflict_key_list(self, engine, mock_cursor):
+    def test_composite_entity_key_list(self, engine, mock_cursor):
         rows = [{"pin14": "123", "tax_year": 2024, "assessed_value": 50000}]
         engine.ingest_batch(
             rows,
@@ -332,7 +332,7 @@ class TestPostgresEngineIngestBatchConflict:
         assert '"pin14" = excluded."pin14"' not in insert_sql
         assert '"tax_year" = excluded."tax_year"' not in insert_sql
 
-    def test_composite_conflict_key_do_nothing(self, engine, mock_cursor):
+    def test_composite_entity_key_do_nothing(self, engine, mock_cursor):
         rows = [{"a": 1, "b": 2, "c": 3}]
         engine.ingest_batch(
             rows, "test", "raw", conflict_column=["a", "b"], conflict_action="NOTHING"

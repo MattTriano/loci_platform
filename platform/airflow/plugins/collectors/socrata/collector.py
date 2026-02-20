@@ -328,7 +328,7 @@ class SocrataCollector:
             target_schema=target_schema,
             config=IncrementalConfig(
                 incremental_column=":updated_at",
-                conflict_key=entity_key or [],
+                entity_key=entity_key or [],
             ),
             entity_key=entity_key,
             high_water_mark_override="",
@@ -462,7 +462,6 @@ class SocrataCollector:
         run_metadata = {
             "mode": "incremental" if not high_water_mark_override == "" else "full_refresh_api",
             "incremental_column": inc_col,
-            "conflict_key": config.conflict_key,
             "entity_key": entity_key,
             "prior_high_water_mark": f"{hwm_value}|{hwm_id}" if hwm_id else hwm_value,
             "domain": domain,
@@ -474,10 +473,10 @@ class SocrataCollector:
             staged_ingest_kwargs = {
                 "entity_key": entity_key,
             }
-        elif config.conflict_key:
+        elif config.entity_key:
             # Simple conflict path
             staged_ingest_kwargs = {
-                "conflict_column": config.conflict_key,
+                "conflict_column": config.entity_key,
                 "conflict_action": "NOTHING",
             }
         else:
