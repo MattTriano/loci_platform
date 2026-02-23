@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from sources.dataset_specs import ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC
+
 
 @dataclass
 class DatasetUpdateConfig:
@@ -10,6 +12,15 @@ class DatasetUpdateConfig:
     entity_key: list[str] = field(default_factory=list)
     full_update_mode: str = "api"  # "api" or "file_download"
 
+
+ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
+    dataset_name=ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
+    full_update_cron="0 10 21-28 3,6,9,12 3",
+    update_cron="0 10 21-28 * 3",
+    entity_key=["state", "county", "tract", "vintage"],
+    full_update_mode="api",
+)
 
 CHICAGO_BUILDING_PERMITS = DatasetUpdateConfig(
     dataset_id="ydr8-5enu",

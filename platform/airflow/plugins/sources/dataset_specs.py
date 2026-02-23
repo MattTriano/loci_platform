@@ -1,6 +1,6 @@
 from collectors.census.spec import CensusDatasetSpec
 
-ACS5__HOUSING_CHARACTERISTICS_BY_TRACT = CensusDatasetSpec(
+ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__housing_characteristics",
     dataset="acs/acs5/subject",
     vintages=[2024, 2023, 2022, 2021, 2020],
@@ -11,7 +11,7 @@ ACS5__HOUSING_CHARACTERISTICS_BY_TRACT = CensusDatasetSpec(
     target_table="acs5__housing_characteristics_by_tract",
 )
 
-ACS5__OCCUPATIONS_BY_SEX_BY_TRACT = CensusDatasetSpec(
+ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__occupations_by_sex",
     dataset="acs/acs5",
     vintages=[2023],
@@ -22,7 +22,7 @@ ACS5__OCCUPATIONS_BY_SEX_BY_TRACT = CensusDatasetSpec(
     target_table="acs5__occupations_by_sex_by_tract",
 )
 
-ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT = CensusDatasetSpec(
+ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__means_of_transportation_to_work_by_age_sex_race",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],
@@ -47,7 +47,7 @@ ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT = CensusDatasetSp
     target_table="acs5__means_of_transportation_to_work_by_age_sex_race_by_tract",
 )
 
-ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_ECON_CHARS_BY_TRACT = CensusDatasetSpec(
+ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__means_of_transportation_to_work_by_econ_chars",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],
@@ -74,7 +74,7 @@ ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_ECON_CHARS_BY_TRACT = CensusDatasetSpec
 )
 
 
-ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_GEOGRAPHY_BY_TRACT = CensusDatasetSpec(
+ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_GEOGRAPHY_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__means_of_transportation_to_work_by_geography",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],
@@ -113,7 +113,7 @@ ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_GEOGRAPHY_BY_TRACT = CensusDatasetSpec(
 )
 
 
-ACS5__INTERNET_UTILIZATION_BY_TRACT = CensusDatasetSpec(
+ACS5__INTERNET_UTILIZATION_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__internet_utilization",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],
