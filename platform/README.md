@@ -20,6 +20,16 @@ and if the images build successfully, you can start the system up via
 podman compose up
 ```
 
+### API Keys / App Tokens
+
+#### Census API key
+
+To use the Census data collection tooling, you will need a Census API key (which you can get for free [here](https://api.census.gov/data/key_signup.html)), and you'll need to store it in an environment variable named `CENSUS_API_KEY`. You can set it in the `.env` file created above.
+
+#### Socrata App Token
+
+Follow the instructions [here](https://support.socrata.com/hc/en-us/articles/210138558-Generating-App-Tokens-and-API-Keys) to get an app token, then store it in an environment variable named `SOCRATA_APP_TOKEN`. You can set it in the `.env` file created above.
+
 ## Usage
 
 ### WARNING
