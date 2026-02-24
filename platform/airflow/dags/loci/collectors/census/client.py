@@ -5,7 +5,7 @@ import time
 
 import requests
 
-from collectors.census.spec import GEOGRAPHY_CONFIG, MAX_VARIABLES_PER_CALL, CensusDatasetSpec
+from loci.collectors.census.spec import GEOGRAPHY_CONFIG, MAX_VARIABLES_PER_CALL, CensusDatasetSpec
 
 logger = logging.getLogger(__name__)
 

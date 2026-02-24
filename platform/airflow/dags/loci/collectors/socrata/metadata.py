@@ -7,7 +7,7 @@ from functools import cached_property
 
 import requests
 
-from collectors.config import SCD2Config
+from loci.collectors.config import SCD2Config
 
 
 @dataclass

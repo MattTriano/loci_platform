@@ -4,13 +4,13 @@ from logging import Logger
 from airflow.sdk import task, task_group
 from airflow.sdk.bases.operator import chain
 
-from collectors.census.client import CensusClient
-from collectors.census.collector import CensusCollector
-from collectors.census.spec import CensusDatasetSpec
-from db.af_utils import get_postgres_engine
-from sources.update_configs import DatasetUpdateConfig
-from tasks.task_utils import check_ingestion_log, choose_update_mode
-from tracking.ingestion_tracker import IngestionTracker
+from loci.collectors.census.client import CensusClient
+from loci.collectors.census.collector import CensusCollector
+from loci.collectors.census.spec import CensusDatasetSpec
+from loci.db.af_utils import get_postgres_engine
+from loci.sources.update_configs import DatasetUpdateConfig
+from loci.tasks.task_utils import check_ingestion_log, choose_update_mode
+from loci.tracking.ingestion_tracker import IngestionTracker
 
 
 def _get_collector(conn_id: str, task_logger: Logger) -> CensusCollector:

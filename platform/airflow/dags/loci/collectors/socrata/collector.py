@@ -16,14 +16,14 @@ from tenacity import (
     wait_exponential,
 )
 
-from collectors.config import IncrementalConfig
-from collectors.exceptions import SchemaDriftError
-from collectors.socrata.client import SocrataClient
-from collectors.socrata.metadata import SocrataTableMetadata
-from parsers.csv_parser import parse_csv
-from parsers.geojson import parse_geojson
-from sources.update_configs import DatasetUpdateConfig
-from tracking.ingestion_tracker import IngestionTracker
+from loci.collectors.config import IncrementalConfig
+from loci.collectors.exceptions import SchemaDriftError
+from loci.collectors.socrata.client import SocrataClient
+from loci.collectors.socrata.metadata import SocrataTableMetadata
+from loci.parsers.csv_parser import parse_csv
+from loci.parsers.geojson import parse_geojson
+from loci.sources.update_configs import DatasetUpdateConfig
+from loci.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

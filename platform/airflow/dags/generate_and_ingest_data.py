@@ -7,8 +7,8 @@ from pathlib import Path
 from airflow.sdk import dag, task
 from airflow.sdk.bases.operator import chain
 
-from db.af_utils import get_postgres_engine, get_mysql_engine
-from datagen.data_model_mocker import DataFaker
+from loci.db.af_utils import get_postgres_engine, get_mysql_engine
+from loci.datagen.data_model_mocker import DataFaker
 
 task_logger = logging.getLogger("airflow.task")
 

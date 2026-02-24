@@ -6,8 +6,8 @@ from airflow.sdk import get_current_context, task
 from airflow.task.trigger_rule import TriggerRule
 from croniter import croniter
 
-from db.af_utils import get_postgres_engine
-from sources.update_configs import DatasetUpdateConfig
+from loci.db.af_utils import get_postgres_engine
+from loci.sources.update_configs import DatasetUpdateConfig
 
 
 def get_task_group_id_prefix(task_instance: TaskInstance) -> str:

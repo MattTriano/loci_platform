@@ -3,10 +3,10 @@ import logging
 
 from airflow.sdk import dag
 
-from sources.update_configs import (
+from loci.sources.update_configs import (
     CHICAGO_SPEED_CAMERA_VIOLATION_CONFIG as UPDATE_CONFIG,
 )
-from tasks.socrata_tasks import update_socrata_table
+from loci.tasks.socrata_tasks import update_socrata_table
 
 
 task_logger = logging.getLogger("airflow.task")
