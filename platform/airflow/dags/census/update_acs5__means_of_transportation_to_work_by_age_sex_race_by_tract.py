@@ -3,13 +3,13 @@ from logging import getLogger
 
 from airflow.sdk import dag
 
-from sources.dataset_specs import (
+from loci.sources.dataset_specs import (
     ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC as DATASET_SPEC,
 )
-from sources.update_configs import (
+from loci.sources.update_configs import (
     ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UPDATE_CONFIG as UPDATE_CONFIG,
 )
-from tasks.census_tasks import update_census_table
+from loci.tasks.census_tasks import update_census_table
 
 task_logger = getLogger("airflow.task")
 

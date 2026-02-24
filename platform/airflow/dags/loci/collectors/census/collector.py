@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import logging
 
-from collectors.census.client import CensusClient
-from collectors.census.spec import GEOGRAPHY_CONFIG, CensusDatasetSpec
+from loci.collectors.census.client import CensusClient
+from loci.collectors.census.spec import GEOGRAPHY_CONFIG, CensusDatasetSpec
 
 logger = logging.getLogger(__name__)
 

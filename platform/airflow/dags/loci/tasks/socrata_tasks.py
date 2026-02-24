@@ -8,11 +8,11 @@ from airflow.sdk.bases.operator import chain
 from airflow.task.trigger_rule import TriggerRule
 from croniter import croniter
 
-from collectors.config import IncrementalConfig
-from collectors.socrata.collector import SocrataCollector
-from db.af_utils import get_postgres_engine
-from sources.update_configs import DatasetUpdateConfig
-from tracking.ingestion_tracker import IngestionTracker
+from loci.collectors.config import IncrementalConfig
+from loci.collectors.socrata.collector import SocrataCollector
+from loci.db.af_utils import get_postgres_engine
+from loci.sources.update_configs import DatasetUpdateConfig
+from loci.tracking.ingestion_tracker import IngestionTracker
 
 
 def get_task_group_id_prefix(task_instance: TaskInstance) -> str:

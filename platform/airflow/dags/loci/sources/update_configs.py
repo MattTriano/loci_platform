@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from sources import dataset_specs as specs
+from loci.sources import dataset_specs as specs
 
 
 @dataclass

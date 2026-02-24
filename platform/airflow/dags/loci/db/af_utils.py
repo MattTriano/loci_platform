@@ -3,7 +3,7 @@ from typing import Any, Optional
 
 from airflow.sdk.bases.hook import BaseHook
 
-from db.core import MySQLEngine, PostgresEngine, DatabaseCredentials
+from loci.db.core import MySQLEngine, PostgresEngine, DatabaseCredentials
 
 
 def extract_connection_to_dict(

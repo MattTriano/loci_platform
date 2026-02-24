@@ -3,10 +3,10 @@ import logging
 
 from airflow.sdk import dag
 
-from sources.update_configs import (
+from loci.sources.update_configs import (
     CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS as UPDATE_CONFIG,
 )
-from tasks.socrata_tasks import update_socrata_table
+from loci.tasks.socrata_tasks import update_socrata_table
 
 
 task_logger = logging.getLogger("airflow.task")

@@ -3,8 +3,8 @@ import logging
 
 from airflow.sdk import dag
 
-from sources.update_configs import CHICAGO_CRIMES as UPDATE_CONFIG
-from tasks.socrata_tasks import update_socrata_table
+from loci.sources.update_configs import CHICAGO_CRIMES as UPDATE_CONFIG
+from loci.tasks.socrata_tasks import update_socrata_table
 
 
 task_logger = logging.getLogger("airflow.task")

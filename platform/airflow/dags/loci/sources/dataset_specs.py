@@ -1,4 +1,4 @@
-from collectors.census.spec import CensusDatasetSpec
+from loci.collectors.census.spec import CensusDatasetSpec
 
 ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__housing_characteristics",
