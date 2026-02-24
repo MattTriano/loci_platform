@@ -3,9 +3,9 @@ from logging import getLogger
 
 from airflow.sdk import dag
 
-from sources.dataset_specs import ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC as DATASET_SPEC
+from sources.dataset_specs import ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_SPEC as DATASET_SPEC
 from sources.update_configs import (
-    ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG as UPDATE_CONFIG,
+    ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UPDATE_CONFIG as UPDATE_CONFIG,
 )
 from tasks.census_tasks import update_census_table
 
@@ -21,7 +21,7 @@ CONN_ID = "gis_dwh_db"
     catchup=False,
     tags=["census", "update", "housing", "tract"],
 )
-def update_acs5__housing_characteristics_by_tract():
+def update_acs5__occupations_by_sex_by_tract():
     update_census_table(
         conn_id=CONN_ID,
         dataset_spec=DATASET_SPEC,
@@ -30,4 +30,4 @@ def update_acs5__housing_characteristics_by_tract():
     )
 
 
-update_acs5__housing_characteristics_by_tract()
+update_acs5__occupations_by_sex_by_tract()

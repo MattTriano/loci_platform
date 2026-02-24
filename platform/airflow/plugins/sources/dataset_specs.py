@@ -22,7 +22,7 @@ ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_SPEC = CensusDatasetSpec(
     target_table="acs5__occupations_by_sex_by_tract",
 )
 
-ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC = CensusDatasetSpec(
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__means_of_transportation_to_work_by_age_sex_race",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],
@@ -47,7 +47,7 @@ ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC = CensusData
     target_table="acs5__means_of_transportation_to_work_by_age_sex_race_by_tract",
 )
 
-ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC = CensusDatasetSpec(
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__means_of_transportation_to_work_by_econ_chars",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],
@@ -74,7 +74,7 @@ ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC = CensusDatase
 )
 
 
-ACS5__MEANS_OF_TRANSPORTATION_TO_WORK_BY_GEOGRAPHY_BY_TRACT_SPEC = CensusDatasetSpec(
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_GEOGRAPHY_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__means_of_transportation_to_work_by_geography",
     dataset="acs/acs5",
     vintages=[2024, 2023, 2022, 2021, 2020],

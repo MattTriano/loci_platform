@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from sources.dataset_specs import ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC
+from sources import dataset_specs as specs
 
 
 @dataclass
@@ -14,13 +14,61 @@ class DatasetUpdateConfig:
 
 
 ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
-    dataset_id=ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
-    dataset_name=ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
+    dataset_id=specs.ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
+    dataset_name=specs.ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
     full_update_cron="0 10 21-28 3,6,9,12 3",
     update_cron="0 10 21-28 * 3",
     entity_key=["state", "county", "tract", "vintage"],
     full_update_mode="api",
 )
+
+ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_SPEC.target_table,
+    dataset_name=specs.ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_SPEC.target_table,
+    full_update_cron="5 10 21-28 3,6,9,12 3",
+    update_cron="5 10 21-28 * 3",
+    entity_key=["state", "county", "tract", "vintage"],
+    full_update_mode="api",
+)
+
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC.target_table,
+    dataset_name=specs.ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC.target_table,
+    full_update_cron="10 10 21-28 3,6,9,12 3",
+    update_cron="10 10 21-28 * 3",
+    entity_key=["state", "county", "tract", "vintage"],
+    full_update_mode="api",
+)
+
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC.target_table,
+    dataset_name=specs.ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC.target_table,
+    full_update_cron="15 10 21-28 3,6,9,12 3",
+    update_cron="15 10 21-28 * 3",
+    entity_key=["state", "county", "tract", "vintage"],
+    full_update_mode="api",
+)
+
+
+ACS5__INTERNET_UTILIZATION_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ACS5__INTERNET_UTILIZATION_BY_TRACT_SPEC.target_table,
+    dataset_name=specs.ACS5__INTERNET_UTILIZATION_BY_TRACT_SPEC.target_table,
+    full_update_cron="25 10 21-28 3,6,9,12 3",
+    update_cron="25 10 21-28 * 3",
+    entity_key=["state", "county", "tract", "vintage"],
+    full_update_mode="api",
+)
+
+
+ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT.target_table,
+    dataset_name=specs.ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT.target_table,
+    full_update_cron="35 10 21-28 3,6,9,12 3",
+    update_cron="35 10 21-28 * 3",
+    entity_key=["state", "county", "tract", "vintage"],
+    full_update_mode="api",
+)
+
 
 CHICAGO_BUILDING_PERMITS = DatasetUpdateConfig(
     dataset_id="ydr8-5enu",
