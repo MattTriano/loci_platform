@@ -3,7 +3,6 @@ from logging import Logger
 
 from airflow.sdk import task, task_group
 from airflow.sdk.bases.operator import chain
-
 from loci.collectors.census.client import CensusClient
 from loci.collectors.census.collector import CensusCollector
 from loci.collectors.census.spec import CensusDatasetSpec

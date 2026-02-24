@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-
-from collectors.config import SCD2Config
-from collectors.socrata.metadata import SocrataColumnInfo, SocrataTableMetadata
+from loci.collectors.config import SCD2Config
+from loci.collectors.socrata.metadata import SocrataColumnInfo, SocrataTableMetadata
 
 # ---------------------------------------------------------------------------
 # Helpers

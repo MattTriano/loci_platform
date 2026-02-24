@@ -7,15 +7,6 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
-from tenacity import (
-    before_sleep_log,
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
-
 from loci.collectors.config import IncrementalConfig
 from loci.collectors.exceptions import SchemaDriftError
 from loci.collectors.socrata.client import SocrataClient
@@ -24,6 +15,14 @@ from loci.parsers.csv_parser import parse_csv
 from loci.parsers.geojson import parse_geojson
 from loci.sources.update_configs import DatasetUpdateConfig
 from loci.tracking.ingestion_tracker import IngestionTracker
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
 

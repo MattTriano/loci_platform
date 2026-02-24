@@ -214,9 +214,9 @@ class TigerMetadata:
         # Match table rows with links: name, last modified, size
         # Apache directory listing format: <a href="NAME">NAME</a> DATE SIZE
         for match in re.finditer(
-            r'<a href="([^"]+)">\1</a>\s+'
-            r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+"
-            r"([\d.]+[KMG]?|-)",
+            r'<a href="([^"]+)">\1</a></td>'
+            r"<td[^>]*>\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*</td>"
+            r"<td[^>]*>\s*([\d.]+[KMG]?|-)\s*</td>",
             html,
         ):
             name, date, size = match.groups()

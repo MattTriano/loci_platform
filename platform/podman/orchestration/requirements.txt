@@ -4,6 +4,7 @@ apache-airflow-providers-fab
 apache-airflow-providers-mysql
 asyncpg
 faker
+fiona
 geopandas
 ijson
 pandas

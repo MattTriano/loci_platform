@@ -1,8 +1,7 @@
 import csv
-import random
 import datetime
+import random
 from pathlib import Path
-from typing import Optional
 
 from faker import Faker
 
@@ -31,7 +30,7 @@ class DataFaker:
         self.timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
         self.generate_data()
 
-    def get_latest_files(self) -> Optional[dict]:
+    def get_latest_files(self) -> dict | None:
         files = {
             "addresses": None,
             "businesses": None,
@@ -51,7 +50,7 @@ class DataFaker:
         return files
 
     def load_existing_data(self, filepath: Path) -> list:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             reader = csv.DictReader(f)
             return list(reader)
 
@@ -95,9 +94,7 @@ class DataFaker:
         print(f"Output Directory: {self.output_dir}/")
         print(f"  - addresses_{self.timestamp}.csv ({self.address_count:,} rows)")
         print(f"  - businesses_{self.timestamp}.csv ({self.business_count:,} rows)")
-        print(
-            f"  - trading_partnerships_{self.timestamp}.csv ({self.partnership_count:,} rows)"
-        )
+        print(f"  - trading_partnerships_{self.timestamp}.csv ({self.partnership_count:,} rows)")
         print("  - DATASET_INFO.txt (summary)")
         print(
             f"\nTotal: {self.address_count + self.business_count + self.partnership_count:,} records"
@@ -178,14 +175,10 @@ class DataFaker:
                     )
         print(f" Created {filepath} ({self.address_count:,} rows)")
 
-    def update_addresses_csv(
-        self, existing: list, update_count: int, new_count: int
-    ) -> None:
+    def update_addresses_csv(self, existing: list, update_count: int, new_count: int) -> None:
         filepath = self.output_dir.joinpath(f"addresses_{self.timestamp}.csv")
         print("Updating addresses file...")
-        update_indices = random.sample(
-            range(len(existing)), min(update_count, len(existing))
-        )
+        update_indices = random.sample(range(len(existing)), min(update_count, len(existing)))
         now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         for idx in update_indices:
             existing[idx]["street_address"] = self.fake.street_address()
@@ -255,9 +248,7 @@ class DataFaker:
                 row = [
                     i,
                     company_name,
-                    f"{company_name} Inc."
-                    if random.random() > 0.3
-                    else f"{company_name} LLC",
+                    f"{company_name} Inc." if random.random() > 0.3 else f"{company_name} LLC",
                     f"{self.fake.random_int(10, 99)}-{self.fake.random_int(1000000, 9999999)}",
                     random.choice(industries),
                     self.fake.bs().capitalize(),
@@ -300,9 +291,7 @@ class DataFaker:
             "Pharmaceuticals",
             "Aerospace",
         ]
-        update_indices = random.sample(
-            range(len(existing)), min(update_count, len(existing))
-        )
+        update_indices = random.sample(range(len(existing)), min(update_count, len(existing)))
         now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         for idx in update_indices:
             existing[idx]["employee_count"] = random.choice(
@@ -326,9 +315,7 @@ class DataFaker:
                 "email": self.fake.company_email(),
                 "phone": self.fake.phone_number(),
                 "website": self.fake.url(),
-                "employee_count": random.choice(
-                    [10, 25, 50, 100, 250, 500, 1000, 5000, 10000]
-                ),
+                "employee_count": random.choice([10, 25, 50, 100, 250, 500, 1000, 5000, 10000]),
                 "annual_revenue": random.randint(100000, 50000000),
                 "address_id": random.randint(1, max_address_id),
                 "is_active": random.random() > 0.1,
@@ -343,9 +330,7 @@ class DataFaker:
         print(f" Created {filepath} ({len(existing):,} rows)")
 
     def generate_partnerships_csv(self) -> None:
-        filepath = self.output_dir.joinpath(
-            f"trading_partnerships_{self.timestamp}.csv"
-        )
+        filepath = self.output_dir.joinpath(f"trading_partnerships_{self.timestamp}.csv")
         print(f"Generating {self.partnership_count:,} trading partnerships...")
         partnership_types = [
             "supplier",
@@ -376,10 +361,7 @@ class DataFaker:
             partnerships_created = 0
             attempts = 0
             max_attempts = self.partnership_count * 3
-            while (
-                partnerships_created < self.partnership_count
-                and attempts < max_attempts
-            ):
+            while partnerships_created < self.partnership_count and attempts < max_attempts:
                 attempts += 1
                 business1_id = random.randint(1, self.business_count)
                 business2_id = random.randint(1, self.business_count)
@@ -390,9 +372,7 @@ class DataFaker:
                     continue
                 used_pairs.add(pair)
                 is_active = random.random() > 0.2
-                start_date = self.fake.date_time_between(
-                    start_date="-5y", end_date="now"
-                )
+                start_date = self.fake.date_time_between(start_date="-5y", end_date="now")
                 end_date = ""
                 if not is_active:
                     end_date = self.fake.date_time_between(
@@ -422,9 +402,7 @@ class DataFaker:
     def update_partnerships_csv(
         self, existing: list, update_count: int, new_count: int, max_business_id: int
     ) -> None:
-        filepath = self.output_dir.joinpath(
-            f"trading_partnerships_{self.timestamp}.csv"
-        )
+        filepath = self.output_dir.joinpath(f"trading_partnerships_{self.timestamp}.csv")
         print("Updating partnerships file...")
         partnership_types = [
             "supplier",
@@ -434,9 +412,7 @@ class DataFaker:
             "reseller",
             "affiliate",
         ]
-        update_indices = random.sample(
-            range(len(existing)), min(update_count, len(existing))
-        )
+        update_indices = random.sample(range(len(existing)), min(update_count, len(existing)))
         now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         for idx in update_indices:
             existing[idx]["is_active"] = random.random() > 0.2
@@ -446,8 +422,7 @@ class DataFaker:
             existing[idx]["updated_at"] = now
         max_id = max(int(row["partnership_id"]) for row in existing)
         used_pairs = {
-            tuple(sorted([int(row["business1_id"]), int(row["business2_id"])]))
-            for row in existing
+            tuple(sorted([int(row["business1_id"]), int(row["business2_id"])])) for row in existing
         }
         partnerships_added = 0
         attempts = 0
@@ -471,9 +446,7 @@ class DataFaker:
                 "partnership_type": random.choice(partnership_types),
                 "start_date": start_date.isoformat(),
                 "end_date": "",
-                "contract_value": random.randint(10000, 5000000)
-                if random.random() > 0.3
-                else "",
+                "contract_value": random.randint(10000, 5000000) if random.random() > 0.3 else "",
                 "notes": self.fake.sentence() if random.random() > 0.5 else "",
                 "created_at": now,
                 "updated_at": now,
@@ -492,9 +465,7 @@ class DataFaker:
             f.write("=" * 70 + "\n")
             f.write("Business Network Mock Data - Dataset Summary\n")
             f.write("=" * 70 + "\n\n")
-            f.write(
-                f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            )
+            f.write(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Timestamp: {self.timestamp}\n")
             f.write(f"Random Seed: {stats['seed']}\n")
             f.write(f"Output Directory: {self.output_dir}\n\n")
@@ -507,12 +478,8 @@ class DataFaker:
             f.write("Files Generated:\n")
             f.write("-" * 70 + "\n")
             f.write(f"1. addresses_{self.timestamp}.csv - Business location data\n")
-            f.write(
-                f"2. businesses_{self.timestamp}.csv - Business profile information\n"
-            )
-            f.write(
-                f"3. trading_partnerships_{self.timestamp}.csv - Business relationships\n\n"
-            )
+            f.write(f"2. businesses_{self.timestamp}.csv - Business profile information\n")
+            f.write(f"3. trading_partnerships_{self.timestamp}.csv - Business relationships\n\n")
             f.write("Reproducibility:\n")
             f.write("-" * 70 + "\n")
             f.write(f"To regenerate this exact dataset, use seed: {stats['seed']}\n")

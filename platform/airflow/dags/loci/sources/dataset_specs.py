@@ -2,67 +2,67 @@ from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 
 TRACT_TIGER_SPEC = TigerDatasetSpec(
-    name="census_tracts",
+    name="tiger_tracts",
     layer="TRACT",
     vintages=[2020, 2021, 2022, 2023, 2024],
-    target_table="census_tracts",
+    target_table="tiger_tracts",
     state_fips=["17"],  # Illinois only; omit for all states
 )
 
 BLOCK_GROUP_TIGER_SPEC = TigerDatasetSpec(
-    name="block_groups",
+    name="tiger_block_groups",
     layer="BG",
     vintages=[2020, 2021, 2022, 2023, 2024],
-    target_table="block_groups",
+    target_table="tiger_block_groups",
 )
 
 COUNTY_TIGER_SPEC = TigerDatasetSpec(
-    name="counties",
+    name="tiger_counties",
     layer="COUNTY",
     vintages=[2020, 2021, 2022, 2023, 2024],
-    target_table="counties",
+    target_table="tiger_counties",
 )
 
 ZCTA_TIGER_SPEC = TigerDatasetSpec(
-    name="zip_code_tabulation_areas",
+    name="tiger_zip_code_tabulation_areas",
     layer="ZCTA520",
     vintages=[2020, 2021, 2022, 2023, 2024],
-    target_table="zcta",
+    target_table="tiger_zcta",
 )
 
 RAILS_TIGER_SPEC = TigerDatasetSpec(
-    name="railroads",
+    name="tiger_railroads",
     layer="RAILS",
     vintages=[2024],
-    target_table="railroads",
+    target_table="tiger_railroads",
     entity_key=["linearid", "vintage"],  # RAILS uses LINEARID, not GEOID
 )
 
 # National primary roads (interstates, US highways)
 PRIMARY_ROADS_TIGER_SPEC = TigerDatasetSpec(
-    name="primary_roads",
+    name="tiger_primary_roads",
     layer="PRIMARYROADS",
     vintages=[2024],
-    target_table="primary_roads",
+    target_table="tiger_primary_roads",
     entity_key=["linearid", "vintage"],
 )
 
 # State-based primary + secondary roads
 PRIMARY_SECONDARY_ROADS_TIGER_SPEC = TigerDatasetSpec(
-    name="primary_secondary_roads",
+    name="tiger_primary_secondary_roads",
     layer="PRISECROADS",
     vintages=[2024],
-    target_table="primary_secondary_roads",
+    target_table="tiger_primary_secondary_roads",
     state_fips=["17"],
     entity_key=["linearid", "vintage"],
 )
 
 # County-based all roads — this is the big one
 ALL_ROADS_TIGER_SPEC = TigerDatasetSpec(
-    name="all_roads",
+    name="tiger_all_roads",
     layer="ROADS",
     vintages=[2024],
-    target_table="all_roads",
+    target_table="tiger_all_roads",
     state_fips=["17"],  # strongly recommend limiting states for roads
     entity_key=["linearid", "vintage"],
 )

@@ -3,11 +3,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-
-from collectors.config import IncrementalConfig
-from collectors.exceptions import SchemaDriftError
-from collectors.socrata.client import SocrataClient
-from collectors.socrata.collector import SocrataCollector
+from loci.collectors.config import IncrementalConfig
+from loci.collectors.exceptions import SchemaDriftError
+from loci.collectors.socrata.client import SocrataClient
+from loci.collectors.socrata.collector import SocrataCollector
 
 from .conftest import (
     attach_mock_client,

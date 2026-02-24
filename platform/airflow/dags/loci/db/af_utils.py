@@ -1,14 +1,11 @@
 from logging import Logger
-from typing import Any, Optional
+from typing import Any
 
 from airflow.sdk.bases.hook import BaseHook
+from loci.db.core import DatabaseCredentials, MySQLEngine, PostgresEngine
 
-from loci.db.core import MySQLEngine, PostgresEngine, DatabaseCredentials
 
-
-def extract_connection_to_dict(
-    conn_id: str, logger: Optional[Logger] = None
-) -> dict[str, Any]:
+def extract_connection_to_dict(conn_id: str, logger: Logger | None = None) -> dict[str, Any]:
     conn = BaseHook.get_connection(conn_id)
     conn_dict = {
         "type": conn.conn_type,
@@ -26,9 +23,7 @@ def extract_connection_to_dict(
     return conn_dict
 
 
-def get_postgres_engine(
-    conn_id: str, logger: Optional[Logger] = None
-) -> PostgresEngine:
+def get_postgres_engine(conn_id: str, logger: Logger | None = None) -> PostgresEngine:
     conn_dict = extract_connection_to_dict(conn_id, logger)
     return PostgresEngine(
         DatabaseCredentials(
@@ -41,7 +36,7 @@ def get_postgres_engine(
     )
 
 
-def get_mysql_engine(conn_id: str, logger: Optional[Logger] = None) -> MySQLEngine:
+def get_mysql_engine(conn_id: str, logger: Logger | None = None) -> MySQLEngine:
     conn_dict = extract_connection_to_dict(conn_id, logger)
     port = conn_dict.get("port")
     if port is None:

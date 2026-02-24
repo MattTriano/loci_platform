@@ -4,8 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from parsers.geojson import parse_geojson
+from loci.parsers.geojson import parse_geojson
 
 
 def _write_geojson(tmp_path: Path, features: list[dict]) -> Path:
