@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from functools import cached_property
 
 import requests
-
 from loci.collectors.config import SCD2Config
 
 

@@ -7,7 +7,6 @@ from airflow.sdk import get_current_context, task, task_group
 from airflow.sdk.bases.operator import chain
 from airflow.task.trigger_rule import TriggerRule
 from croniter import croniter
-
 from loci.collectors.config import IncrementalConfig
 from loci.collectors.socrata.collector import SocrataCollector
 from loci.db.af_utils import get_postgres_engine

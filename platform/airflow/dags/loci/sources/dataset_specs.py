@@ -1,4 +1,111 @@
 from loci.collectors.census.spec import CensusDatasetSpec
+from loci.collectors.tiger.spec import TigerDatasetSpec
+
+STATE_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_states",
+    layer="STATE",
+    vintages=[2020, 2021, 2022, 2023, 2024],
+    target_table="tiger_states",
+)
+
+COUNTY_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_counties",
+    layer="COUNTY",
+    vintages=[2020, 2021, 2022, 2023, 2024],
+    target_table="tiger_counties",
+)
+
+ZCTA_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_zip_code_tabulation_areas",
+    layer="ZCTA520",
+    vintages=[2020, 2021, 2022, 2023, 2024],
+    target_table="tiger_zcta",
+)
+
+TRACT_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_tracts",
+    layer="TRACT",
+    vintages=[2020, 2021, 2022, 2023, 2024],
+    target_table="tiger_tracts",
+)
+
+BLOCK_GROUP_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_block_groups",
+    layer="BG",
+    vintages=[2020, 2021, 2022, 2023, 2024],
+    target_table="tiger_block_groups",
+)
+
+ADDR_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_addrs",
+    layer="ADDR",
+    vintages=[2024, 2022, 2020],
+    target_table="tiger_addrs",
+    state_fips=["17"],
+)
+
+COASTLINE_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_coastline",
+    layer="COASTLINE",
+    vintages=[2024, 2023, 2022, 2021, 2020],
+    target_table="tiger_coastline",
+)
+
+AREAWATER_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_areawater",
+    layer="AREAWATER",
+    vintages=[2024],
+    target_table="tiger_areawater",
+    state_fips=["17"],
+    entity_key=["hydroid", "vintage"],
+)
+
+LINEARWATER_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_linear_water",
+    layer="LINEARWATER",
+    vintages=[2024],
+    target_table="tiger_linear_water",
+    state_fips=["17"],
+    entity_key=["linearid", "vintage"],
+)
+
+RAILS_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_railroads",
+    layer="RAILS",
+    vintages=[2024, 2023, 2022, 2021, 2020],
+    target_table="tiger_railroads",
+    entity_key=["linearid", "vintage"],  # RAILS uses LINEARID, not GEOID
+)
+
+# National primary roads (interstates, US highways)
+PRIMARY_ROADS_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_primary_roads",
+    layer="PRIMARYROADS",
+    vintages=[2024],
+    target_table="tiger_primary_roads",
+    entity_key=["linearid", "vintage"],
+)
+
+# State-based primary + secondary roads
+PRIMARY_SECONDARY_ROADS_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_primary_secondary_roads",
+    layer="PRISECROADS",
+    vintages=[2024],
+    target_table="tiger_primary_secondary_roads",
+    state_fips=["17"],
+    entity_key=["linearid", "vintage"],
+)
+
+# County-based all roads — this is the big one
+ALL_ROADS_TIGER_SPEC = TigerDatasetSpec(
+    name="tiger_all_roads",
+    layer="ROADS",
+    vintages=[2024],
+    target_table="tiger_all_roads",
+    state_fips=["17"],  # strongly recommend limiting states for roads
+    entity_key=["linearid", "vintage"],
+)
+
 
 ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__housing_characteristics",

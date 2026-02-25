@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from collectors.socrata.client import SocrataClient
+from loci.collectors.socrata.client import SocrataClient
 
 
 class TestSocrataClient:
-    @patch("collectors.socrata.client.requests.Session")
+    @patch("loci.collectors.socrata.client.requests.Session")
     def test_paginate_single_page(self, MockSession):
         mock_session = MagicMock()
         MockSession.return_value = mock_session
@@ -23,7 +23,7 @@ class TestSocrataClient:
         assert len(pages) == 1
         assert pages[0] == page_data
 
-    @patch("collectors.socrata.client.requests.Session")
+    @patch("loci.collectors.socrata.client.requests.Session")
     def test_paginate_stops_after_partial_page(self, MockSession):
         mock_session = MagicMock()
         MockSession.return_value = mock_session

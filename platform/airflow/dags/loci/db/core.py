@@ -1,34 +1,34 @@
 import io
-import uuid
 import logging
 import os
 import re
 import sys
+import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote_plus
-from typing import Any, Iterator, Optional
 
 import geopandas as gpd
-import pymysql
 import pandas as pd
 import psycopg2
 import psycopg2.extras
-
+import pymysql
 from psycopg2.extensions import connection as Psycopg2Connection
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
 
 
 def get_logger(
     name: str,
     level: int = logging.INFO,
-    log_format: Optional[str] = None,
+    log_format: str | None = None,
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -56,9 +56,7 @@ class DatabaseCredentials:
     driver: str = "postgresql"
 
     @classmethod
-    def from_env_file(
-        cls, env_path: str | Path, prefix: str, driver: str
-    ) -> "DatabaseCredentials":
+    def from_env_file(cls, env_path: str | Path, prefix: str, driver: str) -> "DatabaseCredentials":
         """
         Load credentials from a .env file using variables matching a prefix pattern.
 
@@ -68,7 +66,7 @@ class DatabaseCredentials:
         """
         env_vars = cls._parse_env_file(env_path)
 
-        def get_var(name: str, default: Optional[str] = None) -> str:
+        def get_var(name: str, default: str | None = None) -> str:
             key = f"{prefix}{name}"
             value = env_vars.get(key) or os.environ.get(key) or default
             if value is None:
@@ -92,7 +90,7 @@ class DatabaseCredentials:
         if not path.exists():
             return env_vars
 
-        with open(path, "r") as f:
+        with open(path) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -288,13 +286,9 @@ class StagedIngest:
             conflict_clause = ", ".join(f'"{c}"' for c in self._conflict_columns)
 
             if self._conflict_action.upper() == "UPDATE":
-                update_cols = [
-                    c for c in self._columns if c not in self._conflict_columns
-                ]
+                update_cols = [c for c in self._columns if c not in self._conflict_columns]
                 set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
-                insert_sql += (
-                    f" on conflict ({conflict_clause}) do update set {set_clause}"
-                )
+                insert_sql += f" on conflict ({conflict_clause}) do update set {set_clause}"
             else:
                 insert_sql += f" on conflict ({conflict_clause}) do nothing"
 
@@ -399,13 +393,11 @@ class StagedIngest:
     def _create_staging_table(self) -> None:
         with self._engine.cursor() as cur:
             cur.execute(
-                f"create temp table {self._staging_table} "
-                f"(like {self._fqn} including defaults)"
+                f"create temp table {self._staging_table} (like {self._fqn} including defaults)"
             )
             if self._entity_key:
                 cur.execute(
-                    f"alter table {self._staging_table} "
-                    f'alter column "record_hash" drop not null'
+                    f'alter table {self._staging_table} alter column "record_hash" drop not null'
                 )
         self._created = True
         self._engine.logger.info("Created staging table %s", self._staging_table)
@@ -431,12 +423,7 @@ class StagedIngest:
                 if v is None:
                     vals.append("\\N")
                 else:
-                    vals.append(
-                        str(v)
-                        .replace("\\", "\\\\")
-                        .replace("\t", " ")
-                        .replace("\n", " ")
-                    )
+                    vals.append(str(v).replace("\\", "\\\\").replace("\t", " ").replace("\n", " "))
             buf.write("\t".join(vals) + "\n")
         buf.seek(0)
         return buf
@@ -444,15 +431,11 @@ class StagedIngest:
     def _cast_geometry_if_needed(self) -> None:
         """If the target table has a PostGIS geometry column, cast it in staging."""
         try:
-            geom_col = self._engine._get_geometry_column(
-                self._target_table, self._target_schema
-            )
+            geom_col = self._engine._get_geometry_column(self._target_table, self._target_schema)
         except ValueError:
             return  # no geometry column — nothing to do
 
-        self._engine.logger.info(
-            "Casting geometry column '%s' in staging table", geom_col
-        )
+        self._engine.logger.info("Casting geometry column '%s' in staging table", geom_col)
         with self._engine.cursor() as cur:
             cur.execute(
                 f"alter table {self._staging_table} "
@@ -465,9 +448,7 @@ def pg_retry():
     return retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type(
-            (psycopg2.OperationalError, psycopg2.InterfaceError)
-        ),
+        retry=retry_if_exception_type((psycopg2.OperationalError, psycopg2.InterfaceError)),
         reraise=True,
     )
 
@@ -476,20 +457,16 @@ def mysql_retry():
     return retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type(
-            (pymysql.OperationalError, pymysql.InterfaceError)
-        ),
+        retry=retry_if_exception_type((pymysql.OperationalError, pymysql.InterfaceError)),
         reraise=True,
     )
 
 
 class PostgresEngine:
-    def __init__(
-        self, creds: DatabaseCredentials, db_name: Optional[str] = None
-    ) -> None:
+    def __init__(self, creds: DatabaseCredentials, db_name: str | None = None) -> None:
         self.creds = creds
         self.db_name = db_name or creds.database
-        self._conn: Optional[Psycopg2Connection] = None
+        self._conn: Psycopg2Connection | None = None
         self.logger = get_logger("postgres_engine")
         self._geometry_info_cache: dict[tuple[str, str], dict[str, int]] = {}
 
@@ -640,9 +617,7 @@ class PostgresEngine:
         return None, 0
 
     @staticmethod
-    def _to_geodataframe(
-        df: pd.DataFrame, geom_col: str, srid: int
-    ) -> gpd.GeoDataFrame:
+    def _to_geodataframe(df: pd.DataFrame, geom_col: str, srid: int) -> gpd.GeoDataFrame:
         """Convert a DataFrame with a WKB hex geometry column to a GeoDataFrame."""
         from shapely import wkb
 
@@ -714,9 +689,7 @@ class PostgresEngine:
         finally:
             cursor.close()
 
-    def _get_geometry_info(
-        self, target_table: str, target_schema: str
-    ) -> dict[str, int]:
+    def _get_geometry_info(self, target_table: str, target_schema: str) -> dict[str, int]:
         """
         Return a dict of {geometry_column_name: srid} for the given table.
 
@@ -747,9 +720,7 @@ class PostgresEngine:
         """Look up the geometry column name from PostGIS metadata."""
         info = self._get_geometry_info(target_table, target_schema)
         if not info:
-            raise ValueError(
-                f"No geometry column found for {target_schema}.{target_table}"
-            )
+            raise ValueError(f"No geometry column found for {target_schema}.{target_table}")
         return next(iter(info))
 
     def stream_to_destination(
@@ -760,9 +731,7 @@ class PostgresEngine:
         batch_size: int = 10000,
     ) -> int:
         total = 0
-        for batch in self.query_batches(
-            sql, params=params, batch_size=batch_size, as_dicts=True
-        ):
+        for batch in self.query_batches(sql, params=params, batch_size=batch_size, as_dicts=True):
             process_batch(batch)
             total += len(batch)
         return total
@@ -842,10 +811,7 @@ class PostgresEngine:
                         vals.append("\\N")
                     else:
                         vals.append(
-                            str(v)
-                            .replace("\\", "\\\\")
-                            .replace("\t", " ")
-                            .replace("\n", " ")
+                            str(v).replace("\\", "\\\\").replace("\t", " ").replace("\n", " ")
                         )
                 buf.write("\t".join(vals) + "\n")
             buf.seek(0)
@@ -855,20 +821,14 @@ class PostgresEngine:
                 buf,
             )
 
-            insert_sql = (
-                f"insert into {fqn} ({col_list}) select {col_list} from _staging"
-            )
+            insert_sql = f"insert into {fqn} ({col_list}) select {col_list} from _staging"
 
             if conflict_columns:
                 conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
                 if conflict_action.upper() == "UPDATE":
                     update_cols = [c for c in columns if c not in conflict_columns]
-                    set_clause = ", ".join(
-                        f'"{c}" = excluded."{c}"' for c in update_cols
-                    )
-                    insert_sql += (
-                        f" on conflict ({conflict_clause}) do update set {set_clause}"
-                    )
+                    set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
+                    insert_sql += f" on conflict ({conflict_clause}) do update set {set_clause}"
                 else:
                     insert_sql += f" on conflict ({conflict_clause}) do nothing"
 
@@ -890,11 +850,11 @@ class MySQLEngine:
     def __init__(
         self,
         creds: DatabaseCredentials,
-        db_name: Optional[str] = None,
+        db_name: str | None = None,
     ) -> None:
         self.creds = creds
         self.db_name = db_name or creds.database
-        self._conn: Optional[pymysql.Connection] = None
+        self._conn: pymysql.Connection | None = None
         self.logger = get_logger("mysql_engine")
 
     def _connect(self) -> pymysql.Connection:
@@ -931,14 +891,14 @@ class MySQLEngine:
             cursor.close()
 
     @mysql_retry()
-    def query(self, sql: str, params: Optional[tuple] = None) -> pd.DataFrame:
+    def query(self, sql: str, params: tuple | None = None) -> pd.DataFrame:
         with self.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
             return pd.DataFrame(rows) if rows else pd.DataFrame()
 
     @mysql_retry()
-    def execute(self, sql: str, params: Optional[tuple] = None) -> int:
+    def execute(self, sql: str, params: tuple | None = None) -> int:
         with self.cursor() as cur:
             result = cur.execute(sql, params)
             self.conn.commit()
@@ -949,7 +909,7 @@ class MySQLEngine:
         self,
         table: str,
         records: list[dict],
-        update_columns: Optional[list[str]] = None,
+        update_columns: list[str] | None = None,
     ) -> int:
         if not records:
             return 0
@@ -978,7 +938,7 @@ class MySQLEngine:
         self,
         table: str,
         batches: Iterator[list[dict]],
-        update_columns: Optional[list[str]] = None,
+        update_columns: list[str] | None = None,
     ) -> int:
         total = 0
         for batch in batches:

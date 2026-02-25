@@ -3,7 +3,7 @@
 import csv
 from pathlib import Path
 
-from parsers.csv_parser import parse_csv
+from loci.parsers.csv_parser import parse_csv
 
 
 def _write_csv(tmp_path: Path, headers: list[str], rows: list[list], **kwargs) -> Path:
