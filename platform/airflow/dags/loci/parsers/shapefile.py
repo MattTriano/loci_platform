@@ -63,6 +63,9 @@ def parse_shapefile(
 
     Supports reading directly from .zip files (e.g. tl_2024_17_tract.zip).
 
+    For shapefiles with no geometry (e.g. ADDR), the geometry column is
+    omitted from the output rows entirely.
+
     Args:
         filepath:           Path to .shp or .zip file.
         geometry_column:    Name of the geometry column in the target table.
@@ -125,37 +128,47 @@ def parse_shapefile(
                     len(src),
                 )
 
+            # Check if this shapefile has geometry at all.
+            # fiona reports "None" (the string) for geometry-free files.
+            schema_geom = src.schema.get("geometry")
+            has_geometry = schema_geom not in (None, "None")
+
             for feat in src:
                 try:
                     props = dict(feat.get("properties") or {})
-                    geom = feat.get("geometry")
-                    if geom is None:
-                        raise ValueError("Feature has no geometry")
 
-                    geom_shape = shape(geom)
+                    if has_geometry:
+                        geom = feat.get("geometry")
+                        if geom is None:
+                            raise ValueError("Feature has no geometry")
 
-                    # Promote single geometries to Multi so they match
-                    # Multi-typed PostGIS columns (which is the safe default
-                    # since shapefiles often mix single and multi geometries)
-                    if isinstance(geom_shape, ShapelyPoint):
-                        geom_shape = MultiPoint([geom_shape])
-                    elif isinstance(geom_shape, ShapelyLineString):
-                        geom_shape = MultiLineString([geom_shape])
-                    elif isinstance(geom_shape, ShapelyPolygon):
-                        geom_shape = MultiPolygon([geom_shape])
+                        geom_shape = shape(geom)
 
-                    wkb_hex = shapely_wkb.dumps(
-                        geom_shape,
-                        hex=True,
-                        srid=srid,
-                    )
+                        # Promote single geometries to Multi so they match
+                        # Multi-typed PostGIS columns (which is the safe default
+                        # since shapefiles often mix single and multi geometries)
+                        if isinstance(geom_shape, ShapelyPoint):
+                            geom_shape = MultiPoint([geom_shape])
+                        elif isinstance(geom_shape, ShapelyLineString):
+                            geom_shape = MultiLineString([geom_shape])
+                        elif isinstance(geom_shape, ShapelyPolygon):
+                            geom_shape = MultiPolygon([geom_shape])
+
+                        wkb_hex = shapely_wkb.dumps(
+                            geom_shape,
+                            hex=True,
+                            srid=srid,
+                        )
 
                     if lowercase_columns:
                         props = {k.lower(): v for k, v in props.items()}
 
                     # Lock in columns from the first valid feature
                     if columns is None:
-                        columns = list(props.keys()) + [geometry_column]
+                        if has_geometry:
+                            columns = list(props.keys()) + [geometry_column]
+                        else:
+                            columns = list(props.keys())
                         column_set = set(props.keys())
                         logger.info(
                             "Discovered %d columns from first feature in %s",
@@ -170,9 +183,12 @@ def parse_shapefile(
                                 result.unknown_properties.get(key, 0) + 1
                             )
 
-                    # Build row: known property columns + geometry
-                    row = {c: props.get(c) for c in columns[:-1]}
-                    row[geometry_column] = wkb_hex
+                    # Build row: known property columns + geometry (if present)
+                    if has_geometry:
+                        row = {c: props.get(c) for c in columns[:-1]}
+                        row[geometry_column] = wkb_hex
+                    else:
+                        row = {c: props.get(c) for c in columns}
 
                     batch.append(row)
                     result.features_parsed += 1

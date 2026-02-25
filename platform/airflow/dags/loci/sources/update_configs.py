@@ -13,6 +13,131 @@ class DatasetUpdateConfig:
     full_update_mode: str = "api"  # "api" or "file_download"
 
 
+###############################################################################
+#                           CENSUS TIGER DATA                                 #
+###############################################################################
+
+STATE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.STATE_TIGER_SPEC.target_table,
+    dataset_name=specs.STATE_TIGER_SPEC.target_table,
+    full_update_cron="0 2 21-28 10 2",
+    update_cron="0 2 21-28 10 2",
+    entity_key=specs.STATE_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+COUNTY_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.COUNTY_TIGER_SPEC.target_table,
+    dataset_name=specs.COUNTY_TIGER_SPEC.target_table,
+    full_update_cron="5 2 21-28 10 2",
+    update_cron="5 2 21-28 10 2",
+    entity_key=specs.COUNTY_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+ZCTA_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ZCTA_TIGER_SPEC.target_table,
+    dataset_name=specs.ZCTA_TIGER_SPEC.target_table,
+    full_update_cron="10 2 21-28 10 2",
+    update_cron="10 2 21-28 10 2",
+    entity_key=specs.ZCTA_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+TRACT_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.TRACT_TIGER_SPEC.target_table,
+    dataset_name=specs.TRACT_TIGER_SPEC.target_table,
+    full_update_cron="15 2 21-28 10 2",
+    update_cron="15 2 21-28 10 2",
+    entity_key=specs.TRACT_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+BLOCK_GROUP_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.BLOCK_GROUP_TIGER_SPEC.target_table,
+    dataset_name=specs.BLOCK_GROUP_TIGER_SPEC.target_table,
+    full_update_cron="25 2 21-28 10 2",
+    update_cron="25 2 21-28 10 2",
+    entity_key=specs.BLOCK_GROUP_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+ADDR_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ADDR_TIGER_SPEC.target_table,
+    dataset_name=specs.ADDR_TIGER_SPEC.target_table,
+    full_update_cron="20 2 21-28 10 2",
+    update_cron="20 2 21-28 10 2",
+    entity_key=specs.ADDR_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+COASTLINE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.COASTLINE_TIGER_SPEC.target_table,
+    dataset_name=specs.COASTLINE_TIGER_SPEC.target_table,
+    full_update_cron="40 2 21-28 10 2",
+    update_cron="40 2 21-28 10 2",
+    entity_key=specs.COASTLINE_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+RAILS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.RAILS_TIGER_SPEC.target_table,
+    dataset_name=specs.RAILS_TIGER_SPEC.target_table,
+    full_update_cron="0 3 21-28 10 2",
+    update_cron="0 3 21-28 10 2",
+    entity_key=specs.RAILS_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+PRIMARY_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.PRIMARY_ROADS_TIGER_SPEC.target_table,
+    dataset_name=specs.PRIMARY_ROADS_TIGER_SPEC.target_table,
+    full_update_cron="20 3 21-28 10 2",
+    update_cron="20 3 21-28 10 2",
+    entity_key=specs.PRIMARY_ROADS_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+PRIMARY_SECONDARY_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.PRIMARY_SECONDARY_ROADS_TIGER_SPEC.target_table,
+    dataset_name=specs.PRIMARY_SECONDARY_ROADS_TIGER_SPEC.target_table,
+    full_update_cron="40 3 21-28 10 2",
+    update_cron="40 3 21-28 10 2",
+    entity_key=specs.PRIMARY_SECONDARY_ROADS_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+ALL_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.ALL_ROADS_TIGER_SPEC.target_table,
+    dataset_name=specs.ALL_ROADS_TIGER_SPEC.target_table,
+    full_update_cron="0 4 21-28 10 2",
+    update_cron="0 4 21-28 10 2",
+    entity_key=specs.ALL_ROADS_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+AREAWATER_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.AREAWATER_TIGER_SPEC.target_table,
+    dataset_name=specs.AREAWATER_TIGER_SPEC.target_table,
+    full_update_cron="20 4 21-28 10 2",
+    update_cron="20 4 21-28 10 2",
+    entity_key=specs.AREAWATER_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+LINEARWATER_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.LINEARWATER_TIGER_SPEC.target_table,
+    dataset_name=specs.LINEARWATER_TIGER_SPEC.target_table,
+    full_update_cron="40 4 21-28 10 2",
+    update_cron="40 4 21-28 10 2",
+    entity_key=specs.LINEARWATER_TIGER_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+###############################################################################
+#                                 CENSUS                                      #
+###############################################################################
+
 ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
     dataset_id=specs.ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
     dataset_name=specs.ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC.target_table,
