@@ -224,7 +224,12 @@ class StagedIngest:
             self._col_list = ", ".join(f'"{c}"' for c in self._columns)
             self._create_staging_table()
 
+        # buf = self._rows_to_copy_buffer(rows)
+        import time
+
+        t0 = time.monotonic()
         buf = self._rows_to_copy_buffer(rows)
+        t1 = time.monotonic()
 
         with self._engine.cursor() as cur:
             cur.copy_expert(
@@ -232,6 +237,14 @@ class StagedIngest:
                 f"from stdin with (format text, NULL '\\N')",
                 buf,
             )
+        t2 = time.monotonic()
+
+        self._engine.logger.info(
+            "write_batch: %d rows (buffer=%.2fs, copy=%.2fs)",
+            len(rows),
+            t1 - t0,
+            t2 - t1,
+        )
 
         count = len(rows)
         self.rows_staged += count
@@ -393,7 +406,8 @@ class StagedIngest:
     def _create_staging_table(self) -> None:
         with self._engine.cursor() as cur:
             cur.execute(
-                f"create temp table {self._staging_table} (like {self._fqn} including defaults)"
+                f"create temp table {self._staging_table} "
+                f"(like {self._fqn} including defaults excluding indexes)"
             )
             if self._entity_key:
                 cur.execute(
@@ -757,86 +771,6 @@ class PostgresEngine:
             for key, val in row.items():
                 row[key] = _to_json(val)
         return rows
-
-    @pg_retry()
-    def ingest_batch(
-        self,
-        rows: list[dict[str, Any]],
-        target_table: str,
-        target_schema: str,
-        conflict_column: str | list[str] | None = None,
-        conflict_action: str = "NOTHING",
-    ) -> int:
-        """
-        Bulk insert a list of dicts into *target_table* using COPY
-        via a staging table for efficiency.
-
-        Geometry columns work automatically — pass WKT or WKB hex strings.
-
-        Args:
-            rows:              List of dicts to insert.
-            target_table:      Table name.
-            target_schema:     Schema name.
-            conflict_column:   Column name (str) or list of column names for
-                               composite keys. Used in ON CONFLICT clause.
-            conflict_action:   "NOTHING" (skip) or "UPDATE" (upsert).
-
-        Returns:
-            Number of rows inserted.
-        """
-        if not rows:
-            return 0
-        fqn = f"{target_schema}.{target_table}"
-        rows = self._normalize_json_values(rows)
-        columns = list(rows[0].keys())
-        col_list = ", ".join(f'"{c}"' for c in columns)
-
-        if isinstance(conflict_column, str):
-            conflict_columns = [conflict_column]
-        else:
-            conflict_columns = conflict_column
-
-        with self.cursor() as cur:
-            cur.execute(f"""
-                create temp table _staging (like {fqn} including defaults)
-                on commit drop
-            """)
-
-            buf = io.StringIO()
-            for row in rows:
-                vals = []
-                for c in columns:
-                    v = row.get(c)
-                    if v is None:
-                        vals.append("\\N")
-                    else:
-                        vals.append(
-                            str(v).replace("\\", "\\\\").replace("\t", " ").replace("\n", " ")
-                        )
-                buf.write("\t".join(vals) + "\n")
-            buf.seek(0)
-
-            cur.copy_expert(
-                f"copy _staging ({col_list}) from stdin with (format text, NULL '\\N')",
-                buf,
-            )
-
-            insert_sql = f"insert into {fqn} ({col_list}) select {col_list} from _staging"
-
-            if conflict_columns:
-                conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
-                if conflict_action.upper() == "UPDATE":
-                    update_cols = [c for c in columns if c not in conflict_columns]
-                    set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
-                    insert_sql += f" on conflict ({conflict_clause}) do update set {set_clause}"
-                else:
-                    insert_sql += f" on conflict ({conflict_clause}) do nothing"
-
-            cur.execute(insert_sql)
-            count = cur.rowcount
-
-        self.logger.info("Inserted %d rows into %s", count, fqn)
-        return count
 
     def __enter__(self):
         return self

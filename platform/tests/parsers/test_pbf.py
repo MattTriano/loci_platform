@@ -33,6 +33,9 @@ def pbf_with_nodes(tmp_path: Path) -> Path:
                 id=1001,
                 location=(-87.6298, 41.8781),
                 tags={"name": "Test Café", "amenity": "cafe"},
+                version=3,
+                changeset=12345,
+                timestamp="2024-06-15T12:00:00Z",
             )
         )
         # A fire hydrant with no tags
@@ -41,6 +44,9 @@ def pbf_with_nodes(tmp_path: Path) -> Path:
                 id=1002,
                 location=(-87.6300, 41.8785),
                 tags={},
+                version=1,
+                changeset=12346,
+                timestamp="2024-06-16T08:30:00Z",
             )
         )
         # A node with unicode tags
@@ -49,6 +55,9 @@ def pbf_with_nodes(tmp_path: Path) -> Path:
                 id=1003,
                 location=(139.6917, 35.6895),
                 tags={"name": "東京タワー", "name:en": "Tokyo Tower", "tourism": "attraction"},
+                version=5,
+                changeset=99999,
+                timestamp="2024-07-01T00:00:00Z",
             )
         )
     return fp
@@ -76,6 +85,9 @@ def pbf_with_ways(tmp_path: Path) -> Path:
                 id=2001,
                 nodes=[1, 2, 3, 4, 1],
                 tags={"building": "yes", "name": "Test Building"},
+                version=2,
+                changeset=50000,
+                timestamp="2024-03-10T14:00:00Z",
             )
         )
 
@@ -85,6 +97,9 @@ def pbf_with_ways(tmp_path: Path) -> Path:
                 id=2002,
                 nodes=[10, 11, 12],
                 tags={"highway": "residential", "name": "Main St"},
+                version=1,
+                changeset=50001,
+                timestamp="2024-03-11T09:00:00Z",
             )
         )
     return fp
@@ -104,6 +119,9 @@ def pbf_with_relations(tmp_path: Path) -> Path:
                     ("w", 101, "inner"),
                 ],
                 tags={"type": "multipolygon", "natural": "water", "name": "Test Lake"},
+                version=4,
+                changeset=77777,
+                timestamp="2024-05-20T18:00:00Z",
             )
         )
 
@@ -118,6 +136,9 @@ def pbf_with_relations(tmp_path: Path) -> Path:
                     ("n", 301, "stop"),
                 ],
                 tags={"type": "route", "route": "bus", "ref": "42"},
+                version=1,
+                changeset=77778,
+                timestamp="2024-05-21T10:00:00Z",
             )
         )
 
@@ -127,6 +148,9 @@ def pbf_with_relations(tmp_path: Path) -> Path:
                 id=3003,
                 members=[("n", 400, "")],
                 tags={},
+                version=1,
+                changeset=77779,
+                timestamp="2024-05-22T06:00:00Z",
             )
         )
     return fp
@@ -178,6 +202,10 @@ def pbf_with_way_missing_nodes(tmp_path: Path) -> Path:
 # Tests: nodes
 # ---------------------------------------------------------------------------
 
+NODE_ROW_KEYS = {"osm_id", "tags", "osm_timestamp", "osm_version", "osm_changeset", "geom"}
+WAY_ROW_KEYS = {"osm_id", "tags", "osm_timestamp", "osm_version", "osm_changeset", "geom"}
+RELATION_ROW_KEYS = {"osm_id", "tags", "osm_timestamp", "osm_version", "osm_changeset", "members"}
+
 
 class TestParseNodes:
     def test_basic_node_parsing(self, pbf_with_nodes: Path):
@@ -194,7 +222,7 @@ class TestParseNodes:
         rows = [row for batch in batches for row in batch]
 
         row = rows[0]
-        assert set(row.keys()) == {"osm_id", "tags", "geom"}
+        assert set(row.keys()) == NODE_ROW_KEYS
         assert row["osm_id"] == 1001
 
     def test_node_geometry_is_valid_wkb_point(self, pbf_with_nodes: Path):
@@ -267,7 +295,7 @@ class TestParseWays:
         batches, _ = parse_pbf(pbf_with_ways, element_type="ways")
         rows = [row for batch in batches for row in batch]
 
-        assert set(rows[0].keys()) == {"osm_id", "tags", "geom"}
+        assert set(rows[0].keys()) == WAY_ROW_KEYS
 
     def test_closed_way_becomes_polygon(self, pbf_with_ways: Path):
         batches, _ = parse_pbf(pbf_with_ways, element_type="ways")
@@ -324,7 +352,7 @@ class TestParseRelations:
         batches, _ = parse_pbf(pbf_with_relations, element_type="relations")
         rows = [row for batch in batches for row in batch]
 
-        assert set(rows[0].keys()) == {"osm_id", "tags", "members"}
+        assert set(rows[0].keys()) == RELATION_ROW_KEYS
 
     def test_relation_has_no_geometry_column(self, pbf_with_relations: Path):
         batches, _ = parse_pbf(pbf_with_relations, element_type="relations")
@@ -384,6 +412,77 @@ class TestParseRelations:
 
         bare = next(r for r in rows if r["osm_id"] == 3003)
         assert json.loads(bare["tags"]) == {}
+
+
+# ---------------------------------------------------------------------------
+# Tests: OSM metadata (timestamp, version, changeset)
+# ---------------------------------------------------------------------------
+
+
+class TestOsmMetadataFields:
+    def test_node_timestamp(self, pbf_with_nodes: Path):
+        batches, _ = parse_pbf(pbf_with_nodes, element_type="nodes")
+        rows = [row for batch in batches for row in batch]
+
+        cafe = rows[0]
+        assert cafe["osm_timestamp"] is not None
+        assert "2024-06-15" in cafe["osm_timestamp"]
+
+    def test_node_version_and_changeset(self, pbf_with_nodes: Path):
+        batches, _ = parse_pbf(pbf_with_nodes, element_type="nodes")
+        rows = [row for batch in batches for row in batch]
+
+        cafe = rows[0]
+        assert cafe["osm_version"] == 3
+        assert cafe["osm_changeset"] == 12345
+
+    def test_way_timestamp(self, pbf_with_ways: Path):
+        batches, _ = parse_pbf(pbf_with_ways, element_type="ways")
+        rows = [row for batch in batches for row in batch]
+
+        building = next(r for r in rows if r["osm_id"] == 2001)
+        assert building["osm_timestamp"] is not None
+        assert "2024-03-10" in building["osm_timestamp"]
+        assert building["osm_version"] == 2
+        assert building["osm_changeset"] == 50000
+
+    def test_relation_timestamp(self, pbf_with_relations: Path):
+        batches, _ = parse_pbf(pbf_with_relations, element_type="relations")
+        rows = [row for batch in batches for row in batch]
+
+        lake = next(r for r in rows if r["osm_id"] == 3001)
+        assert lake["osm_timestamp"] is not None
+        assert "2024-05-20" in lake["osm_timestamp"]
+        assert lake["osm_version"] == 4
+        assert lake["osm_changeset"] == 77777
+
+    def test_missing_timestamp_returns_none(self, pbf_with_many_nodes: Path):
+        """Nodes written without explicit timestamps should have None."""
+        batches, _ = parse_pbf(pbf_with_many_nodes, element_type="nodes")
+        rows = [row for batch in batches for row in batch]
+
+        # many_nodes fixture doesn't set timestamps
+        assert rows[0]["osm_timestamp"] is None
+
+    def test_all_element_types_have_metadata_fields(
+        self,
+        pbf_with_nodes,
+        pbf_with_ways,
+        pbf_with_relations,
+    ):
+        """Every element type should include all three metadata fields."""
+        for fp, etype in [
+            (pbf_with_nodes, "nodes"),
+            (pbf_with_ways, "ways"),
+            (pbf_with_relations, "relations"),
+        ]:
+            batches, _ = parse_pbf(fp, element_type=etype)
+            rows = [row for batch in batches for row in batch]
+            assert len(rows) > 0
+            for row in rows:
+                assert "osm_timestamp" in row
+                assert "osm_version" in row
+                assert "osm_changeset" in row
 
 
 # ---------------------------------------------------------------------------
