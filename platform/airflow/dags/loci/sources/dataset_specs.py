@@ -286,3 +286,23 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT = CensusDatasetSpec(
     target_schema="raw_data",
     target_table="acs5__sex_by_age_race_and_citizenship_by_tract",
 )
+
+#######################################################################################
+#                                    OSM                                              #
+#######################################################################################
+
+OSM_NODES_SPEC = OsmDatasetSpec(
+    name="osm_nodes",
+    region_ids=["us/illinois"],
+    element_type="nodes",
+    target_table="osm_nodes",
+    target_schema="raw_data",
+)
+
+OSM_WAYS_SPEC = OsmDatasetSpec(
+    name="osm_ways",
+    region_ids=["us/illinois"],
+    element_type="ways",
+    target_table="osm_ways",
+    target_schema="raw_data",
+)
