@@ -194,6 +194,9 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConf
     full_update_mode="api",
 )
 
+###############################################################################
+#                                 SOCRATA                                     #
+###############################################################################
 
 CHICAGO_BUILDING_PERMITS = DatasetUpdateConfig(
     dataset_id="ydr8-5enu",
@@ -393,4 +396,35 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
     update_cron="0 1 * * *",
     entity_key=["unique_id"],
     full_update_mode="api",
+)
+
+###############################################################################
+#                                 OSM                                         #
+###############################################################################
+
+OSM_NODES_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.OSM_NODES_SPEC.target_table,
+    dataset_name=specs.OSM_NODES_SPEC.target_table,
+    full_update_cron="0 3 1-7 2,5,8,11 5",
+    update_cron="0 3 1-7 2,5,8,11 5",
+    entity_key=specs.OSM_NODES_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.OSM_WAYS_SPEC.target_table,
+    dataset_name=specs.OSM_WAYS_SPEC.target_table,
+    full_update_cron="0 5 1-7 2,5,8,11 5",
+    update_cron="0 5 1-7 2,5,8,11 5",
+    entity_key=specs.OSM_WAYS_SPEC.entity_key,
+    full_update_mode="file_download",
+)
+
+OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.OSM_RELATIONS_SPEC.target_table,
+    dataset_name=specs.OSM_RELATIONS_SPEC.target_table,
+    full_update_cron="30 5 1-7 2,5,8,11 5",
+    update_cron="30 5 1-7 2,5,8,11 5",
+    entity_key=specs.OSM_RELATIONS_SPEC.entity_key,
+    full_update_mode="file_download",
 )

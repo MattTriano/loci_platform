@@ -47,6 +47,7 @@ import json
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,21 @@ class ParseResult:
         return len(self.failures)
 
 
+def _osm_timestamp(obj) -> str | None:
+    """
+    Extract the element's last-modified timestamp as an ISO 8601 string.
+
+    Returns None if the timestamp is invalid (e.g., not present in the file).
+    """
+    try:
+        ts = obj.timestamp
+        if ts and ts != datetime(1970, 1, 1, tzinfo=UTC):
+            return str(ts)
+    except Exception:
+        pass
+    return None
+
+
 def parse_pbf(
     filepath: str | Path,
     element_type: str = "nodes",
@@ -83,6 +99,11 @@ def parse_pbf(
     (nodes and ways only). Tags are stored as a JSON string (for
     JSONB columns — use json.dumps with sort_keys=True for deterministic
     hashing in SCD2 pipelines).
+
+    Each row includes OSM metadata fields:
+      - osm_timestamp: last-modified time (ISO 8601 string or None)
+      - osm_version:   version number of the element
+      - osm_changeset: changeset ID of the last edit
 
     Args:
         filepath:          Path to .osm.pbf file.
@@ -141,6 +162,9 @@ def _generate_nodes(
             row = {
                 "osm_id": obj.id,
                 "tags": json.dumps(tags, sort_keys=True),
+                "osm_timestamp": _osm_timestamp(obj),
+                "osm_version": obj.version,
+                "osm_changeset": obj.changeset,
                 geometry_column: wkb_hex,
             }
 
@@ -204,6 +228,9 @@ def _generate_ways(
             row = {
                 "osm_id": obj.id,
                 "tags": json.dumps(tags, sort_keys=True),
+                "osm_timestamp": _osm_timestamp(obj),
+                "osm_version": obj.version,
+                "osm_changeset": obj.changeset,
                 geometry_column: wkb_hex,
             }
 
@@ -249,6 +276,9 @@ def _generate_relations(
             row = {
                 "osm_id": obj.id,
                 "tags": json.dumps(tags, sort_keys=True),
+                "osm_timestamp": _osm_timestamp(obj),
+                "osm_version": obj.version,
+                "osm_changeset": obj.changeset,
                 "members": json.dumps(members),
             }
 

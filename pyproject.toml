@@ -1,0 +1,67 @@
+[project]
+name = "loci-platform"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dbt-core>=1.11.2",
+    "dbt-postgres>=1.10.0",
+    "fiona>=1.10.1",
+    "geopandas>=1.1.2",
+    "ijson>=3.4.0.post0",
+    "osmium>=4.3.0",
+    "pandas>=3.0.0",
+    "psycopg2-binary>=2.9.11",
+    "pymysql>=1.1.2",
+    "shapely>=2.1.2",
+    "tenacity>=9.1.4",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "F",   # pyflakes (unused imports, undefined names, etc.)
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (use modern Python syntax)
+    "B",   # flake8-bugbear (common bug patterns)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["collectors", "datagen", "db", "parsers", "scrapers", "sources", "tasks", "tracking"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+    "ty>=0.0.17",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "network: marks tests that require network access (deselect with '-m \"not network\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+pythonpath = ["platform/airflow/dags"]
+testpaths = ["platform/tests"]
+
+[tool.ty.src]
+exclude = ["**/*.ipynb"]
+
+[tool.ty.environment]
+extra-paths = ["platform", "platform/airflow/plugins"]
+
+[tool.ty.rules]
+# These are already errors by default, but you can be explicit:
+# unresolved-import = "error"
+# unresolved-attribute = "error"
+
+possibly-unresolved-reference = "warn"
+
+[[tool.ty.overrides]]
+include = ["tests/**", "notebooks/**"]
+[tool.ty.overrides.rules]
+possibly-unresolved-reference = "ignore"
