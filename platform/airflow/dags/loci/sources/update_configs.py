@@ -419,3 +419,12 @@ OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
     entity_key=specs.OSM_WAYS_SPEC.entity_key,
     full_update_mode="file_download",
 )
+
+OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
+    dataset_id=specs.OSM_RELATIONS_SPEC.target_table,
+    dataset_name=specs.OSM_RELATIONS_SPEC.target_table,
+    full_update_cron="30 5 1-7 2,5,8,11 5",
+    update_cron="30 5 1-7 2,5,8,11 5",
+    entity_key=specs.OSM_RELATIONS_SPEC.entity_key,
+    full_update_mode="file_download",
+)

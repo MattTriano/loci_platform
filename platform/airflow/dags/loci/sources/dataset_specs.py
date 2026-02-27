@@ -1,4 +1,5 @@
 from loci.collectors.census.spec import CensusDatasetSpec
+from loci.collectors.osm.spec import OsmDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 
 STATE_TIGER_SPEC = TigerDatasetSpec(
@@ -304,5 +305,13 @@ OSM_WAYS_SPEC = OsmDatasetSpec(
     region_ids=["us/illinois"],
     element_type="ways",
     target_table="osm_ways",
+    target_schema="raw_data",
+)
+
+OSM_RELATIONS_SPEC = OsmDatasetSpec(
+    name="osm_relations",
+    region_ids=["us/illinois"],
+    element_type="relations",
+    target_table="osm_relations",
     target_schema="raw_data",
 )
