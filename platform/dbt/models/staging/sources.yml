@@ -5,6 +5,7 @@ sources:
     tags:
       - raw
     tables:
+      - name: acs5__occupations_by_sex_by_tract
       - name: chicago_311_service_requests
       - name: chicago_additional_dwelling_unit_preapproval_applications
       - name: chicago_arrests
