@@ -42,7 +42,7 @@ def check_ingestion_log(
         where dataset_id = %(dataset_id)s
         order by completed_at desc limit 1
         """,
-        {"dataset_id": update_config.dataset_id},
+        {"dataset_id": update_config.spec.dataset_id},
     )
     task_logger.info(f"Ingestion log record: {log_record}")
     return True

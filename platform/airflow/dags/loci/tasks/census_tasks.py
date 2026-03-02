@@ -25,37 +25,36 @@ def _get_collector(conn_id: str, task_logger: Logger) -> CensusCollector:
 
 @task
 def run_full_update(
-    spec: CensusDatasetSpec, update_config: DatasetUpdateConfig, conn_id: str, task_logger: Logger
+    update_config: DatasetUpdateConfig, conn_id: str, task_logger: Logger
 ) -> bool:
     collector = _get_collector(conn_id, task_logger)
-    summary_results = collector.collect(spec=spec, force=True)
+    summary_results = collector.collect(spec=update_config.spec, force=True)
     task_logger.info("Collection summary", extra={"payload": summary_results})
     return True
 
 
 @task
 def run_incremental_update(
-    spec: CensusDatasetSpec, update_config: DatasetUpdateConfig, conn_id: str, task_logger: Logger
+    update_config: DatasetUpdateConfig, conn_id: str, task_logger: Logger
 ) -> bool:
     collector = _get_collector(conn_id, task_logger)
-    summary_results = collector.collect(spec=spec, force=False)
+    summary_results = collector.collect(spec=update_config.spec, force=False)
     task_logger.info("Collection summary", extra={"payload": summary_results})
     return True
 
 
 @task_group
 def update_census_table(
-    dataset_spec: CensusDatasetSpec,
     update_config: DatasetUpdateConfig,
     conn_id: str,
     task_logger: Logger,
 ) -> None:
     _update_mode = choose_update_mode(update_config=update_config, task_logger=task_logger)
     _full_update = run_full_update(
-        conn_id=conn_id, spec=dataset_spec, update_config=update_config, task_logger=task_logger
+        conn_id=conn_id, update_config=update_config, task_logger=task_logger
     )
     _incremental_update = run_incremental_update(
-        conn_id=conn_id, spec=dataset_spec, update_config=update_config, task_logger=task_logger
+        conn_id=conn_id, update_config=update_config, task_logger=task_logger
     )
     _check_ingestion_log = check_ingestion_log(
         conn_id=conn_id, update_config=update_config, task_logger=task_logger

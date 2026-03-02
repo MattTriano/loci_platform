@@ -129,6 +129,10 @@ class TigerDatasetSpec:
             raise ValueError(f"Unknown source {self.source!r}. Use 'tiger' or 'cartographic'.")
 
     @property
+    def dataset_id(self) -> str:
+        return self.target_table
+
+    @property
     def scope(self) -> str:
         """Return the geographic scope: 'national', 'state', or 'county'."""
         layer_upper = self.layer.upper()

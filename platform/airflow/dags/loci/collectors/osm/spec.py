@@ -84,6 +84,10 @@ class OsmDatasetSpec:
             raise ValueError("region_ids must contain at least one region.")
 
     @property
+    def dataset_id(self) -> str:
+        return self.target_table
+
+    @property
     def entity_key(self) -> list[str]:
         """Entity key for SCD2 merge: [osm_id, region_id]."""
         return ["osm_id", "region_id"]

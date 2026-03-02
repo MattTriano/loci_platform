@@ -2,7 +2,6 @@ import datetime as dt
 import logging
 
 from airflow.sdk import dag
-from loci.sources.dataset_specs import PRIMARY_ROADS_TIGER_SPEC as DATASET_SPEC
 from loci.sources.update_configs import PRIMARY_ROADS_TIGER_UPDATE_CONFIG as UPDATE_CONFIG
 from loci.tasks.tiger_tasks import update_tiger_table
 
@@ -21,7 +20,6 @@ CONN_ID = "gis_dwh_db"
 def update_tiger_primary_roads():
     update_tiger_table(
         update_config=UPDATE_CONFIG,
-        dataset_spec=DATASET_SPEC,
         conn_id=CONN_ID,
         task_logger=task_logger,
     )

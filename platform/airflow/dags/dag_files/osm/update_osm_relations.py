@@ -2,7 +2,6 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
-from loci.sources.dataset_specs import OSM_RELATIONS_SPEC as DATASET_SPEC
 from loci.sources.update_configs import OSM_RELATIONS_UPDATE_CONFIG as UPDATE_CONFIG
 from loci.tasks.osm_tasks import update_osm_table
 
@@ -21,7 +20,6 @@ CONN_ID = "gis_dwh_db"
 def update_osm_relations():
     update_osm_table(
         conn_id=CONN_ID,
-        dataset_spec=DATASET_SPEC,
         update_config=UPDATE_CONFIG,
         task_logger=task_logger,
     )
