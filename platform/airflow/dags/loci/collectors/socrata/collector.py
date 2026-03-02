@@ -136,7 +136,7 @@ class SocrataCollector:
             Number of rows merged.
         """
         mode = config.full_update_mode if config else "api"
-        entity_key = config.entity_key if config else None
+        entity_key = config.spec.entity_key if config else None
 
         if mode == "file_download":
             return self.full_refresh_via_file(

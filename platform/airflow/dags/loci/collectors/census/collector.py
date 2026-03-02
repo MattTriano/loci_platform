@@ -187,11 +187,7 @@ class CensusCollector:
             row["vintage"] = vintage
 
         # Ingest via StagedIngest (SCD2 mode)
-        geo_columns = [
-            self.client._sanitize_column_name(c)
-            for c in GEOGRAPHY_CONFIG[spec.geography_level]["geo_columns"]
-        ]
-        entity_key = geo_columns + ["vintage"]
+        entity_key = spec.entity_key
 
         dataset_id = f"{spec.name}/{vintage}/{state_fips}"
 
@@ -306,15 +302,14 @@ def generate_ddl(
     variables = sorted(v for v in all_variables if client._is_estimate_or_moe(v) and v != "NAME")
 
     geo_columns = GEOGRAPHY_CONFIG[spec.geography_level]["geo_columns"]
-    entity_key = [client._sanitize_column_name(c) for c in geo_columns] + ["vintage"]
+    entity_key = spec.entity_key
     fqn = f"{spec.target_schema}.{spec.target_table}"
 
     lines = [f"create table {fqn} ("]
 
     # Geography ID columns
     for col in geo_columns:
-        col_name = client._sanitize_column_name(col)
-        lines.append(f'    "{col_name}" text not null,')
+        lines.append(f'    "{col}" text not null,')
 
     # Vintage
     lines.append('    "vintage" integer not null,')

@@ -111,7 +111,7 @@ GEOGRAPHY_CONFIG = {
     },
     "block group": {
         "for": "block group:*",
-        "geo_columns": ["state", "county", "tract", "block group"],
+        "geo_columns": ["state", "county", "tract", "block_group"],
     },
     "place": {
         "for": "place:*",
@@ -119,7 +119,7 @@ GEOGRAPHY_CONFIG = {
     },
     "zip code tabulation area": {
         "for": "zip code tabulation area:*",
-        "geo_columns": ["zip code tabulation area"],
+        "geo_columns": ["zip_code_tabulation_area"],
     },
 }
 
@@ -181,6 +181,10 @@ class CensusDatasetSpec(DatasetSpec):
             )
         geo_columns = GEOGRAPHY_CONFIG[self.geography_level]["geo_columns"]
         self.entity_key = geo_columns + ["vintage"]
+
+    @property
+    def dataset_id(self) -> str:
+        return self.target_table
 
     @property
     def states(self) -> list[str]:
