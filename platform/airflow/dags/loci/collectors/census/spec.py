@@ -1,14 +1,14 @@
 # """
 # Census data collection and ingestion pipeline.
-
+#
 # Classes:
 #     CensusDatasetSpec  — defines what census data to collect
 #     CensusClient       — makes Census Bureau API calls
 #     CensusCollector    — orchestrates collection and ingestion to Postgres
-
+#
 # Usage:
 #     from census_collector import CensusDatasetSpec, CensusClient, CensusCollector
-
+#
 #     spec = CensusDatasetSpec(
 #         name="occupation_by_sex",
 #         dataset="acs/acs5",
@@ -19,7 +19,7 @@
 #         target_table="occupation_by_sex_tract",
 #         target_schema="raw_data",
 #     )
-
+#
 #     client = CensusClient(api_key="YOUR_KEY")
 #     collector = CensusCollector(client=client, engine=engine)
 #     collector.collect(spec)
@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+
+from loci.collectors.base_spec import DatasetSpec
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,7 @@ GEOGRAPHY_CONFIG = {
 
 
 @dataclass
-class CensusDatasetSpec:
+class CensusDatasetSpec(DatasetSpec):
     """
     Defines a set of census variables/groups to collect across vintages.
 
@@ -153,6 +155,9 @@ class CensusDatasetSpec:
         Individual variable codes (e.g. ["B01001_001E"]).
     state_fips : list[str] | None
         Specific state FIPS codes to collect. None means all states.
+    entity_key : list[str] | None
+        Derived automatically from geography_level in __post_init__.
+        Do not set manually.
     """
 
     name: str
@@ -160,19 +165,22 @@ class CensusDatasetSpec:
     vintages: list[int]
     geography_level: str
     target_table: str
-    target_schema: str
+    target_schema: str = "raw_data"
     groups: list[str] = field(default_factory=list)
     variables: list[str] = field(default_factory=list)
     state_fips: list[str] | None = None
+    entity_key: list[str] | None = field(default=None, init=False)
 
     def __post_init__(self):
         if not self.groups and not self.variables:
             raise ValueError("Must specify at least one group or variable.")
-        if self.geography_level not in GEOGRAPHY_CONFIG.keys():
+        if self.geography_level not in GEOGRAPHY_CONFIG:
             raise ValueError(
                 f"Unknown geography_level {self.geography_level!r}. "
                 f"Supported: {list(GEOGRAPHY_CONFIG.keys())}"
             )
+        geo_columns = GEOGRAPHY_CONFIG[self.geography_level]["geo_columns"]
+        self.entity_key = geo_columns + ["vintage"]
 
     @property
     def states(self) -> list[str]:

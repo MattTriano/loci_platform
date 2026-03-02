@@ -22,6 +22,7 @@ def tm():
 # ------------------------------------------------------------------ #
 
 
+@pytest.mark.network
 def test_census_site_reachable():
     """Baseline check — if this fails, all other tests are meaningless."""
     resp = requests.get("https://www2.census.gov/geo/tiger/", timeout=30)
@@ -33,6 +34,7 @@ def test_census_site_reachable():
 # ------------------------------------------------------------------ #
 
 
+@pytest.mark.network
 def test_list_tiger_vintages(tm):
     df = tm.list_vintages(source="tiger")
     assert not df.empty
@@ -40,6 +42,7 @@ def test_list_tiger_vintages(tm):
     assert 2024 in df["vintage"].values
 
 
+@pytest.mark.network
 def test_list_cartographic_vintages(tm):
     df = tm.list_vintages(source="cartographic")
     assert not df.empty
@@ -51,12 +54,14 @@ def test_list_cartographic_vintages(tm):
 # ------------------------------------------------------------------ #
 
 
+@pytest.mark.network
 def test_list_tiger_layers(tm):
     df = tm.list_layers(2024, source="tiger")
     assert not df.empty
     assert "TRACT" in df["layer"].values
 
 
+@pytest.mark.network
 def test_list_tiger_layers_keyword(tm):
     df = tm.list_layers(2024, source="tiger", keyword="road")
     assert not df.empty

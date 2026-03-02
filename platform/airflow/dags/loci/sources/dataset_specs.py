@@ -1,5 +1,6 @@
 from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.osm.spec import OsmDatasetSpec
+from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 
 STATE_TIGER_SPEC = TigerDatasetSpec(
@@ -314,4 +315,267 @@ OSM_RELATIONS_SPEC = OsmDatasetSpec(
     element_type="relations",
     target_table="osm_relations",
     target_schema="raw_data",
+)
+
+#######################################################################################
+#                                    Socrata                                          #
+#######################################################################################
+
+# SocrataDatasetSpec(DatasetSpec):
+#     """
+#     Defines a Socrata dataset to collect.
+
+#     Parameters
+#     ----------
+#     name : str
+#         Human-readable name (e.g. "chicago_building_permits").
+#     dataset_id : str
+#         Socrata 4x4 identifier (e.g. "ydr8-5enu").
+#     target_table : str
+#         Destination table name.
+#     target_schema : str
+#         Destination schema name. Default "raw_data".
+#     entity_key : list[str] | None
+#         Columns that uniquely identify a record for SCD2 merge.
+#         None means no entity key (append-only ingestion).
+#     incremental_column : str
+#         Socrata system field used for incremental updates.
+#         Default ":updated_at".
+#     full_update_mode : str
+#         "api" for paginated SODA API, "file_download" for bulk
+#         CSV/GeoJSON export. Default "api".
+#     """
+
+#     name: str
+#     dataset_id: str
+#     target_table: str
+#     target_schema: str = "raw_data"
+#     entity_key: list[str] | None = None
+#     incremental_column: str = ":updated_at"
+#     full_update_mode
+
+
+# SocrataDatasetSpec(
+#     name="",
+#     dataset_id="",
+#     target_table="",
+#     target_schema="raw_data",
+#     entity_key: list[str] | None = None
+#     full_update_mode="api"
+# )
+
+CHICAGO_BUILDING_PERMITS_SPEC = SocrataDatasetSpec(
+    name="chicago_building_permits",
+    dataset_id="ydr8-5enu",
+    target_table="chicago_building_permits",
+    target_schema="raw_data",
+    entity_key=["permit_"],
+    full_update_mode="api",
+)
+
+CHICAGO_FOOD_INSPECTIONS_SPEC = SocrataDatasetSpec(
+    name="chicago_food_inspections",
+    dataset_id="4ijn-s7e5",
+    target_table="chicago_food_inspections",
+    target_schema="raw_data",
+    entity_key=["inspection_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_SIDEWALK_CAFE_PERMITS_SPEC = SocrataDatasetSpec(
+    name="chicago_sidewalk_cafe_permits",
+    dataset_id="nxj5-ix6z",
+    target_table="chicago_sidewalk_cafe_permits",
+    target_schema="raw_data",
+    entity_key=["permit_number"],
+    full_update_mode="api",
+)
+
+CHICAGO_SPEED_CAMERA_VIOLATIONS_SPEC = SocrataDatasetSpec(
+    name="chicago_speed_camera_violations",
+    dataset_id="hhkd-xvj4",
+    target_table="chicago_speed_camera_violations",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+CHICAGO_DIVVY_BICYCLE_STATIONS_SPEC = SocrataDatasetSpec(
+    name="chicago_divvy_bicycle_stations",
+    dataset_id="bbyy-e7gq",
+    target_table="chicago_divvy_bicycle_stations",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+CHICAGO_RED_LIGHT_CAMERA_VIOLATIONS_SPEC = SocrataDatasetSpec(
+    name="chicago_red_light_camera_violations",
+    dataset_id="spqx-js37",
+    target_table="chicago_red_light_camera_violations",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+CHICAGO_311_SERVICE_REQUESTS_SPEC = SocrataDatasetSpec(
+    name="chicago_311_service_requests",
+    dataset_id="v6vf-nfxy",
+    target_table="chicago_311_service_requests",
+    target_schema="raw_data",
+    entity_key=["sr_number"],
+    full_update_mode="file_download",
+)
+
+CHICAGO_TOWED_VEHICLES_SPEC = SocrataDatasetSpec(
+    name="chicago_towed_vehicles",
+    dataset_id="ygr5-vcbg",
+    target_table="chicago_towed_vehicles",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+CHICAGO_TRAFFIC_CRASHES_CRASHES_SPEC = SocrataDatasetSpec(
+    name="chicago_traffic_crashes_crashes",
+    dataset_id="85ca-t3if",
+    target_table="chicago_traffic_crashes_crashes",
+    target_schema="raw_data",
+    entity_key=["crash_record_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_TRAFFIC_CRASHES_PEOPLE_SPEC = SocrataDatasetSpec(
+    name="chicago_traffic_crashes_people",
+    dataset_id="u6pd-qa9d",
+    target_table="chicago_traffic_crashes_people",
+    target_schema="raw_data",
+    entity_key=["person_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_TRAFFIC_CRASHES_VEHICLES_SPEC = SocrataDatasetSpec(
+    name="chicago_traffic_crashes_vehicles",
+    dataset_id="68nd-jvt3",
+    target_table="chicago_traffic_crashes_vehicles",
+    target_schema="raw_data",
+    entity_key=["crash_unit_id"],
+    full_update_mode="api",
+)
+
+CTA_RIDERSHIP_DAILY_BOARDING_TOTALS_SPEC = SocrataDatasetSpec(
+    name="cta_ridership_daily_boarding_totals",
+    dataset_id="6iiy-9s97",
+    target_table="cta_ridership_daily_boarding_totals",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING_SPEC = SocrataDatasetSpec(
+    name="chicago_lending_equity_residential_lending",
+    dataset_id="b77m-uuhb",
+    target_table="chicago_lending_equity_residential_lending",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS_SPEC = SocrataDatasetSpec(
+    name="chicago_additional_dwelling_unit_preapproval_applications",
+    dataset_id="xbwc-ntpx",
+    target_table="chicago_additional_dwelling_unit_preapproval_applications",
+    target_schema="raw_data",
+    entity_key=["id"],
+    full_update_mode="api",
+)
+
+COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS_SPEC = SocrataDatasetSpec(
+    name="cook_county_residential_condominium_unit_characteristics",
+    dataset_id="3r7i-mrz4",
+    target_table="cook_county_residential_condominium_unit_characteristics",
+    target_schema="raw_data",
+    entity_key=["row_id"],
+    full_update_mode="file_download",
+)
+
+COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS_SPEC = SocrataDatasetSpec(
+    name="cook_county_single_and_multi_family_improvement_characteristics",
+    dataset_id="x54s-btds",
+    target_table="cook_county_single_and_multi_family_improvement_characteristics",
+    target_schema="raw_data",
+    entity_key=["row_id"],
+    full_update_mode="file_download",
+)
+
+COOK_COUNTY_COMMERCIAL_VALUATION_DATA_SPEC = SocrataDatasetSpec(
+    name="cook_county_commercial_valuation_data",
+    dataset_id="csik-bsws",
+    target_table="cook_county_commercial_valuation_data",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+COOK_COUNTY_PARCEL_SALES_SPEC = SocrataDatasetSpec(
+    name="cook_county_parcel_sales",
+    dataset_id="wvhk-k5uv",
+    target_table="cook_county_parcel_sales",
+    target_schema="raw_data",
+    entity_key=["row_id"],
+    full_update_mode="api",
+)
+
+COOK_COUNTY_ASSESSED_PARCEL_VALUES_SPEC = SocrataDatasetSpec(
+    name="cook_county_assessed_parcel_values",
+    dataset_id="uzyt-m557",
+    target_table="cook_county_assessed_parcel_values",
+    target_schema="raw_data",
+    entity_key=["row_id"],
+    full_update_mode="file_download",
+)
+
+COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_SPEC = SocrataDatasetSpec(
+    name="cook_county_neighborhood_boundaries",
+    dataset_id="pcdw-pxtg",
+    target_table="cook_county_neighborhood_boundaries",
+    target_schema="raw_data",
+    entity_key=None,
+    full_update_mode="api",
+)
+
+COOK_COUNTY_PARCEL_ADDRESSES_SPEC = SocrataDatasetSpec(
+    name="cook_county_parcel_addresses",
+    dataset_id="3723-97qp",
+    target_table="cook_county_parcel_addresses",
+    target_schema="raw_data",
+    entity_key=["row_id"],
+    full_update_mode="file_download",
+)
+
+CHICAGO_ARRESTS_SPEC = SocrataDatasetSpec(
+    name="chicago_arrests",
+    dataset_id="dpt3-jri9",
+    target_table="chicago_arrests",
+    target_schema="raw_data",
+    entity_key=["cb_no"],
+    full_update_mode="api",
+)
+
+CHICAGO_CRIMES_SPEC = SocrataDatasetSpec(
+    name="chicago_crimes",
+    dataset_id="ijzp-q8t2",
+    target_table="chicago_crimes",
+    target_schema="raw_data",
+    entity_key=["id"],
+    full_update_mode="file_download",
+)
+
+CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_SPEC = SocrataDatasetSpec(
+    name="chicago_homicide_and_non_fatal_shooting_victimizations",
+    dataset_id="gumc-mgzr",
+    target_table="chicago_homicide_and_non_fatal_shooting_victimizations",
+    target_schema="raw_data",
+    entity_key=["unique_id"],
+    full_update_mode="api",
 )

@@ -31,7 +31,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["collectors", "datagen", "db", "parsers", "scrapers", "sources", "tasks", "tracking"]
+known-first-party = ["collectors", "datagen", "db", "parsers", "scrapers", "sources", "tasks", "tracking", "transform"]
 
 [dependency-groups]
 dev = [
