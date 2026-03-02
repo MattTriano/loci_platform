@@ -2,8 +2,6 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
-
-from loci.sources.dataset_specs import ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC as DATASET_SPEC
 from loci.sources.update_configs import (
     ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG as UPDATE_CONFIG,
 )
@@ -24,7 +22,6 @@ CONN_ID = "gis_dwh_db"
 def update_acs5__housing_characteristics_by_tract():
     update_census_table(
         conn_id=CONN_ID,
-        dataset_spec=DATASET_SPEC,
         update_config=UPDATE_CONFIG,
         task_logger=task_logger,
     )

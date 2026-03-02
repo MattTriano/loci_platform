@@ -49,7 +49,7 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
 def run_full_update(conn_id: str, update_config: DatasetUpdateConfig, task_logger: Logger) -> bool:
     collector = _get_collector(conn_id, task_logger)
     rows = collector.full_refresh(
-        dataset_id=update_config.dataset_id,
+        dataset_id=update_config.spec.dataset_id,
         target_table=update_config.dataset_name,
         target_schema="raw_data",
         config=update_config,
@@ -66,7 +66,7 @@ def run_incremental_update(
 ) -> bool:
     collector = _get_collector(conn_id, task_logger)
     rows = collector.incremental_update(
-        dataset_id=update_config.dataset_id,
+        dataset_id=update_config.spec.dataset_id,
         target_table=update_config.dataset_name,
         target_schema="raw_data",
         config=IncrementalConfig(
@@ -93,7 +93,7 @@ def check_ingestion_log(
         where dataset_id = %(dataset_id)s
         order by completed_at desc limit 1
         """,
-        {"dataset_id": update_config.dataset_id},
+        {"dataset_id": update_config.spec.dataset_id},
     )
     task_logger.info(f"Ingestion log record: {log_record}")
     return True
