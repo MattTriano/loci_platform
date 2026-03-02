@@ -48,7 +48,7 @@ _SUFFIX_MAP = {
 }
 
 # Tokens to drop entirely (articles, prepositions that add no meaning).
-_DROP_TOKENS = {"the", "of", "and", "or", "in", "to", "for", "by", "-"}
+_DROP_TOKENS = {"the", "of", "and", "or", "in", "to", "for", "by"}
 
 # Label segments that carry no distinguishing information.
 _STRUCTURAL_SEGMENTS = {
@@ -100,7 +100,7 @@ class CensusVariableMapper:
 
         Returns a list of abbreviated, lowercased tokens.
         """
-        cleaned = re.sub(r"[():,]", "", text).lower()
+        cleaned = re.sub(r"[^a-zA-Z0-9\s]", "", text).lower()
         tokens = cleaned.split()
         result = []
         for tok in tokens:
@@ -132,14 +132,15 @@ class CensusVariableMapper:
             tokens.extend(self._abbreviate_tokens(seg_clean))
         return "_".join(tokens)
 
-    def _deduplicate_consecutive(self, tokens_str: str) -> str:
-        """Remove consecutive duplicate tokens in an underscore-joined string."""
-        parts = tokens_str.split("_")
-        deduped = [parts[0]] if parts else []
-        for p in parts[1:]:
-            if p != deduped[-1]:
-                deduped.append(p)
-        return "_".join(deduped)
+    def _deduplicate_consecutive(self, tokens: list[str]) -> list[str]:
+        """Remove consecutive duplicate tokens from a list."""
+        if not tokens:
+            return []
+        deduped = [tokens[0]]
+        for t in tokens[1:]:
+            if t != deduped[-1]:
+                deduped.append(t)
+        return deduped
 
     def _assemble_column_name(
         self,
@@ -149,33 +150,49 @@ class CensusVariableMapper:
         variable_code: str,
     ) -> str:
         """
-        Assemble the column name and truncate the concept prefix if needed
-        to stay within PG_MAX_IDENTIFIER.
+        Assemble the column name and truncate to stay within PG_MAX_IDENTIFIER.
 
         Format: {concept_prefix}__{label}_{est|moe}_{variable_code}
+
+        The variable_code suffix is never truncated (it guarantees uniqueness).
+        When the name is too long, the concept prefix is shortened first,
+        then the label, both at underscore boundaries.
         """
+        # The suffix portion is fixed and must not be truncated.
+        fixed_tail = f"_{suffix}_{variable_code}"
+
+        # Deduplicate concept and label tokens individually.
+        concept_tokens = (
+            self._deduplicate_consecutive(concept_prefix.split("_")) if concept_prefix else []
+        )
         if label_compressed:
-            tail = f"__{label_compressed}_{suffix}_{variable_code}"
+            label_tokens = self._deduplicate_consecutive(label_compressed.split("_"))
         else:
-            tail = f"__tot_{suffix}_{variable_code}"
+            label_tokens = ["tot"]
 
-        tail = self._deduplicate_consecutive(tail)
-        budget = PG_MAX_IDENTIFIER - len(tail)
+        # Budget for concept + label (plus the __ separator between them).
+        # Full format: concept__label_{suffix}_{variable_code}
+        separator = "__"
+        budget = PG_MAX_IDENTIFIER - len(fixed_tail) - len(separator)
 
-        if budget <= 0:
-            return tail.lstrip("_")[:PG_MAX_IDENTIFIER]
+        concept_part = "_".join(concept_tokens)
+        label_part = "_".join(label_tokens)
 
-        if len(concept_prefix) > budget:
-            prefix = concept_prefix[:budget]
-            last_sep = prefix.rfind("_")
-            prefix = prefix[:last_sep] if last_sep > 0 else prefix
+        # Trim concept first (at word boundaries), then label if still over.
+        while len(concept_part) + len(label_part) > budget and concept_tokens:
+            concept_tokens.pop()
+            concept_part = "_".join(concept_tokens)
+
+        while len(concept_part) + len(label_part) > budget and label_tokens:
+            label_tokens.pop()
+            label_part = "_".join(label_tokens)
+
+        if concept_part and label_part:
+            return f"{concept_part}{separator}{label_part}{fixed_tail}"
+        elif label_part:
+            return f"{label_part}{fixed_tail}"
         else:
-            prefix = concept_prefix
-        prefix = prefix.rstrip("_")
-
-        full = f"{prefix}{tail}"
-        full = self._deduplicate_consecutive(full)
-        return full[:PG_MAX_IDENTIFIER]
+            return f"{concept_part}{fixed_tail}"
 
     def _fetch_variables(self, spec: CensusDatasetSpec, vintage: int) -> pd.DataFrame:
         """
@@ -236,6 +253,8 @@ class CensusVariableMapper:
         Return a dict mapping original variable codes to compressed column names.
 
         {variable_code: column_name}
+
+        Suitable for use in a dbt model's column aliasing.
         """
         df = self.build_mapping_df(spec, vintage)
         return dict(zip(df["variable"], df["column_name"]))

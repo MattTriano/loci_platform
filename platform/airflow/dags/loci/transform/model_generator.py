@@ -174,7 +174,7 @@ class DbtModelGenerator:
             passthrough_columns,
         )
 
-        model_dir = self.models_dir / "staging" / source_name
+        model_dir = self.models_dir / "staging"
         model_dir.mkdir(parents=True, exist_ok=True)
         model_path = model_dir / f"stg__{table_name}.sql"
 
@@ -235,12 +235,16 @@ class DbtModelGenerator:
             if source["name"] == source_name:
                 existing_tables = [t["name"] for t in source.get("tables", [])]
                 if table_name not in existing_tables:
-                    source.setdefault("tables", []).append({"name": table_name})
+                    # source.setdefault("tables", []).append({"name": table_name})
+                    tables = source.setdefault("tables", [])
+                    tables.append({"name": table_name})
+                    tables.sort(key=lambda t: t["name"])
                     self.sources_path.write_text(
                         yaml.dump(
                             sources_data,
                             default_flow_style=False,
                             sort_keys=False,
+                            Dumper=IndentedDumper,
                         )
                     )
                 return
@@ -248,6 +252,11 @@ class DbtModelGenerator:
         raise ValueError(
             f"Source '{source_name}' not found in {self.sources_path}. Add it manually first."
         )
+
+
+class IndentedDumper(yaml.Dumper):
+    def increase_indent(self, flow=False, indentless=False):
+        return super().increase_indent(flow, False)
 
 
 class CensusDbtPipelineBuilder(DbtPipelineBuilder):
@@ -310,6 +319,7 @@ class CensusDbtPipelineBuilder(DbtPipelineBuilder):
         self,
         spec: CensusDatasetSpec,
         vintage: int,
+        overwrite: bool = False,
     ) -> Path:
         """Generate a staging model for a Census dataset.
 
@@ -335,4 +345,5 @@ class CensusDbtPipelineBuilder(DbtPipelineBuilder):
             is_scd2=True,
             column_mapping=column_map,
             passthrough_columns=spec.entity_key,
+            overwrite=overwrite,
         )

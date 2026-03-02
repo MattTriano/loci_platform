@@ -54,12 +54,14 @@ def test_list_cartographic_vintages(tm):
 # ------------------------------------------------------------------ #
 
 
+@pytest.mark.network
 def test_list_tiger_layers(tm):
     df = tm.list_layers(2024, source="tiger")
     assert not df.empty
     assert "TRACT" in df["layer"].values
 
 
+@pytest.mark.network
 def test_list_tiger_layers_keyword(tm):
     df = tm.list_layers(2024, source="tiger", keyword="road")
     assert not df.empty

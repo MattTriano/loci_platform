@@ -5,7 +5,12 @@ sources:
     tags:
       - raw
     tables:
+      - name: acs5__housing_characteristics_by_tract
+      - name: acs5__internet_utilization_by_tract
+      - name: acs5__means_of_transportation_to_work_by_age_sex_race_by_tract
+      - name: acs5__means_of_transportation_to_work_by_econ_chars_by_tract
       - name: acs5__occupations_by_sex_by_tract
+      - name: acs5__sex_by_age_race_and_citizenship_by_tract
       - name: chicago_311_service_requests
       - name: chicago_additional_dwelling_unit_preapproval_applications
       - name: chicago_arrests

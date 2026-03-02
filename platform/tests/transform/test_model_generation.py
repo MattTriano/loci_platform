@@ -166,7 +166,6 @@ class TestGenerateLoadingModel:
             columns=["col_a"],
         )
         assert "staging" in path.parts
-        assert "raw_data" in path.parts
 
     def test_refuses_overwrite_by_default(self, generator):
         generator.generate_loading_model(
