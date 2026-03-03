@@ -437,7 +437,7 @@ class StagedIngest:
                 if v is None:
                     vals.append("\\N")
                 else:
-                    vals.append(str(v).replace("\\", "\\\\").replace("\t", " ").replace("\n", " "))
+                    vals.append(str(v).replace("\\", "\\\\").replace("\t", " ").replace("\n", " ").replace("\r", " "))
             buf.write("\t".join(vals) + "\n")
         buf.seek(0)
         return buf
