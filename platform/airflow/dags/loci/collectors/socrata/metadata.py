@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 import requests
-from loci.collectors.config import SCD2Config
+from loci.collectors.socrata.spec import SocrataDatasetSpec
 
 
 @dataclass
@@ -180,25 +180,18 @@ class SocrataTableMetadata:
 
     def generate_ddl(
         self,
-        schema: str = "raw_data",
-        table_name: str | None = None,
+        spec: SocrataDatasetSpec,
         include_ingested_at: bool = True,
         include_comments: bool = True,
-        scd2_config: SCD2Config | None = None,
     ) -> str:
         """
         Generate a CREATE TABLE statement from the dataset's Socrata metadata.
 
         Args:
-            schema:           Target schema name.
-            table_name:       Target table name. Defaults to a sanitized version
-                              of the dataset name from the metadata.
+            spec:               Dataset spec with schema, table name, and entity key.
             include_ingested_at: If True, appends an 'ingested_at' column.
-            include_comments: If True, adds COMMENT ON COLUMN statements for
-                              columns that have descriptions in the metadata.
-            scd2_config:      If provided, adds record_hash, valid_from, valid_to
-                              columns plus a unique constraint and current-version
-                              index based on the entity key.
+            include_comments:   If True, adds COMMENT ON COLUMN statements for
+                                columns that have descriptions in the metadata.
 
         Returns:
             The full DDL string.
@@ -215,10 +208,11 @@ class SocrataTableMetadata:
             "\"valid_from\" timestamptz not null default (now() at time zone 'utc')",
             '"valid_to" timestamptz',
         ]
-        if table_name is None:
-            table_name = self._default_table_name()
 
+        table_name = spec.target_table
+        schema = spec.target_schema
         fqn = f"{schema}.{table_name}"
+
         col_defs = [col.ddl_fragment for col in self.columns]
 
         if include_ingested_at:
@@ -228,15 +222,15 @@ class SocrataTableMetadata:
 
         col_defs.extend(f"    {c}" for c in SYSTEM_COLUMNS)
 
-        if scd2_config:
+        if spec.entity_key:
             col_defs.extend(f"    {c}" for c in SCD2_COLUMNS)
 
         ddl = f"create table if not exists {fqn} (\n"
         ddl += ",\n".join(col_defs)
         ddl += "\n);\n"
 
-        if scd2_config:
-            ek_cols = ", ".join(scd2_config.entity_key)
+        if spec.entity_key:
+            ek_cols = ", ".join(spec.entity_key)
             constraint_name = f"uq_{table_name}_entity_hash"
             index_name = f"ix_{table_name}_current"
 
