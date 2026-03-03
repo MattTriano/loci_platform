@@ -321,6 +321,192 @@ OSM_RELATIONS_SPEC = OsmDatasetSpec(
 #                                    Socrata                                          #
 #######################################################################################
 
+CHICAGO_CITY_BOUNDARY_SPEC = SocrataDatasetSpec(
+    name="chicago_city_boundary",
+    dataset_id="qqq8-j68g",
+    target_table="chicago_city_boundary",
+    target_schema="raw_data",
+    entity_key=["objectid"],
+    full_update_mode="api",
+)
+
+CHICAGO_BIKE_RACKS_SPEC = SocrataDatasetSpec(
+    name="chicago_bike_racks",
+    dataset_id="hgdw-64h3",
+    target_table="chicago_bike_racks",
+    target_schema="raw_data",
+    full_update_mode="api",
+)
+
+CHICAGO_COMMUNITY_AREAS_SPEC = SocrataDatasetSpec(
+    name="chicago_community_areas",
+    dataset_id="igwz-8jzy",
+    target_table="chicago_community_areas",
+    target_schema="raw_data",
+    entity_key=["area_numbe"],
+    full_update_mode="api",
+)
+
+CHICAGO_POLICE_DISTRICT_SPEC = SocrataDatasetSpec(
+    name="chicago_police_districts",
+    dataset_id="9vmg-9p8p",
+    target_table="chicago_police_districts",
+    target_schema="raw_data",
+    entity_key=["dist_num"],
+    full_update_mode="api",
+)
+
+CHICAGO_WARD_PRECINCTS_SPEC = SocrataDatasetSpec(
+    name="chicago_ward_precincts",
+    dataset_id="6piy-vbxa",
+    target_table="chicago_ward_precincts",
+    target_schema="raw_data",
+    entity_key=["ward_precinct"],
+    full_update_mode="api",
+)
+
+CHICAGO_PEDWAY_ROUTE_SPEC = SocrataDatasetSpec(
+    name="chicago_pedway_routes",
+    dataset_id="xkur-4g6u",
+    target_table="chicago_pedway_routes",
+    target_schema="raw_data",
+    entity_key=["objectid"],
+    full_update_mode="api",
+)
+
+CHICAGO_LIBRARIES_SPEC = SocrataDatasetSpec(
+    name="chicago_libraries",
+    dataset_id="x8fc-8rcq",
+    target_table="chicago_libraries",
+    target_schema="raw_data",
+    entity_key=["branch_"],
+    full_update_mode="api",
+)
+
+CHICAGO_BIKE_ROUTES_SPEC = SocrataDatasetSpec(
+    name="chicago_bike_routes",
+    dataset_id="hvv9-38ut",
+    target_table="chicago_bike_routes",
+    target_schema="raw_data",
+    full_update_mode="api",
+)
+
+CHICAGO_BUILDING_FOOTPRINTS_SPEC = SocrataDatasetSpec(
+    name="chicago_building_footprints",
+    dataset_id="syp8-uezg",
+    target_table="chicago_building_footprints",
+    target_schema="raw_data",
+    entity_key=["bldg_id"],
+    full_update_mode="api",
+)
+
+CTA_BUS_STOP_SPEC = SocrataDatasetSpec(
+    name="cta_bus_stops",
+    dataset_id="qs84-j7wh",
+    target_table="cta_bus_stops",
+    target_schema="raw_data",
+    entity_key=["systemstop"],
+    full_update_mode="api",
+)
+
+CTA_BUS_ROUTES_SPEC = SocrataDatasetSpec(
+    name="cta_bus_routes",
+    dataset_id="6uva-a5ei",
+    target_table="cta_bus_routes",
+    target_schema="raw_data",
+    entity_key=["route"],
+    full_update_mode="api",
+)
+
+CTA_STATIONS_SPEC = SocrataDatasetSpec(
+    name="cta_stations",
+    dataset_id="3tzw-cg4m",
+    target_table="cta_stations",
+    target_schema="raw_data",
+    entity_key=["station_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_PARKS_SPEC = SocrataDatasetSpec(
+    name="chicago_parks",
+    dataset_id="ejsh-fztr",
+    target_table="chicago_parks",
+    target_schema="raw_data",
+    entity_key=["park_no"],
+    full_update_mode="api",
+)
+
+CHICAGO_MURAL_REGISTRY_SPEC = SocrataDatasetSpec(
+    name="chicago_mural_registry",
+    dataset_id="we8h-apcf",
+    target_table="chicago_mural_registry",
+    target_schema="raw_data",
+    entity_key=["mural_registration_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_LANDMARK_SPEC = SocrataDatasetSpec(
+    name="chicago_landmarks",
+    dataset_id="uct4-hrvh",
+    target_table="chicago_landmarks",
+    target_schema="raw_data",
+    entity_key=["id"],
+    full_update_mode="api",
+)
+
+CHICAGO_VACANT_ABANDONED_BUILDINGS_SPEC = SocrataDatasetSpec(
+    name="chicago_vacant_abandoned_buildings",
+    dataset_id="kc9i-wq85",
+    target_table="chicago_vacant_abandoned_buildings",
+    target_schema="raw_data",
+    entity_key=["violation_number"],
+    full_update_mode="api",
+)
+
+CHICAGO_BUILDING_SCOFFLAW_LIST_SPEC = SocrataDatasetSpec(
+    name="chicago_building_scofflaw_list",
+    dataset_id="crg5-4zyp",
+    target_table="chicago_building_scofflaw_list",
+    target_schema="raw_data",
+    entity_key=["record_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_POTHOLES_PATCHED_SPEC = SocrataDatasetSpec(
+    name="chicago_potholes_patched",
+    dataset_id="wqdh-9gek",
+    target_table="chicago_potholes_patched",
+    target_schema="raw_data",
+    full_update_mode="api",
+)
+
+CHICAGO_RELOCATED_VEHICLES_SPEC = SocrataDatasetSpec(
+    name="chicago_relocated_vehicles",
+    dataset_id="5k2z-suxx",
+    target_table="chicago_relocated_vehicles",
+    target_schema="raw_data",
+    entity_key=["service_request_number"],
+    full_update_mode="api",
+)
+
+CHICAGO_LIBRARY_EVENTS_SPEC = SocrataDatasetSpec(
+    name="chicago_library_events",
+    dataset_id="vsdy-d8k7",
+    target_table="chicago_library_events",
+    target_schema="raw_data",
+    entity_key=["event_id"],
+    full_update_mode="api",
+)
+
+CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_SPEC = SocrataDatasetSpec(
+    name="chicago_house_share_restricted_zones",
+    dataset_id="8eww-pamb",
+    target_table="chicago_house_share_restricted_zones",
+    target_schema="raw_data",
+    entity_key=["precinct"],
+    full_update_mode="api",
+)
+
 CHICAGO_BUILDING_PERMITS_SPEC = SocrataDatasetSpec(
     name="chicago_building_permits",
     dataset_id="ydr8-5enu",

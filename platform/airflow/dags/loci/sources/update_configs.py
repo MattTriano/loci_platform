@@ -157,6 +157,153 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConf
 #                                 SOCRATA                                     #
 ###############################################################################
 
+CHICAGO_CITY_BOUNDARY_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_CITY_BOUNDARY_SPEC,
+    full_update_cron="0 6 1-7 * 2",
+    update_cron="0 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_BIKE_RACKS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_BIKE_RACKS_SPEC,
+    full_update_cron="1 6 1-7 * 2",
+    update_cron="1 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_COMMUNITY_AREAS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_COMMUNITY_AREAS_SPEC,
+    full_update_cron="2 6 1-7 * 2",
+    update_cron="2 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_POLICE_DISTRICT_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_POLICE_DISTRICT_SPEC,
+    full_update_cron="3 6 1-7 * 2",
+    update_cron="3 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_WARD_PRECINCTS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_WARD_PRECINCTS_SPEC,
+    full_update_cron="4 6 1-7 * 2",
+    update_cron="4 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_PEDWAY_ROUTE_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_PEDWAY_ROUTE_SPEC,
+    full_update_cron="5 6 1-7 * 2",
+    update_cron="5 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_LIBRARIES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_LIBRARIES_SPEC,
+    full_update_cron="6 6 1-7 * 2",
+    update_cron="6 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_BIKE_ROUTES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_BIKE_ROUTES_SPEC,
+    full_update_cron="7 6 1-7 * 2",
+    update_cron="7 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_BUILDING_FOOTPRINTS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_BUILDING_FOOTPRINTS_SPEC,
+    full_update_cron="8 6 1-7 * 2",
+    update_cron="8 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CTA_BUS_STOP_UC = DatasetUpdateConfig(
+    spec=specs.CTA_BUS_STOP_SPEC,
+    full_update_cron="15 6 1-7 * 2",
+    update_cron="15 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CTA_BUS_ROUTES_UC = DatasetUpdateConfig(
+    spec=specs.CTA_BUS_ROUTES_SPEC,
+    full_update_cron="16 6 1-7 * 2",
+    update_cron="16 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CTA_STATIONS_UC = DatasetUpdateConfig(
+    spec=specs.CTA_STATIONS_SPEC,
+    full_update_cron="17 6 1-7 * 2",
+    update_cron="17 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_PARKS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_PARKS_SPEC,
+    full_update_cron="18 6 1-7 * 2",
+    update_cron="18 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_MURAL_REGISTRY_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_MURAL_REGISTRY_SPEC,
+    full_update_cron="19 6 1-7 * 2",
+    update_cron="19 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_LANDMARK_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_LANDMARK_SPEC,
+    full_update_cron="20 6 1-7 * 2",
+    update_cron="20 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_VACANT_ABANDONED_BUILDINGS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_VACANT_ABANDONED_BUILDINGS_SPEC,
+    full_update_cron="21 6 1-7 * 2",
+    update_cron="21 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_BUILDING_SCOFFLAW_LIST_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_BUILDING_SCOFFLAW_LIST_SPEC,
+    full_update_cron="22 6 1-7 * 2",
+    update_cron="22 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_POTHOLES_PATCHED_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_POTHOLES_PATCHED_SPEC,
+    full_update_cron="23 6 1-7 * 2",
+    update_cron="23 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_RELOCATED_VEHICLES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_RELOCATED_VEHICLES_SPEC,
+    full_update_cron="24 6 1-7 * 2",
+    update_cron="24 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_LIBRARY_EVENTS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_LIBRARY_EVENTS_SPEC,
+    full_update_cron="25 6 1-7 * 2",
+    update_cron="25 6 * * 2,5",
+    full_update_mode="api",
+)
+
+CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_SPEC,
+    full_update_cron="26 6 1-7 * 2",
+    update_cron="26 6 * * 2,5",
+    full_update_mode="api",
+)
+
 CHICAGO_BUILDING_PERMITS = DatasetUpdateConfig(
     spec=specs.CHICAGO_BUILDING_PERMITS_SPEC,
     full_update_cron="0 6 1-7 * 2",

@@ -11,6 +11,7 @@ from loci.collectors.config import IncrementalConfig
 from loci.collectors.exceptions import SchemaDriftError
 from loci.collectors.socrata.client import SocrataClient
 from loci.collectors.socrata.metadata import SocrataTableMetadata
+from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.parsers.csv_parser import parse_csv
 from loci.parsers.geojson import parse_geojson
 from loci.sources.update_configs import DatasetUpdateConfig
@@ -586,11 +587,6 @@ class SocrataCollector:
             include_system_fields=include_system_fields,
         )
 
-    def print_ddl(
-        self,
-        dataset_id: str,
-        schema: str = "raw_data",
-        table_name: str | None = None,
-    ) -> None:
-        meta = self._get_metadata(dataset_id)
-        print(meta.generate_ddl(schema=schema, table_name=table_name))
+    def print_ddl(self, spec: SocrataDatasetSpec) -> None:
+        """Generate and print DDL for easy copy-paste into a migration script."""
+        print(self.generate_ddl(spec))

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from loci.collectors.config import SCD2Config
 from loci.collectors.socrata.metadata import SocrataColumnInfo, SocrataTableMetadata
+from loci.collectors.socrata.spec import SocrataDatasetSpec
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -198,8 +198,14 @@ class TestGenerateDdl:
                 _make_views_column("Name", "name", datatype="text"),
             ]
         )
+        spec = SocrataDatasetSpec(
+            name="test",
+            dataset_id="xxxx-xxxx",
+            target_table="test_table",
+            target_schema="public",
+        )
 
-        ddl = meta.generate_ddl(schema="public", table_name="test_table", include_comments=False)
+        ddl = meta.generate_ddl(spec, include_comments=False)
 
         assert "create table if not exists public.test_table" in ddl
         assert '"id" numeric' in ddl
@@ -212,13 +218,14 @@ class TestGenerateDdl:
         meta = _make_metadata(
             views_columns=[_make_views_column("ID", "id")],
         )
-
-        ddl = meta.generate_ddl(
-            schema="public",
-            table_name="t",
-            include_ingested_at=False,
-            include_comments=False,
+        spec = SocrataDatasetSpec(
+            name="test",
+            dataset_id="xxxx-xxxx",
+            target_table="t",
+            target_schema="public",
         )
+
+        ddl = meta.generate_ddl(spec, include_ingested_at=False, include_comments=False)
 
         assert "ingested_at" not in ddl
 
@@ -229,8 +236,14 @@ class TestGenerateDdl:
                 _make_views_column("Name", "name", description=""),
             ]
         )
+        spec = SocrataDatasetSpec(
+            name="test",
+            dataset_id="xxxx-xxxx",
+            target_table="t",
+            target_schema="public",
+        )
 
-        ddl = meta.generate_ddl(schema="public", table_name="t")
+        ddl = meta.generate_ddl(spec)
 
         assert "comment on column public.t.\"id\" is 'Primary key'" in ddl
         assert '"name"' not in ddl.split("comment", 1)[-1]
@@ -241,22 +254,32 @@ class TestGenerateDdl:
                 _make_views_column("Note", "note", description="It's a note"),
             ]
         )
+        spec = SocrataDatasetSpec(
+            name="test",
+            dataset_id="xxxx-xxxx",
+            target_table="t",
+            target_schema="public",
+        )
 
-        ddl = meta.generate_ddl(schema="public", table_name="t")
+        ddl = meta.generate_ddl(spec)
 
         assert "It''s a note" in ddl
 
-    def test_scd2_config_adds_tracking_columns_and_constraints(self):
+    def test_entity_key_adds_tracking_columns_and_constraints(self):
         meta = _make_metadata(
             views_columns=[
                 _make_views_column("ID", "id", datatype="number"),
             ]
         )
-        scd2 = SCD2Config(entity_key=["id"])
-
-        ddl = meta.generate_ddl(
-            schema="raw", table_name="crimes", scd2_config=scd2, include_comments=False
+        spec = SocrataDatasetSpec(
+            name="test",
+            dataset_id="xxxx-xxxx",
+            target_table="crimes",
+            target_schema="raw",
+            entity_key=["id"],
         )
+
+        ddl = meta.generate_ddl(spec, include_comments=False)
 
         assert '"record_hash" text not null' in ddl
         assert '"valid_from" timestamptz' in ddl
@@ -264,15 +287,22 @@ class TestGenerateDdl:
         assert "unique (id, record_hash)" in ddl
         assert "where valid_to is null" in ddl
 
-    def test_default_table_name_used_when_none_provided(self):
+    def test_no_entity_key_omits_scd2_columns(self):
         meta = _make_metadata(
-            dataset_name="Chicago Police - Crimes 2024",
             views_columns=[_make_views_column("ID", "id")],
         )
+        spec = SocrataDatasetSpec(
+            name="test",
+            dataset_id="xxxx-xxxx",
+            target_table="t",
+            target_schema="raw",
+        )
 
-        ddl = meta.generate_ddl(schema="raw", table_name=None, include_comments=False)
+        ddl = meta.generate_ddl(spec, include_comments=False)
 
-        assert "raw.chicago_police_crimes_2024" in ddl
+        assert "record_hash" not in ddl
+        assert "valid_from" not in ddl
+        assert "valid_to" not in ddl
 
 
 # ---------------------------------------------------------------------------
