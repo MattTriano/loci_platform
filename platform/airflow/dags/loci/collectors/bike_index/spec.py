@@ -2,14 +2,14 @@
 BikeIndexDatasetSpec — defines a Bike Index dataset to collect.
 
 Usage:
-    from bike_index.spec import BikeIndexDatasetSpec
+    from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 
     spec = BikeIndexDatasetSpec(
         name="chicago_stolen_bikes",
         target_table="stolen_bikes",
         location="Chicago, IL",
         distance=10,
-        entity_key=["bike_index_id"],
+        entity_key=["id"],
     )
 """
 
@@ -45,22 +45,17 @@ class BikeIndexDatasetSpec(DatasetSpec):
         Optional free-text search (brand, model, color, etc.).
     per_page : int
         Results per page (max 100).
-    fetch_detail : bool
-        If True, make a second API call per bike to get lat/lon
-        from the stolen_record. False for faster collection
-        without coordinates.
     """
 
     name: str
     target_table: str
     target_schema: str = "raw_data"
-    entity_key: list[str] | None = field(default_factory=lambda: ["id"])
+    entity_key: list[str] = field(default_factory=lambda: ["id"])
     location: str = "Chicago, IL"
     distance: int = 10
     stolenness: str = "proximity"
     query: str | None = None
     per_page: int = 100
-    fetch_detail: bool = True
 
     def __post_init__(self):
         if self.stolenness not in ("proximity", "stolen", "non", "all"):
@@ -80,3 +75,7 @@ class BikeIndexDatasetSpec(DatasetSpec):
         if self.query:
             params["query"] = self.query
         return params
+
+    @property
+    def dataset_id(self) -> str:
+        return self.target_table

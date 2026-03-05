@@ -21,10 +21,43 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import requests
+from requests.exceptions import ConnectionError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+)
 
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://bikeindex.org/api/v3"
+
+
+class RateLimitedError(Exception):
+    """Raised when the API returns 429. Carries the Retry-After value."""
+
+    def __init__(self, retry_after: float):
+        self.retry_after = retry_after
+        super().__init__(f"Rate limited, retry after {retry_after}s")
+
+
+class ServerError(Exception):
+    """Raised on 5xx responses to trigger tenacity retry."""
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"Server error {status_code}")
+
+
+def _wait_for_rate_limit(retry_state) -> float:
+    """Custom wait function that respects Retry-After on 429s,
+    falls back to exponential backoff for other errors."""
+    exc = retry_state.outcome.exception()
+    if isinstance(exc, RateLimitedError):
+        return exc.retry_after
+    # Exponential backoff: 2, 4, 8, ... capped at 60s
+    return min(2**retry_state.attempt_number, 60)
 
 
 @dataclass(frozen=True)
@@ -64,21 +97,13 @@ class BikeIndexClient:
         access_token: Optional OAuth2 token. Unauthenticated requests have
                       stricter rate limits but work for read-only searches.
         timeout:      Request timeout in seconds.
-        max_retries:  Number of retries on transient errors (429, 5xx).
-        retry_delay:  Base delay between retries in seconds (doubles each retry).
     """
 
     def __init__(
-        self,
-        access_token: str | None = None,
-        timeout: float = 30.0,
-        max_retries: int = 3,
-        retry_delay: float = 2.0,
+        self, access_token: str | None = None, timeout: float = 30.0, request_delay: float = 0.2
     ):
-        self.access_token = access_token
         self.timeout = timeout
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.request_delay = request_delay
 
         self._session = requests.Session()
         self._session.headers["Accept"] = "application/json"
@@ -96,44 +121,31 @@ class BikeIndexClient:
 
     # -- Low-level request with retry ------------------------------------------
 
+    @retry(
+        retry=retry_if_exception_type((ConnectionError, RateLimitedError, ServerError)),
+        stop=stop_after_attempt(4),
+        wait=_wait_for_rate_limit,
+        before_sleep=before_sleep_log(log, logging.WARNING),
+    )
     def _request(self, method: str, path: str, **kwargs) -> dict:
-        """Make an HTTP request with retry logic for rate limits and server errors."""
+        """Make an HTTP request with retry on transient errors."""
         url = f"{BASE_URL}{path}"
         kwargs.setdefault("timeout", self.timeout)
-        delay = self.retry_delay
 
-        for attempt in range(self.max_retries + 1):
-            try:
-                resp = self._session.request(method, url, **kwargs)
-            except requests.ConnectionError as e:
-                if attempt == self.max_retries:
-                    raise
-                log.warning("Connection error (attempt %d): %s", attempt + 1, e)
-                time.sleep(delay)
-                delay *= 2
-                continue
+        resp = self._session.request(method, url, **kwargs)
 
-            if resp.status_code == 429:
-                retry_after = float(resp.headers.get("Retry-After", delay))
-                log.warning("Rate limited, sleeping %.1fs", retry_after)
-                time.sleep(retry_after)
-                delay *= 2
-                continue
+        if resp.status_code == 429:
+            retry_after = float(resp.headers.get("Retry-After", 2.0))
+            raise RateLimitedError(retry_after)
 
-            if resp.status_code >= 500:
-                if attempt == self.max_retries:
-                    resp.raise_for_status()
-                log.warning("Server error %d (attempt %d)", resp.status_code, attempt + 1)
-                time.sleep(delay)
-                delay *= 2
-                continue
+        if resp.status_code >= 500:
+            raise ServerError(resp.status_code)
 
-            resp.raise_for_status()
-            return resp.json()
-
-        raise RuntimeError(f"Exhausted retries for {method} {path}")
+        resp.raise_for_status()
+        return resp.json()
 
     def _get(self, path: str, params: dict | None = None) -> dict:
+        time.sleep(self.request_delay)
         return self._request("GET", path, params=params)
 
     # -- Public API methods ----------------------------------------------------

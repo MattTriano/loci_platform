@@ -13,7 +13,18 @@ class DatasetUpdateConfig:
 
 
 ###############################################################################
-#                           CENSUS TIGER DATA                                 #
+#    Bike Index                                                               #
+###############################################################################
+
+BIKEINDEX_CHICAGO_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC,
+    full_update_cron="0 4 1-7 * 4",
+    update_cron="0 4 * * 1,4",
+    full_update_mode="api",
+)
+
+###############################################################################
+#    Census TIGER Data                                                        #
 ###############################################################################
 
 STATE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
