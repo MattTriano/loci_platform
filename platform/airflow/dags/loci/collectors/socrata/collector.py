@@ -301,6 +301,12 @@ class SocrataCollector:
                 if isinstance(val, dict):
                     lat = val.get("latitude")
                     lon = val.get("longitude")
+                    if lat is None or lon is None:
+                        # Try the modern GeoJSON Point format,
+                        #   legacy Socrata endpoints use {lat, lon} dict for Points.
+                        coords = val.get("coordinates")
+                        if coords and len(coords) >= 2:
+                            lon, lat = coords[0], coords[1]
                     if lat is not None and lon is not None:
                         row[col] = f"SRID=4326;POINT({lon} {lat})"
                     else:
@@ -524,7 +530,9 @@ class SocrataCollector:
                     renamed_batch = self._rename_system_fields(batch)
                     renamed_batch = self._drop_computed_region_columns(renamed_batch)
                     if page_num == 1:
-                        source_columns = set(renamed_batch[0].keys())
+                        source_columns = set()
+                        for row in renamed_batch:
+                            source_columns.update(row.keys())
                         self._preflight_column_check(source_columns, target_table, target_schema)
                     stager.write_batch(renamed_batch)
 

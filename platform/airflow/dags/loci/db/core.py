@@ -220,7 +220,7 @@ class StagedIngest:
         rows = self._engine._normalize_json_values(rows)
 
         if not self._created:
-            self._columns = list(rows[0].keys())
+            self._columns = self._get_target_columns()
             self._col_list = ", ".join(f'"{c}"' for c in self._columns)
             self._create_staging_table()
 
@@ -428,6 +428,21 @@ class StagedIngest:
                 "Failed to drop staging table %s: %s", self._staging_table, e
             )
 
+    def _get_target_columns(self) -> list[str]:
+        """Get column names from the target table, excluding metadata columns."""
+        with self._engine.cursor() as cur:
+            cur.execute(
+                "select column_name from information_schema.columns "
+                "where table_schema = %s and table_name = %s "
+                "order by ordinal_position",
+                (self._target_schema, self._target_table),
+            )
+            all_columns = [row[0] for row in cur.fetchall()]
+
+        if self._metadata_columns:
+            return [c for c in all_columns if c not in self._metadata_columns]
+        return all_columns
+
     def _rows_to_copy_buffer(self, rows: list[dict[str, Any]]) -> io.StringIO:
         buf = io.StringIO()
         for row in rows:
@@ -437,7 +452,13 @@ class StagedIngest:
                 if v is None:
                     vals.append("\\N")
                 else:
-                    vals.append(str(v).replace("\\", "\\\\").replace("\t", " ").replace("\n", " ").replace("\r", " "))
+                    vals.append(
+                        str(v)
+                        .replace("\\", "\\\\")
+                        .replace("\t", " ")
+                        .replace("\n", " ")
+                        .replace("\r", " ")
+                    )
             buf.write("\t".join(vals) + "\n")
         buf.seek(0)
         return buf

@@ -22,11 +22,20 @@ def sample_creds():
 def mock_cursor():
     cur = MagicMock()
     cur.description = [("col_a",), ("col_b",)]
-    cur.fetchall.return_value = [("val1", "val2"), ("val3", "val4")]
-    cur.fetchone.return_value = None  # no geometry by default
+    cur.fetchone.return_value = None
     cur.rowcount = 2
     cur.close.return_value = None
+
+    # Default fetchall: return empty so _get_target_columns returns []
+    # Tests that need specific columns should override via _set_table_columns helper
+    cur.fetchall.return_value = []
+
     return cur
+
+
+def _set_table_columns(mock_cursor, columns: list[str]):
+    """Configure the mock to return these columns from _get_target_columns."""
+    mock_cursor.fetchall.return_value = [(c,) for c in columns]
 
 
 @pytest.fixture
@@ -339,6 +348,7 @@ class TestStagedIngest:
 
     def test_merge_with_upsert(self, engine, mock_cursor):
         mock_cursor.rowcount = 3
+        _set_table_columns(mock_cursor, ["k1", "k2", "val"])
 
         with engine.staged_ingest(
             "t",
