@@ -530,12 +530,9 @@ class SocrataCollector:
                     renamed_batch = self._rename_system_fields(batch)
                     renamed_batch = self._drop_computed_region_columns(renamed_batch)
                     if page_num == 1:
-                        first_row_columns = set(renamed_batch[0].keys())
-                        self.logger.info("Page 1: first row columns %s", first_row_columns)
                         source_columns = set()
                         for row in renamed_batch:
                             source_columns.update(row.keys())
-                        self.logger.info("Page 1 column set: %s", source_columns)
                         self._preflight_column_check(source_columns, target_table, target_schema)
                     stager.write_batch(renamed_batch)
 
