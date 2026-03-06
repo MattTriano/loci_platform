@@ -1,7 +1,25 @@
+from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.osm.spec import OsmDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
+
+#######################################################################################
+#    Bike Index                                                                       #
+#######################################################################################
+
+BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_chicago_stolen_bikes",
+    target_table="bikeindex_chicago_stolen_bikes",
+    entity_key=["id"],
+    location="Chicago, IL",
+    distance=10,
+    stolenness="proximity",
+)
+
+#######################################################################################
+#    Census TIGER Data                                                                #
+#######################################################################################
 
 STATE_TIGER_SPEC = TigerDatasetSpec(
     name="tiger_states",
@@ -108,6 +126,10 @@ ALL_ROADS_TIGER_SPEC = TigerDatasetSpec(
     entity_key=["linearid", "vintage"],
 )
 
+
+#######################################################################################
+#    Census                                                                           #
+#######################################################################################
 
 ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC = CensusDatasetSpec(
     name="acs5__housing_characteristics",
@@ -290,7 +312,7 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT = CensusDatasetSpec(
 )
 
 #######################################################################################
-#                                    OSM                                              #
+#    OpenStreetMaps                                                                   #
 #######################################################################################
 
 OSM_NODES_SPEC = OsmDatasetSpec(
@@ -318,7 +340,7 @@ OSM_RELATIONS_SPEC = OsmDatasetSpec(
 )
 
 #######################################################################################
-#                                    Socrata                                          #
+#    Socrata                                                                          #
 #######################################################################################
 
 CHICAGO_CITY_BOUNDARY_SPEC = SocrataDatasetSpec(
