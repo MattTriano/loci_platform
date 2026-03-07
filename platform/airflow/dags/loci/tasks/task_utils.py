@@ -1,10 +1,8 @@
 from logging import Logger
 
-import pendulum
 from airflow.models.taskinstance import TaskInstance
 from airflow.sdk import get_current_context, task
 from airflow.task.trigger_rule import TriggerRule
-from croniter import croniter
 from loci.db.af_utils import get_postgres_engine
 from loci.sources.update_configs import DatasetUpdateConfig
 
@@ -22,10 +20,18 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
     context = get_current_context()
     tg_id_prefix = get_task_group_id_prefix(task_instance=context["ti"])
     logical_date = context["logical_date"]
-    cron = croniter(update_config.full_update_cron, logical_date.subtract(seconds=1))
-    next_hit = pendulum.instance(cron.get_next(pendulum.DateTime))
-    task_logger.info(f"tg_id_prefix: {tg_id_prefix}")
-    if next_hit.date() == logical_date.date():
+
+    week_number = (logical_date.day - 1) // 7 + 1
+    task_logger.info(f"Current week_number: {week_number}")
+    task_logger.info(f"Current month:       {logical_date.month}")
+    task_logger.info(f"Current day_of_week: {logical_date.day_of_week}")
+    is_full_update = (
+        logical_date.month in update_config.full_update_months
+        and week_number == update_config.full_update_week_of_month
+        and logical_date.day_of_week == update_config.full_update_day_of_week
+    )
+
+    if is_full_update:
         return f"{tg_id_prefix}run_full_update"
     return f"{tg_id_prefix}run_incremental_update"
 

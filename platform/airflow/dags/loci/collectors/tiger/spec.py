@@ -123,6 +123,7 @@ class TigerDatasetSpec:
     state_fips: list[str] | None = None
     entity_key: list[str] | None = None
     lowercase_columns: bool = True
+    source: str = "tiger"
 
     def __post_init__(self):
         if self.source not in ("tiger", "cartographic"):

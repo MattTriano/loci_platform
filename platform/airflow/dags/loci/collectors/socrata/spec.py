@@ -52,6 +52,7 @@ class SocrataDatasetSpec(DatasetSpec):
     entity_key: list[str] | None = None
     incremental_column: str = ":updated_at"
     full_update_mode: str = "api"
+    source: str = "socrata"
 
     def __post_init__(self):
         if self.full_update_mode not in ("api", "file_download"):

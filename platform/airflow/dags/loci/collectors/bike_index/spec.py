@@ -56,6 +56,7 @@ class BikeIndexDatasetSpec(DatasetSpec):
     stolenness: str = "proximity"
     query: str | None = None
     per_page: int = 100
+    source: str = "bike_index"
 
     def __post_init__(self):
         if self.stolenness not in ("proximity", "stolen", "non", "all"):
