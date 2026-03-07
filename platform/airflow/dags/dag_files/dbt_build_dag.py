@@ -1,5 +1,5 @@
-from datetime import datetime
 import subprocess
+from datetime import datetime
 
 from airflow.sdk import dag, task
 
@@ -21,7 +21,7 @@ def dbt_build_dag():
                 "--project-dir",
                 "/opt/airflow/dbt",
                 "--select",
-                "chicago_homicide_and_non_fatal_shooting_victimizations",
+                "+stg__bike_involved_crashes+",
             ],
             capture_output=True,
             text=True,

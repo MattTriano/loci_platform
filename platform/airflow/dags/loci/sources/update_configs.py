@@ -358,7 +358,8 @@ CHICAGO_311_SERVICE_REQUESTS = DatasetUpdateConfig(
     spec=specs.CHICAGO_311_SERVICE_REQUESTS_SPEC,
     full_update_cron="0 0 1-7 1,4,7,10 0",
     update_cron="30 4 * * 1,4",
-    full_update_mode="file_download",
+    full_update_mode="api",
+    # full_update_mode="file_download",
 )
 
 CHICAGO_TOWED_VEHICLES = DatasetUpdateConfig(
@@ -464,7 +465,7 @@ CHICAGO_ARRESTS = DatasetUpdateConfig(
 CHICAGO_CRIMES = DatasetUpdateConfig(
     spec=specs.CHICAGO_CRIMES_SPEC,
     full_update_cron="0 1 1-7 * 1",
-    update_cron="10 1 * * *",
+    update_cron="10 1 * * 1",
     full_update_mode="file_download",
 )
 
