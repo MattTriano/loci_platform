@@ -17,6 +17,7 @@ class DatasetSpec(ABC):
     Common interface for dataset specifications.
 
     Subclasses are expected to be dataclasses that declare at least:
+        source: str
         name: str
         target_table: str
         target_schema: str
@@ -26,6 +27,7 @@ class DatasetSpec(ABC):
     property — as long as it's accessible as spec.entity_key.
     """
 
+    source: str
     name: str
     target_table: str
     target_schema: str

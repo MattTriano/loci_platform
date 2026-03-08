@@ -170,6 +170,7 @@ class CensusDatasetSpec(DatasetSpec):
     variables: list[str] = field(default_factory=list)
     state_fips: list[str] | None = None
     entity_key: list[str] | None = field(default=None, init=False)
+    source: str = "census"
 
     def __post_init__(self):
         if not self.groups and not self.variables:

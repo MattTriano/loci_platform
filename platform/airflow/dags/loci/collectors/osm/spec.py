@@ -74,6 +74,7 @@ class OsmDatasetSpec:
     srid: int = 4326
     batch_size: int = 250_000
     location_storage: str = "flex_mem"
+    source: str = "openstreetmaps"
 
     def __post_init__(self):
         if self.element_type not in VALID_ELEMENT_TYPES:
