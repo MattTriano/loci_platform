@@ -284,6 +284,14 @@ CTA_BUS_ROUTES_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+CHICAGO_STREET_CENTER_LINES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_STREET_CENTER_LINES_SPEC,
+    update_cron="0 3 * * 2,5",
+    full_update_week_of_month=1,
+    full_update_day_of_week=2,
+    full_update_mode="api",
+)
+
 CTA_STATIONS_UC = DatasetUpdateConfig(
     spec=specs.CTA_STATIONS_SPEC,
     update_cron="17 6 * * 2,5",

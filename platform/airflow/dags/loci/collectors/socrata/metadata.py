@@ -155,6 +155,14 @@ class SocrataTableMetadata:
         descriptions = resource.get("columns_description", [])
 
         if not field_names:
+            parent_fxfs = resource.get("parent_fxf", [])
+            if parent_fxfs:
+                parent_ids = ", ".join(parent_fxfs)
+                raise ValueError(
+                    f"No column metadata found for '{self.dataset_id}'. "
+                    f"This appears to be a derived view. "
+                    f"Try using the parent dataset instead: {parent_ids}"
+                )
             raise ValueError(
                 f"No column metadata found for dataset_id '{self.dataset_id}' "
                 f"in either views or catalog API"
