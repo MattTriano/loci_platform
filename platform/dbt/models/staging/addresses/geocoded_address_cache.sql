@@ -97,7 +97,9 @@ deduped as (
         null::text as tiger_state,
         null::text as tiger_zip,
         now() as created_at,
-        null::timestamp as geocoded_at
+        null::timestamp as geocoded_at,
+        null::timestamp as geocode_attempted_at,
+        null::text as geocode_fail_reason
     from unioned
     order by
         {{ address_hash(full_address='full_address') }},
