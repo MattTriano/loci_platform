@@ -585,9 +585,10 @@ class PostgresEngine:
         self,
         sql: str,
         params: dict[str, Any] | tuple | None = None,
-    ) -> pd.DataFrame:
+        as_dicts: bool = False,
+    ) -> pd.DataFrame | list[dict]:
         """
-        Execute a SELECT and return results as a DataFrame.
+        Execute a SELECT and return results as a DataFrame or list of dicts.
 
         If the result set includes a PostGIS geometry column, returns a
         GeoDataFrame with the geometry parsed and CRS set from the table's
@@ -596,13 +597,19 @@ class PostgresEngine:
         queries is negligible after the first call per table.
 
         Args:
-            sql:    SQL string. Use %(name)s for named params or %s for positional.
-            params: Dict for named params, tuple for positional, or None.
+            sql:      SQL string. Use %(name)s for named params or %s for positional.
+            params:   Dict for named params, tuple for positional, or None.
+            as_dicts: If True, return a list of dicts instead of a DataFrame.
         """
         with self.cursor() as cur:
             cur.execute(sql, params)
             columns = [desc[0] for desc in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=columns)
+            rows = cur.fetchall()
+
+        if as_dicts:
+            return [dict(zip(columns, row)) for row in rows]
+
+        df = pd.DataFrame(rows, columns=columns)
 
         if df.empty:
             return df

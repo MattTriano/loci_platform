@@ -21,7 +21,7 @@ def dbt_build_dag():
                 "--project-dir",
                 "/opt/airflow/dbt",
                 "--select",
-                "+stg__bike_involved_crashes+",
+                "+chicago_bike_theft_hotspots",
             ],
             capture_output=True,
             text=True,

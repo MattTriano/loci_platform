@@ -440,6 +440,15 @@ CTA_BUS_ROUTES_SPEC = SocrataDatasetSpec(
     full_update_mode="api",
 )
 
+CHICAGO_STREET_CENTER_LINES_SPEC = SocrataDatasetSpec(
+    name="chicago_street_center_lines",
+    dataset_id="pr57-gg9e",
+    target_table="chicago_street_center_lines",
+    target_schema="raw_data",
+    entity_key=["objectid"],
+    full_update_mode="api",
+)
+
 CTA_STATIONS_SPEC = SocrataDatasetSpec(
     name="cta_stations",
     dataset_id="3tzw-cg4m",
