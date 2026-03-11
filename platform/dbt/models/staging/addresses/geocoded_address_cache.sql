@@ -10,6 +10,7 @@
     materialized='incremental',
     unique_key='address_hash',
     incremental_strategy='append',
+    skip_schema_prefix=true,
     pre_hook=[
       "{% if flags.FULL_REFRESH %}{{ exceptions.raise_compiler_error('geocoding_cache cannot be full-refreshed. Drop it manually if you really mean it.') }}{% endif %}"
     ],
