@@ -184,36 +184,6 @@ class GeoJsonExporter:
 
         return sql
 
-    # def _row_to_feature(self, row: dict[str, Any]) -> dict | None:
-    #     """Convert a query result row to a GeoJSON Feature dict.
-
-    #     Returns None if coordinates are missing.
-    #     """
-    #     lat = row.pop("__lat", None)
-    #     lng = row.pop("__lng", None)
-
-    #     if lat is None or lng is None:
-    #         return None
-
-    #     # Convert non-serializable types to strings
-    #     properties = {}
-    #     for k, v in row.items():
-    #         if v is None:
-    #             properties[k] = None
-    #         elif isinstance(v, (str, int, float, bool)):
-    #             properties[k] = v
-    #         else:
-    #             properties[k] = str(v)
-
-    #     return {
-    #         "type": "Feature",
-    #         "geometry": {
-    #             "type": "Point",
-    #             "coordinates": [float(lng), float(lat)],
-    #         },
-    #         "properties": properties,
-    #     }
-
     def _row_to_feature(self, row: dict[str, Any]) -> dict | None:
         """Convert a query result row to a GeoJSON Feature dict.
 
