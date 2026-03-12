@@ -357,6 +357,7 @@ CHICAGO_BIKE_RACKS_SPEC = SocrataDatasetSpec(
     dataset_id="hgdw-64h3",
     target_table="chicago_bike_racks",
     target_schema="raw_data",
+    entity_key=["socrata_id"],
     full_update_mode="api",
 )
 
@@ -589,6 +590,15 @@ CHICAGO_RED_LIGHT_CAMERA_VIOLATIONS_SPEC = SocrataDatasetSpec(
     target_table="chicago_red_light_camera_violations",
     target_schema="raw_data",
     entity_key=None,
+    full_update_mode="api",
+)
+
+OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_SPEC = SocrataDatasetSpec(
+    name="open_air_chicago_individual_measurements",
+    dataset_id="xfya-dxtq",
+    target_table="open_air_chicago_individual_measurements",
+    target_schema="raw_data",
+    entity_key=["record_id"],
     full_update_mode="api",
 )
 

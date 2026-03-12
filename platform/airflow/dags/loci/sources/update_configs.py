@@ -419,6 +419,14 @@ CHICAGO_RED_LIGHT_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_UC = DatasetUpdateConfig(
+    spec=specs.OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_SPEC,
+    update_cron="5 2 * * 2,5",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+    full_update_mode="api",
+)
+
 CHICAGO_311_SERVICE_REQUESTS = DatasetUpdateConfig(
     spec=specs.CHICAGO_311_SERVICE_REQUESTS_SPEC,
     update_cron="30 4 * * 1,4",

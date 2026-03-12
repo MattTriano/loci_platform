@@ -158,6 +158,7 @@ class StagedIngest:
         conflict_action: str = "NOTHING",
         entity_key: list[str] | None = None,
         metadata_columns: set[str] | None = None,
+        hash_exclude_columns: set[str] | None = None,
     ) -> None:
         self._engine = engine
         self._target_table = target_table
@@ -174,6 +175,7 @@ class StagedIngest:
         # SCD2 config
         self._entity_key = entity_key
         self._metadata_columns = metadata_columns
+        self._hash_exclude_columns = hash_exclude_columns or metadata_columns
 
         if entity_key and conflict_column:
             raise ValueError(
@@ -382,7 +384,7 @@ class StagedIngest:
 
     def _get_hash_columns(self) -> list[str]:
         """Determine which columns to include in the record hash."""
-        exclude = set(self._entity_key) | set(self._metadata_columns)
+        exclude = set(self._entity_key) | set(self._hash_exclude_columns or set())
         hash_cols = [c for c in self._columns if c not in exclude]
         if not hash_cols:
             raise ValueError(
@@ -552,6 +554,7 @@ class PostgresEngine:
         conflict_action: str = "NOTHING",
         entity_key: list[str] | None = None,
         metadata_columns: set[str] | None = None,
+        hash_exclude_columns: set[str] | None = None,
     ) -> StagedIngest:
         """
         Return a StagedIngest context manager that accumulates batches
@@ -578,6 +581,7 @@ class PostgresEngine:
             conflict_action=conflict_action,
             entity_key=entity_key,
             metadata_columns=metadata_columns,
+            hash_exclude_columns=hash_exclude_columns,
         )
 
     @pg_retry()
