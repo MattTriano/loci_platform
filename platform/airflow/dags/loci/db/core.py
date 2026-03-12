@@ -608,70 +608,97 @@ class PostgresEngine:
         with self.cursor() as cur:
             cur.execute(sql, params)
             columns = [desc[0] for desc in cur.description]
+            type_oids = [desc[1] for desc in cur.description]
             rows = cur.fetchall()
 
         if as_dicts:
-            return [dict(zip(columns, row)) for row in rows]
+            return [dict(zip(columns, row, strict=True)) for row in rows]
 
         df = pd.DataFrame(rows, columns=columns)
 
         if df.empty:
             return df
 
-        geom_col, srid = self._detect_geometry_in_result(columns)
+        geom_col, srid = self._detect_geometry_by_oid(columns, type_oids)
         if geom_col is None:
             return df
 
         return self._to_geodataframe(df, geom_col, srid)
 
-    def _detect_geometry_in_result(self, columns: list[str]) -> tuple[str | None, int]:
-        """
-        Check whether any column in the result set is a known geometry column.
-        Checks the cache first, then falls back to querying the PostGIS
-        geometry_columns catalog directly.
-
-        Returns (geometry_column_name, srid) or (None, 0).
-        """
-        column_set = set(columns)
-
-        # Check cache first
-        for (_schema, _table), info in self._geometry_info_cache.items():
-            for col_name, srid in info.items():
-                if col_name in column_set:
-                    return col_name, srid
-
-        # Fall back to geometry_columns catalog
-        if not column_set:
+    def _detect_geometry_by_oid(
+        self, columns: list[str], type_oids: list[int]
+    ) -> tuple[str | None, int]:
+        """Detect geometry columns by checking the Postgres type OID, not the column name."""
+        geom_oid = self._get_geometry_type_oid()
+        if geom_oid is None:
             return None, 0
 
-        try:
-            placeholders = ", ".join(["%s"] * len(column_set))
-            with self.cursor() as cur:
-                cur.execute(
-                    f"select f_geometry_column, srid "
-                    f"from geometry_columns "
-                    f"where f_geometry_column in ({placeholders}) "
-                    f"limit 1",
-                    tuple(column_set),
-                )
-                row = cur.fetchone()
-                if row:
-                    return row[0], row[1]
-        except Exception:
-            pass
+        for col_name, oid in zip(columns, type_oids, strict=True):
+            if oid == geom_oid:
+                # Check SRID cache first
+                for (_schema, _table), info in self._geometry_info_cache.items():
+                    if col_name in info:
+                        return col_name, info[col_name]
+
+                # Fall back to geometry_columns catalog
+                try:
+                    with self.cursor() as cur:
+                        cur.execute(
+                            "select srid from geometry_columns "
+                            "where f_geometry_column = %s limit 1",
+                            (col_name,),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            return col_name, row[0]
+                except Exception:
+                    pass
+
+                return col_name, 0
 
         return None, 0
 
+    def _get_geometry_type_oid(self) -> int | None:
+        """Look up the OID for the PostGIS geometry type. Cached after first call."""
+        if not hasattr(self, "_geometry_oid"):
+            try:
+                with self.cursor() as cur:
+                    cur.execute("select 'geometry'::regtype::oid")
+                    self._geometry_oid = cur.fetchone()[0]
+            except Exception:
+                self._geometry_oid = None
+        return self._geometry_oid
+
     @staticmethod
     def _to_geodataframe(df: pd.DataFrame, geom_col: str, srid: int) -> gpd.GeoDataFrame:
-        """Convert a DataFrame with a WKB hex geometry column to a GeoDataFrame."""
-        from shapely import wkb
+        """Convert a DataFrame with a WKB/EWKB hex geometry column to a GeoDataFrame."""
+        import shapely
 
-        df[geom_col] = df[geom_col].apply(
-            lambda v: wkb.loads(v, hex=True) if v is not None else None
-        )
-        crs = f"EPSG:{srid}" if srid else None
-        return gpd.GeoDataFrame(df, geometry=geom_col, crs=crs)
+        try:
+
+            def _parse_geom(v):
+                if v is None:
+                    return None
+                try:
+                    return shapely.from_wkb(v)
+                except Exception:
+                    # EWKB with embedded SRID: strip the SRID flag and 4 SRID bytes
+                    # Byte 4 (hex chars 6-7) has flag 0x20 set; remove it and the
+                    # 4-byte SRID that follows (hex chars 8-15)
+                    byte4 = int(v[6:8], 16)
+                    if byte4 & 0x20:
+                        byte4 &= ~0x20
+                        v = v[:6] + f"{byte4:02x}" + v[16:]
+                    return shapely.from_wkb(v)
+
+            df[geom_col] = df[geom_col].apply(_parse_geom)
+            crs = f"EPSG:{srid}" if srid else None
+            return gpd.GeoDataFrame(df, geometry=geom_col, crs=crs)
+        except Exception as e:
+            print(f"Encountered exception {e}")
+            print(f"geom_col:  {geom_col}")
+            print(f"srid:      {srid}")
+            raise
 
     @pg_retry()
     def execute(
@@ -725,7 +752,7 @@ class PostgresEngine:
                     columns = [desc[0] for desc in cursor.description]
 
                 if as_dicts:
-                    yield [dict(zip(columns, row)) for row in rows]
+                    yield [dict(zip(columns, row, strict=True)) for row in rows]
                 else:
                     yield pd.DataFrame(rows, columns=columns)
         except Exception as e:
