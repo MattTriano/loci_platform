@@ -45,6 +45,8 @@ class SocrataCollector:
         "socrata_updated_at",
         "socrata_created_at",
         "socrata_version",
+    }
+    PIPELINE_COLUMNS = {
         "ingested_at",
         "record_hash",
         "valid_from",
@@ -213,7 +215,8 @@ class SocrataCollector:
                     target_table=target_table,
                     target_schema=target_schema,
                     entity_key=entity_key,
-                    metadata_columns=self.METADATA_COLUMNS,
+                    metadata_columns=self.PIPELINE_COLUMNS,
+                    hash_exclude_columns=self.METADATA_COLUMNS,
                 ) as stager:
                     for batch in batches:
                         batch = self._rename_file_columns(batch, dataset_id)
@@ -368,7 +371,7 @@ class SocrataCollector:
         table_columns = self._get_table_columns(target_table, target_schema)
 
         # Ignore metadata columns — they're added by our ingestion code, not the source
-        data_columns_in_table = table_columns - self.METADATA_COLUMNS
+        data_columns_in_table = table_columns - self.METADATA_COLUMNS - self.PIPELINE_COLUMNS
         source_columns = source_columns - self.METADATA_COLUMNS
 
         new_in_source = source_columns - data_columns_in_table
@@ -511,7 +514,8 @@ class SocrataCollector:
             with self.engine.staged_ingest(
                 target_table=target_table,
                 target_schema=target_schema,
-                metadata_columns=self.METADATA_COLUMNS,
+                metadata_columns=self.PIPELINE_COLUMNS,
+                hash_exclude_columns=self.METADATA_COLUMNS,
                 **staged_ingest_kwargs,
             ) as stager:
                 for page_num, batch in enumerate(

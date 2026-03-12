@@ -21,7 +21,8 @@ def sample_creds():
 @pytest.fixture
 def mock_cursor():
     cur = MagicMock()
-    cur.description = [("col_a",), ("col_b",)]
+    cur.description = [("col_a", 23, None, None, None, None, None),
+                       ("col_b", 25, None, None, None, None, None)]
     cur.fetchone.return_value = None
     cur.rowcount = 2
     cur.close.return_value = None
@@ -204,7 +205,8 @@ class TestPostgresEngineParameterizedQueries:
         assert len(matching) == 1
 
     def test_query_returns_dataframe(self, engine, mock_cursor):
-        mock_cursor.description = [("id",), ("name",)]
+        mock_cursor.description = [("id", 23, None, None, None, None, None),
+                                   ("name", 25, None, None, None, None, None)]
         mock_cursor.fetchall.return_value = [(1, "alice"), (2, "bob")]
         df = engine.query("SELECT id, name FROM users WHERE active = %s", params=(True,))
         assert isinstance(df, pd.DataFrame)
@@ -470,3 +472,94 @@ class TestPostgresEngineConnectionManagement:
     def test_db_name_override(self, sample_creds):
         eng = PostgresEngine(sample_creds, db_name="staging")
         assert eng.db_name == "staging"
+
+class TestGeometryDetectionByOid:
+    """Regression tests for OID-based geometry detection.
+
+    The original name-based detection (`_detect_geometry_in_result`) matched
+    column names against the PostGIS `geometry_columns` catalog. This caused
+    false positives when a non-geometry column (e.g. a text column called
+    "location") shared a name with a geometry column on a different table.
+
+    The OID-based approach checks `cursor.description[i][1]` (the Postgres
+    type OID) instead, which is unambiguous.
+    """
+
+    GEOMETRY_OID = 16384  # typical PostGIS geometry type OID
+
+    def _make_description(self, columns: list[tuple[str, int]]):
+        """Build a psycopg2-style description from (name, oid) pairs."""
+        return [(name, oid, None, None, None, None, None) for name, oid in columns]
+
+    def test_text_column_named_location_not_detected_as_geometry(self, engine, mock_cursor):
+        """Regression: a text column called 'location' must not be treated as geometry."""
+        engine._geometry_oid = self.GEOMETRY_OID
+
+        columns = ["id", "location", "description"]
+        type_oids = [23, 25, 25]  # int4, text, text
+
+        geom_col, srid = engine._detect_geometry_by_oid(columns, type_oids)
+
+        assert geom_col is None
+        assert srid == 0
+
+    def test_actual_geometry_column_detected(self, engine, mock_cursor):
+        """A column whose OID matches the geometry type should be detected."""
+        engine._geometry_oid = self.GEOMETRY_OID
+
+        columns = ["id", "geom", "name"]
+        type_oids = [23, self.GEOMETRY_OID, 25]
+
+        geom_col, srid = engine._detect_geometry_by_oid(columns, type_oids)
+
+        assert geom_col == "geom"
+
+    def test_geometry_column_uses_cached_srid(self, engine, mock_cursor):
+        """When the geometry column appears in the SRID cache, use the cached SRID."""
+        engine._geometry_oid = self.GEOMETRY_OID
+        engine._geometry_info_cache[("public", "parcels")] = {"geom": 4326}
+
+        columns = ["id", "geom"]
+        type_oids = [23, self.GEOMETRY_OID]
+
+        geom_col, srid = engine._detect_geometry_by_oid(columns, type_oids)
+
+        assert geom_col == "geom"
+        assert srid == 4326
+
+    def test_geometry_column_defaults_to_srid_zero_when_not_cached(self, engine, mock_cursor):
+        """Without a cache entry, SRID falls back to 0."""
+        engine._geometry_oid = self.GEOMETRY_OID
+        engine._geometry_info_cache.clear()
+
+        columns = ["id", "the_geom"]
+        type_oids = [23, self.GEOMETRY_OID]
+
+        geom_col, srid = engine._detect_geometry_by_oid(columns, type_oids)
+
+        assert geom_col == "the_geom"
+        assert srid == 0
+
+    def test_no_geometry_columns_returns_none(self, engine, mock_cursor):
+        """A result set with no geometry columns returns (None, 0)."""
+        engine._geometry_oid = self.GEOMETRY_OID
+
+        columns = ["id", "name", "value"]
+        type_oids = [23, 25, 23]
+
+        geom_col, srid = engine._detect_geometry_by_oid(columns, type_oids)
+
+        assert geom_col is None
+        assert srid == 0
+
+    def test_postgis_not_installed_returns_none(self, engine, mock_cursor):
+        """If the geometry OID lookup failed (no PostGIS), detection is skipped."""
+        engine._geometry_oid = None
+
+        columns = ["id", "geom"]
+        type_oids = [23, 99999]
+
+        geom_col, srid = engine._detect_geometry_by_oid(columns, type_oids)
+
+        assert geom_col is None
+        assert srid == 0

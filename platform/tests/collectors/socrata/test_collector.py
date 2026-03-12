@@ -299,6 +299,56 @@ class TestIncrementalUpdate:
         assert "row99" in where
 
 
+class TestSystemFieldsIngested:
+    """
+    Regression: Socrata system fields (socrata_id, socrata_updated_at, etc.)
+    must be written to the staging table with their values intact, not dropped
+    or nulled during ingestion.
+    """
+
+    def test_system_field_values_preserved_in_staged_batches(self, collector, mock_engine):
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        stub_table_columns(
+            mock_engine,
+            [
+                "id",
+                "val",
+                "socrata_id",
+                "socrata_updated_at",
+                "socrata_created_at",
+                "socrata_version",
+                "ingested_at",
+            ],
+        )
+
+        batch = make_batch(
+            {
+                ":id": "row-abc",
+                ":updated_at": "2024-06-15T12:00:00",
+                ":created_at": "2024-01-01T00:00:00",
+                ":version": "42",
+                "id": "1",
+                "val": "x",
+            },
+        )
+        attach_mock_client(collector, [batch])
+
+        config = IncrementalConfig(
+            incremental_column=":updated_at",
+            entity_key=["id"],
+        )
+        collector.incremental_update("abcd-1234", "test", "raw_data", config)
+
+        stager = mock_engine._stagers[0]
+        assert len(stager.batches) == 1
+        row = stager.batches[0][0]
+
+        assert row["socrata_id"] == "row-abc"
+        assert row["socrata_updated_at"] == "2024-06-15T12:00:00"
+        assert row["socrata_created_at"] == "2024-01-01T00:00:00"
+        assert row["socrata_version"] == "42"
+
+
 # ---------------------------------------------------------------------------
 # SocrataCollector.full_refresh_via_api tests
 # ---------------------------------------------------------------------------

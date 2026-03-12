@@ -15,6 +15,7 @@ sources:
       - name: chicago_311_service_requests
       - name: chicago_additional_dwelling_unit_preapproval_applications
       - name: chicago_arrests
+      - name: chicago_bike_racks
       - name: chicago_boundaries_zip_codes
       - name: chicago_building_permits
       - name: chicago_business_licenses
@@ -45,3 +46,6 @@ sources:
       - name: cook_county_single_and_multi_family_improvement_characteristics
       - name: cta_ridership_daily_boarding_totals
       - name: open_air_chicago_individual_measurements
+      - name: osm_nodes
+      - name: osm_relations
+      - name: osm_ways
