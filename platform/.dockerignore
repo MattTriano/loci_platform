@@ -1,2 +1,5 @@
 raw_data/
-__pycache__
+airflow/logs
+**/__pycache__
+**/.ruff_cache
+.git
