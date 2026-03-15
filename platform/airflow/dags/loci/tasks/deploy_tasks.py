@@ -41,41 +41,6 @@ def _get_content_type(path: Path) -> str:
     return CONTENT_TYPES.get(path.suffix, "application/octet-stream")
 
 
-# def _sync_to_s3(local_dir: str, bucket: str, logger: Logger) -> int:
-#     """Upload all files from local_dir to the S3 bucket.
-
-#     Uploads files to matching S3 keys, preserving directory structure
-#     relative to local_dir. For example:
-#         /opt/airflow/exports/bike-map/index.html      → index.html
-#         /opt/airflow/exports/bike-map/data/crashes.geojson → data/crashes.geojson
-
-#     Returns the number of files uploaded.
-#     """
-#     s3 = boto3.client("s3")
-#     local_path = Path(local_dir)
-#     count = 0
-
-#     for file_path in sorted(local_path.rglob("*")):
-#         if not file_path.is_file():
-#             continue
-#         if file_path.suffix not in CONTENT_TYPES:
-#             continue
-
-#         key = str(file_path.relative_to(local_path))
-#         content_type = _get_content_type(file_path)
-
-#         logger.info("Uploading %s → s3://%s/%s (%s)", file_path, bucket, key, content_type)
-#         s3.upload_file(
-#             str(file_path),
-#             bucket,
-#             key,
-#             ExtraArgs={"ContentType": content_type},
-#         )
-#         count += 1
-
-#     return count
-
-
 def _sync_to_s3(local_dirs: list[str], bucket: str, logger: Logger) -> int:
     """Upload files from multiple local directories to the S3 bucket.
 
@@ -134,24 +99,6 @@ def _invalidate_cloudfront(distribution_id: str, logger: Logger) -> str:
     invalidation_id = resp["Invalidation"]["Id"]
     logger.info("Created CloudFront invalidation %s", invalidation_id)
     return invalidation_id
-
-
-# @task
-# def deploy_bike_map(task_logger: Logger) -> dict:
-#     """Sync bike map files to S3 and invalidate the CloudFront cache."""
-#     bucket = os.environ["BIKE_MAP_S3_BUCKET"]
-#     distribution_id = os.environ["BIKE_MAP_CLOUDFRONT_DIST_ID"]
-
-#     file_count = _sync_to_s3(BIKE_MAP_DEPLOY_DIR, bucket, task_logger)
-#     task_logger.info("Uploaded %d files to s3://%s", file_count, bucket)
-
-#     invalidation_id = _invalidate_cloudfront(distribution_id, task_logger)
-
-#     return {
-#         "bucket": bucket,
-#         "files_uploaded": file_count,
-#         "invalidation_id": invalidation_id,
-#     }
 
 
 @task
