@@ -13,3 +13,8 @@ variable "environment" {
     error_message = "Invalid env value, accepted env values: [dev, staging, prod]"
   }
 }
+
+variable "base_domain" {
+  description = "Base domain name (e.g. missinglastmile.net)."
+  type        = string
+}
