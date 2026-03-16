@@ -411,6 +411,7 @@ CHICAGO_BIKE_ROUTES_SPEC = SocrataDatasetSpec(
     dataset_id="hvv9-38ut",
     target_table="chicago_bike_routes",
     target_schema="raw_data",
+    entity_key=["socrata_id"],
     full_update_mode="api",
 )
 
