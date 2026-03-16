@@ -166,6 +166,13 @@ bike_streets as (
         and valid_to is null
         -- Exclude ways already captured as dedicated cycleways
         and tags->>'highway' not in ('cycleway', 'path', 'footway')
+        -- Exclude roads already captured in roads_with_bike_infra
+        and not (
+            tags ? 'cycleway'
+            or tags ? 'cycleway:both'
+            or tags ? 'cycleway:right'
+            or tags ? 'cycleway:left'
+        )
 ),
 unified as (
     select
