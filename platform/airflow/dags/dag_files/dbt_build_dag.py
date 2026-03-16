@@ -21,7 +21,7 @@ def dbt_build_dag():
                 "--project-dir",
                 "/opt/airflow/dbt",
                 "--select",
-                "+chicago_bike_parking",
+                "+chicago_bike_routes",
             ],
             capture_output=True,
             text=True,
