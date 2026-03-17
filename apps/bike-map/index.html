@@ -108,6 +108,129 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ── Route panel ─────────────────────────────────────── */
+  #route-panel {
+    position: absolute;
+    top: 16px;
+    right: 60px;
+    z-index: 10;
+    background: rgba(18, 18, 20, 0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 16px 18px;
+    min-width: 240px;
+    max-width: 280px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  #route-panel h2 {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 12px;
+  }
+
+  .route-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+  }
+
+  .route-step-marker {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    color: #fff;
+  }
+
+  .route-step-marker.start { background: #3b82f6; }
+  .route-step-marker.end   { background: #8b5cf6; }
+
+  .route-step-text {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.3;
+  }
+
+  .route-step-text.set {
+    color: #e8e4df;
+    font-weight: 500;
+  }
+
+  .route-connector {
+    width: 24px;
+    display: flex;
+    justify-content: center;
+    padding: 2px 0;
+  }
+
+  .route-connector-line {
+    width: 2px;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .route-info {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: none;
+  }
+
+  .route-info.visible { display: block; }
+
+  .route-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 13px;
+  }
+
+  .route-info-key {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  .route-info-val {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .route-btn {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px 0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .route-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+
+  .route-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    text-align: center;
+    line-height: 1.4;
+  }
+
   /* ── Popup styling ───────────────────────────────────── */
   .maplibregl-popup-content {
     font-family: 'DM Sans', sans-serif;
@@ -211,6 +334,61 @@
   }
 
   .loading-bar.hidden { opacity: 0; pointer-events: none; }
+
+  /* ── Custom cursor when placing route points ─────────── */
+  .crosshair-cursor .maplibregl-canvas { cursor: crosshair !important; }
+
+  /* ── Route markers ───────────────────────────────────── */
+  .route-map-marker {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    cursor: grab;
+  }
+
+  .route-map-marker.start { background: #3b82f6; }
+  .route-map-marker.end   { background: #8b5cf6; }
+
+  /* ── GitHub link ─────────────────────────────────────── */
+  .github-link {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(18, 18, 20, 0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: rgba(255, 255, 255, 0.6);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    transition: color 0.2s, background 0.2s;
+  }
+
+  .github-link:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(18, 18, 20, 0.88);
+  }
+
+  .github-link svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
 </style>
 </head>
 <body>
@@ -221,12 +399,53 @@
   <h2>Layers</h2>
 </div>
 
+<div id="route-panel">
+  <h2>Route</h2>
+  <div class="route-step">
+    <div class="route-step-marker start">A</div>
+    <div class="route-step-text" id="route-start-label">Click map to set start</div>
+  </div>
+  <div class="route-connector"><div class="route-connector-line"></div></div>
+  <div class="route-step">
+    <div class="route-step-marker end">B</div>
+    <div class="route-step-text" id="route-end-label">Click map to set end</div>
+  </div>
+  <div class="route-info" id="route-info">
+    <div class="route-info-row">
+      <span class="route-info-key">Distance</span>
+      <span class="route-info-val" id="route-distance">—</span>
+    </div>
+    <div class="route-info-row">
+      <span class="route-info-key">Est. time</span>
+      <span class="route-info-val" id="route-time">—</span>
+    </div>
+  </div>
+  <button class="route-btn" id="route-clear-btn" style="display:none">Clear route</button>
+  <div class="route-hint" id="route-hint">Click anywhere on the map to place start and end points</div>
+</div>
+
+<a class="github-link" href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">
+  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+  Source
+</a>
+
 <div id="loading" class="loading-bar hidden">Loading…</div>
 
 <script>
+// ── Configuration ────────────────────────────────────────
+// Loaded from config.json at startup. Defaults used if fetch fails.
+const CONFIG = {
+  log_endpoint: '',
+  osrm_base_url: 'https://router.project-osrm.org',
+};
+
+// Load environment-specific config (config.json is deployed per-env)
+fetch('config.json')
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(cfg => { Object.assign(CONFIG, cfg); })
+  .catch(() => { /* Use defaults — logging disabled, public OSRM */ });
+
 // ── Layer configuration ──────────────────────────────────
-// Each layer defines how to load, style, cluster, and display popups.
-// To add a new layer, just add an entry here.
 const LAYERS = {
   crashes: {
     label: 'Bike Crashes',
@@ -295,11 +514,18 @@ const LAYERS = {
 };
 
 // ── State ────────────────────────────────────────────────
-const layerData = {};   // layerId -> GeoJSON FeatureCollection
-const layerCounts = {}; // layerId -> feature count
+const layerData = {};
+const layerCounts = {};
 let currentPopup = null;
-let popupFeatures = []; // [{cfg, props, coords}] for all overlapping features
-let popupIndex = 0;     // current index in popupFeatures
+let popupFeatures = [];
+let popupIndex = 0;
+
+// Route state
+let routeOrigin = null;      // [lng, lat]
+let routeDestination = null;  // [lng, lat]
+let routeData = null;         // OSRM response
+let originMarker = null;
+let destMarker = null;
 
 // ── Map ──────────────────────────────────────────────────
 const map = new maplibregl.Map({
@@ -318,7 +544,7 @@ map.addControl(new maplibregl.GeolocateControl({
   trackUserLocation: true,
 }), 'top-right');
 
-// ── Build control panel ──────────────────────────────────
+// ── Build layer control panel ────────────────────────────
 const controlsEl = document.getElementById('controls');
 
 for (const [id, cfg] of Object.entries(LAYERS)) {
@@ -340,12 +566,242 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
 
 // ── Map load ─────────────────────────────────────────────
 map.on('load', () => {
+  // Add empty route source + layers (populated later)
+  map.addSource('route', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  });
+
+  // Route casing (wider line behind for outline effect)
+  map.addLayer({
+    id: 'route-casing',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': 'rgba(0, 0, 0, 0.4)',
+      'line-width': 8,
+    },
+  });
+
+  // Route line
+  map.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': '#6366f1',
+      'line-width': 5,
+    },
+  });
+
+  // Load default layers
   for (const [id, cfg] of Object.entries(LAYERS)) {
     if (cfg.defaultVisible) {
       loadLayer(id);
     }
   }
+
+  // Enable crosshair cursor for route placement
+  map.getContainer().classList.add('crosshair-cursor');
 });
+
+// ── Route: click-to-place ────────────────────────────────
+map.on('click', (e) => {
+  // Don't place route points if click was on a cluster or point layer
+  const pointLayers = Object.keys(LAYERS)
+    .flatMap(id => [`${id}-clusters`, `${id}-points`])
+    .filter(lid => map.getLayer(lid));
+  const hitFeatures = map.queryRenderedFeatures(e.point, { layers: pointLayers });
+  if (hitFeatures.length > 0) return;
+
+  const lngLat = [e.lngLat.lng, e.lngLat.lat];
+
+  if (!routeOrigin) {
+    setOrigin(lngLat);
+  } else if (!routeDestination) {
+    setDestination(lngLat);
+    fetchRoute();
+  }
+  // If both are set, clicks are ignored until cleared
+});
+
+function setOrigin(lngLat) {
+  routeOrigin = lngLat;
+
+  if (originMarker) originMarker.remove();
+  const el = document.createElement('div');
+  el.className = 'route-map-marker start';
+  el.textContent = 'A';
+  originMarker = new maplibregl.Marker({ element: el, draggable: true })
+    .setLngLat(lngLat)
+    .addTo(map);
+
+  originMarker.on('dragend', () => {
+    const pos = originMarker.getLngLat();
+    routeOrigin = [pos.lng, pos.lat];
+    updateRouteLabel('start', routeOrigin);
+    if (routeDestination) fetchRoute();
+  });
+
+  updateRouteLabel('start', lngLat);
+  document.getElementById('route-hint').textContent = 'Now click to set your destination';
+}
+
+function setDestination(lngLat) {
+  routeDestination = lngLat;
+
+  if (destMarker) destMarker.remove();
+  const el = document.createElement('div');
+  el.className = 'route-map-marker end';
+  el.textContent = 'B';
+  destMarker = new maplibregl.Marker({ element: el, draggable: true })
+    .setLngLat(lngLat)
+    .addTo(map);
+
+  destMarker.on('dragend', () => {
+    const pos = destMarker.getLngLat();
+    routeDestination = [pos.lng, pos.lat];
+    updateRouteLabel('end', routeDestination);
+    if (routeOrigin) fetchRoute();
+  });
+
+  updateRouteLabel('end', lngLat);
+  document.getElementById('route-hint').style.display = 'none';
+  document.getElementById('route-clear-btn').style.display = 'block';
+
+  // Disable crosshair since both points are placed
+  map.getContainer().classList.remove('crosshair-cursor');
+}
+
+function updateRouteLabel(which, lngLat) {
+  const labelEl = document.getElementById(which === 'start' ? 'route-start-label' : 'route-end-label');
+  labelEl.textContent = `${lngLat[1].toFixed(4)}, ${lngLat[0].toFixed(4)}`;
+  labelEl.classList.add('set');
+}
+
+// ── Route: fetch from OSRM ──────────────────────────────
+async function fetchRoute() {
+  const loadingEl = document.getElementById('loading');
+  loadingEl.textContent = 'Finding route…';
+  loadingEl.classList.remove('hidden');
+
+  const coords = `${routeOrigin[0]},${routeOrigin[1]};${routeDestination[0]},${routeDestination[1]}`;
+  const url = `${CONFIG.osrm_base_url}/route/v1/bike/${coords}?overview=full&geometries=geojson&steps=true`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`OSRM returned ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.code !== 'Ok' || !data.routes || !data.routes.length) {
+      throw new Error(data.message || 'No route found');
+    }
+
+    routeData = data;
+    const route = data.routes[0];
+
+    // Draw route on map
+    map.getSource('route').setData({
+      type: 'Feature',
+      geometry: route.geometry,
+    });
+
+    // Fit map to route bounds
+    const coords = route.geometry.coordinates;
+    const bounds = coords.reduce(
+      (b, c) => b.extend(c),
+      new maplibregl.LngLatBounds(coords[0], coords[0])
+    );
+    map.fitBounds(bounds, { padding: 80 });
+
+    // Show route info
+    const distKm = route.distance / 1000;
+    const distMi = distKm * 0.621371;
+    const durMin = Math.round(route.duration / 60);
+
+    document.getElementById('route-distance').textContent = `${distMi.toFixed(1)} mi (${distKm.toFixed(1)} km)`;
+    document.getElementById('route-time').textContent = `${durMin} min`;
+    document.getElementById('route-info').classList.add('visible');
+
+    // Log the route request
+    logRouteRequest(route);
+
+  } catch (err) {
+    console.error('Routing failed:', err);
+    loadingEl.textContent = `Routing failed: ${err.message}`;
+    setTimeout(() => loadingEl.classList.add('hidden'), 3000);
+    return;
+  }
+
+  loadingEl.classList.add('hidden');
+}
+
+// ── Route: clear ─────────────────────────────────────────
+document.getElementById('route-clear-btn').addEventListener('click', clearRoute);
+
+function clearRoute() {
+  routeOrigin = null;
+  routeDestination = null;
+  routeData = null;
+
+  if (originMarker) { originMarker.remove(); originMarker = null; }
+  if (destMarker) { destMarker.remove(); destMarker = null; }
+
+  // Clear route line
+  if (map.getSource('route')) {
+    map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
+  }
+
+  // Reset panel
+  const startLabel = document.getElementById('route-start-label');
+  const endLabel = document.getElementById('route-end-label');
+  startLabel.textContent = 'Click map to set start';
+  startLabel.classList.remove('set');
+  endLabel.textContent = 'Click map to set end';
+  endLabel.classList.remove('set');
+  document.getElementById('route-info').classList.remove('visible');
+  document.getElementById('route-clear-btn').style.display = 'none';
+  document.getElementById('route-hint').style.display = '';
+  document.getElementById('route-hint').textContent = 'Click anywhere on the map to place start and end points';
+
+  // Re-enable crosshair
+  map.getContainer().classList.add('crosshair-cursor');
+}
+
+// ── Route: log to API Gateway ────────────────────────────
+function logRouteRequest(route) {
+  if (!CONFIG.log_endpoint) return;
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    origin: { lng: routeOrigin[0], lat: routeOrigin[1] },
+    destination: { lng: routeDestination[0], lat: routeDestination[1] },
+    distance_m: route.distance,
+    duration_s: route.duration,
+    route_geometry: route.geometry,
+    user_agent: navigator.userAgent,
+    screen: { width: screen.width, height: screen.height },
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    referrer: document.referrer || null,
+    // Visible layers at time of routing
+    active_layers: Object.keys(LAYERS).filter(id => {
+      const cb = document.querySelector(`input[data-layer="${id}"]`);
+      return cb && cb.checked;
+    }),
+  };
+
+  // Fire and forget — don't block UX on logging
+  fetch(CONFIG.log_endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {
+    // Silently ignore logging failures
+  });
+}
 
 // ── Layer loading ────────────────────────────────────────
 async function loadLayer(id) {
@@ -404,10 +860,10 @@ function addLayerToMap(id) {
       'circle-opacity': 0.75,
       'circle-radius': [
         'step', ['get', 'point_count'],
-        14,   // < 10
-        10, 18,   // 10–99
-        100, 24,  // 100–999
-        1000, 32, // 1000+
+        14,
+        10, 18,
+        100, 24,
+        1000, 32,
       ],
     },
   });
@@ -452,9 +908,8 @@ function addLayerToMap(id) {
     });
   });
 
-  // Click → popup on individual point (with pagination for overlapping features)
+  // Click → popup on individual point
   map.on('click', `${id}-points`, (e) => {
-    // Query ALL visible point layers at this pixel, not just the current layer
     const allPointLayers = Object.keys(LAYERS)
       .map(lid => `${lid}-points`)
       .filter(lid => map.getLayer(lid) && map.getLayoutProperty(lid, 'visibility') !== 'none');
@@ -462,9 +917,7 @@ function addLayerToMap(id) {
     const allFeatures = map.queryRenderedFeatures(e.point, { layers: allPointLayers });
     if (!allFeatures.length) return;
 
-    // Build the feature list with their layer configs
     popupFeatures = allFeatures.map(feat => {
-      // Figure out which layer config this feature belongs to
       const layerId = feat.layer.id.replace('-points', '');
       const featCfg = LAYERS[layerId];
       const coords = feat.geometry.coordinates.slice();
@@ -496,7 +949,6 @@ function showPopupAtIndex(coords) {
     .setHTML(html)
     .addTo(map);
 
-  // Wire up prev/next buttons after the popup DOM is inserted
   const prevBtn = document.getElementById('popup-prev');
   const nextBtn = document.getElementById('popup-next');
   if (prevBtn) prevBtn.addEventListener('click', (evt) => {
