@@ -1,6 +1,7 @@
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.osm.spec import OsmDatasetSpec
+from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 
@@ -337,6 +338,22 @@ OSM_RELATIONS_SPEC = OsmDatasetSpec(
     element_type="relations",
     target_table="osm_relations",
     target_schema="raw_data",
+)
+
+#######################################################################################
+#    OSMnx                                                                            #
+#######################################################################################
+
+OSMNX_CHICAGO_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
+    name="chicagoland_bike_network",
+    target_table_nodes="osmnx_bike_network_nodes",
+    target_table_edges="osmnx_bike_network_edges",
+    target_schema="raw_data",
+    bbox=(-87.97, 41.62, -87.5, 42.05),
+    network_type="bike",
+    entity_key_nodes=["osmid"],
+    entity_key_edges=["u", "v", "key"],
+    source="osmnx",
 )
 
 #######################################################################################

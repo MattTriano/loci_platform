@@ -30,6 +30,7 @@ from pathlib import Path
 import requests
 from loci.collectors.tiger.metadata import TigerMetadata
 from loci.collectors.tiger.spec import _CANDIDATE_ID_COLUMNS, TigerDatasetSpec
+from loci.tracking.ingestion_tracker import IngestionTracker
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
@@ -79,7 +80,7 @@ class TigerCollector:
 
     def __init__(self, engine, tracker=None):
         self.engine = engine
-        self.tracker = tracker
+        self.tracker = tracker or IngestionTracker(engine=self.engine)
         self._metadata = TigerMetadata()
         self._session = requests.Session()
         self.logger = logging.getLogger("tiger_collector")

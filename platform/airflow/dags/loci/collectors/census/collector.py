@@ -31,6 +31,7 @@ import logging
 
 from loci.collectors.census.client import CensusClient
 from loci.collectors.census.spec import GEOGRAPHY_CONFIG, CensusDatasetSpec
+from loci.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class CensusCollector:
     def __init__(self, client, engine, tracker=None):
         self.client = client
         self.engine = engine
-        self.tracker = tracker
+        self.tracker = tracker or IngestionTracker(engine=self.engine)
         self.logger = logging.getLogger("census_collector")
 
     def collect(self, spec: CensusDatasetSpec, force: bool = False) -> dict:

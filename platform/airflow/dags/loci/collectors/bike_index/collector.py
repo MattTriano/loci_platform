@@ -43,6 +43,7 @@ import logging
 
 from loci.collectors.bike_index.client import BikeIndexSearchParams
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
+from loci.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class BikeIndexCollector:
     def __init__(self, client, engine, tracker=None):
         self.client = client
         self.engine = engine
-        self.tracker = tracker
+        self.tracker = tracker or IngestionTracker(engine=self.engine)
 
     # ------------------------------------------------------------------
     # High water mark

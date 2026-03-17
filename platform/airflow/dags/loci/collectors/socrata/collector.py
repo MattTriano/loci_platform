@@ -61,7 +61,7 @@ class SocrataCollector:
         page_size: int = 25000,
     ) -> None:
         self.engine = engine
-        self.tracker = tracker or IngestionTracker(engine=engine)
+        self.tracker = tracker or IngestionTracker(engine=self.engine)
         self.app_token = app_token
         self.page_size = page_size
         self.logger = logging.getLogger("socrata_collector")
