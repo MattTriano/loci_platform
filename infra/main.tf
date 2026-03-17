@@ -27,3 +27,17 @@ module "bike_map" {
   zone_id     = module.dns_zone.zone_id
   zone_name   = module.dns_zone.zone_name
 }
+
+module "route_logger" {
+  source = "./modules/route-logger"
+
+  basename           = var.basename
+  environment        = var.environment
+  allowed_origin     = "bike-map.${var.environment}.${var.base_domain}"
+  log_retention_days = 730  # default; adjust as needed
+}
+
+output "route_log_endpoint" {
+  description = "Set this as LOG_ENDPOINT in index.html"
+  value       = module.route_logger.log_endpoint
+}
