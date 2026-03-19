@@ -22,6 +22,23 @@ resource "aws_s3_bucket_public_access_block" "site" {
 
 
 # -----------------------------------------------------------------------------
+# S3 — routing graph bucket (Parquet export for Lambda)
+# -----------------------------------------------------------------------------
+
+resource "aws_s3_bucket" "routing_graph" {
+  bucket = "${local.resource_name}-routing-graph"
+}
+
+resource "aws_s3_bucket_public_access_block" "routing_graph" {
+  bucket                  = aws_s3_bucket.routing_graph.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+
+# -----------------------------------------------------------------------------
 # CloudFront
 # -----------------------------------------------------------------------------
 
@@ -163,10 +180,16 @@ resource "aws_iam_user_policy" "deploy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "S3Sync"
+        Sid      = "S3SyncSite"
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
         Resource = [aws_s3_bucket.site.arn, "${aws_s3_bucket.site.arn}/*"]
+      },
+      {
+        Sid      = "S3SyncRoutingGraph"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.routing_graph.arn, "${aws_s3_bucket.routing_graph.arn}/*"]
       },
       {
         Sid      = "CloudFrontInvalidate"

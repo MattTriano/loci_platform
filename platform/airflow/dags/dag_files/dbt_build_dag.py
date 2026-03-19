@@ -3,6 +3,7 @@ from datetime import datetime
 
 from airflow.sdk import dag, task
 
+
 @task
 def alt_build() -> str:
     import subprocess
@@ -14,28 +15,25 @@ def alt_build() -> str:
             "--project-dir",
             "/opt/airflow/dbt",
             "--select",
-            "bike_safety_weighted_edges",
-            "--threads",
-            "1"
+            "+bike_safety_routing_costs",
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
     )
-    
+
     output_lines = []
     for line in process.stdout:
         print(line, end="")  # prints to Airflow logs immediately
         output_lines.append(line)
-    
+
     returncode = process.wait()
     if returncode != 0:
-        raise Exception(
-            f"dbt build failed with exit code {returncode}\n{''.join(output_lines)}"
-        )
+        raise Exception(f"dbt build failed with exit code {returncode}\n{''.join(output_lines)}")
 
     return "".join(output_lines)
+
 
 @task
 def dbt_build() -> str:
@@ -63,6 +61,7 @@ def dbt_build() -> str:
         )
 
     return result.stdout
+
 
 @dag(
     dag_id="dbt_build",

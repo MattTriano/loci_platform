@@ -7,14 +7,17 @@
 --   those via small-table-driven spatial joins (fast index probes), then
 --   union in the remaining ~524k edges with default values. This avoids
 --   ever scanning 663k edges as the driving table in a spatial join.
+-- post_hook=[
+    --     "RESET work_mem",
+    --     "CREATE INDEX IF NOT EXISTS ix_{{ this.name }}_uvk ON {{ this }} (u, v, key)"
+    -- ]
 
 {{ config(
     materialized='table',
     pre_hook=["SET work_mem = '256MB'"],
     post_hook=[
-        "RESET work_mem",
-        "CREATE INDEX IF NOT EXISTS ix_{{ this.name }}_geom ON {{ this }} USING GIST (geom)",
-        "CREATE INDEX IF NOT EXISTS ix_{{ this.name }}_uvk ON {{ this }} (u, v, key)"
+        "CREATE INDEX ON {{ this }} (u, v, key)",
+        "RESET work_mem"
     ]
 ) }}
 

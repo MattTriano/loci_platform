@@ -1,4 +1,4 @@
--- bike_commuter__crash_hotspots.sql
+-- bike_crash_hotspots.sql
 -- Bike crash data aggregated for heatmap display.
 --
 -- Two output modes in one model:
@@ -11,7 +11,8 @@
 {{ config(
     materialized='table',
     post_hook=[
-        "CREATE INDEX IF NOT EXISTS ix_{{ this.name }}_geom ON {{ this }} USING GIST (geom)"
+        "CREATE INDEX ON {{ this }} USING GIST (geom)",
+        "ANALYZE {{ this }}"
     ]
 ) }}
 

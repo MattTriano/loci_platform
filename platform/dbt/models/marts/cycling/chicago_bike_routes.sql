@@ -1,4 +1,4 @@
--- mart_bike_infrastructure.sql
+-- chicago_bike_routes.sql
 -- Unified bike infrastructure from OSM and Chicago data portal.
 --
 -- Standardizes both sources into a common schema with a shared infra_type
@@ -14,7 +14,8 @@
 {{ config(
     materialized='table',
     post_hook=[
-        "CREATE INDEX IF NOT EXISTS ix_{{ this.name }}_geom ON {{ this }} USING GIST (geom)"
+        "CREATE INDEX ON {{ this }} USING GIST (geom)",
+        "ANALYZE {{ this }}"
     ]
 ) }}
 
