@@ -45,6 +45,14 @@ class OsmnxDatasetSpec(DatasetSpec):
         Entity key for the nodes table. Default ["osmid"].
     entity_key_edges : list[str]
         Entity key for the edges table. Default ["u", "v", "key"].
+    max_tile_degrees : float
+        Maximum tile size in degrees for both lat and lon. The bbox is
+        split into a grid snapped to multiples of this value, so tile
+        boundaries are consistent across runs even if the bbox changes.
+        Default 0.3 (roughly 25 km at Chicago's latitude).
+    tile_batch_size : int
+        Number of rows per write_batch call when ingesting a tile.
+        Default 50_000.
     """
 
     name: str = "chicagoland_bike_network"
@@ -56,6 +64,8 @@ class OsmnxDatasetSpec(DatasetSpec):
     entity_key_nodes: list[str] = field(default_factory=lambda: ["osmid"])
     entity_key_edges: list[str] = field(default_factory=lambda: ["u", "v", "key"])
     source: str = "osmnx"
+    max_tile_degrees: float = 0.3
+    tile_batch_size: int = 50_000
 
     # --- DatasetSpec interface (not directly used since we have two tables) ---
     @property
