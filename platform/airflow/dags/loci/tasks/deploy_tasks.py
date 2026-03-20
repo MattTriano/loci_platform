@@ -5,7 +5,7 @@ Syncs all files from the local export directory to an S3 bucket and
 creates a CloudFront cache invalidation.
 
 Configuration via environment variables:
-    BIKE_MAP_S3_BUCKET          — S3 bucket name
+    BIKE_MAP_APP_FILE_BUCKET    — S3 bucket name
     BIKE_MAP_CLOUDFRONT_DIST_ID — CloudFront distribution ID
     BIKE_MAP_ENVIRONMENT        — Environment name (dev, staging, prod)
 
@@ -20,15 +20,22 @@ Usage in a DAG:
 """
 
 import os
+import subprocess
+import tempfile
 import time
+import zipfile
 from logging import Logger
 from pathlib import Path
 
 import boto3
 from airflow.sdk import task
 
+from loci.deploy import upload_file_to_s3
+from loci.exports.graph_export import RoutingGraphExporter
+
 BIKE_MAP_APP_DIR = "/opt/airflow/app-files/bike-map"
 BIKE_MAP_EXPORT_DIR = "/opt/airflow/exports/bike-map"
+_LAMBDA_DIR = "/opt/airflow/app-infra/bike-map/lambda"
 
 # Subdirectories to skip during the general S3 sync.
 # These are handled by dedicated upload steps (e.g. _sync_bike_map_config).
@@ -117,7 +124,7 @@ def _sync_bike_map_config(logger: Logger) -> dict:
     Reads config/{environment}.json from the app directory and uploads
     it as config.json in the S3 bucket root, where index.html expects it.
     """
-    bucket = os.environ["BIKE_MAP_S3_BUCKET"]
+    bucket = os.environ["BIKE_MAP_APP_FILE_BUCKET"]
     env = os.environ.get("BIKE_MAP_ENVIRONMENT", "dev")
 
     config_path = Path(BIKE_MAP_APP_DIR) / "config" / f"{env}.json"
@@ -135,14 +142,13 @@ def _sync_bike_map_config(logger: Logger) -> dict:
         "config.json",
         ExtraArgs={"ContentType": "application/json"},
     )
-
     return {"bucket": bucket, "environment": env, "source": str(config_path)}
 
 
 @task
 def deploy_bike_map(task_logger: Logger) -> dict:
     """Sync bike map files to S3 and invalidate the CloudFront cache."""
-    bucket = os.environ["BIKE_MAP_S3_BUCKET"]
+    bucket = os.environ["BIKE_MAP_APP_FILE_BUCKET"]
     distribution_id = os.environ["BIKE_MAP_CLOUDFRONT_DIST_ID"]
 
     file_count = _sync_to_s3(
@@ -166,3 +172,113 @@ def deploy_bike_map(task_logger: Logger) -> dict:
         "files_uploaded": file_count,
         "invalidation_id": invalidation_id,
     }
+
+
+def build_lambda_zip(output_path: Path) -> Path:
+    """Build the Lambda deployment zip at the given path.
+
+    Installs dependencies from requirements.txt into a python/ subdirectory
+    alongside the handler, then zips everything up.
+
+    The caller is responsible for managing the lifetime of output_path's
+    parent directory (e.g. by using a tempfile.TemporaryDirectory).
+
+    Parameters
+    ----------
+    output_path : Path
+        Destination path for the zip file (e.g. Path(tmpdir) / "routing_api.zip").
+
+    Returns
+    -------
+    Path to the written zip file.
+    """
+    requirements = _LAMBDA_DIR / "requirements.txt"
+    handler_src = _LAMBDA_DIR / "handler.py"
+
+    # Install dependencies into a python/ dir alongside the zip
+    deps_dir = output_path.parent / "python"
+    deps_dir.mkdir(exist_ok=True)
+
+    subprocess.run(
+        [
+            "pip", "install",
+            "--quiet",
+            "--target", str(deps_dir),
+            "-r", str(requirements),
+        ],
+        check=True,
+    )
+
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(handler_src, "handler.py")
+        for file in sorted(deps_dir.rglob("*")):
+            if file.is_file():
+                zf.write(file, str(file.relative_to(output_path.parent)))
+
+    return output_path
+
+
+@task
+def export_routing_graph(engine, task_logger: Logger) -> dict:
+    """Build the safety-weighted routing graph and upload it to S3."""
+    bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
+    key = os.environ.get("BIKE_MAP_ROUTING_GRAPH_KEY", "graph/routing_graph.pkl.gz")
+ 
+    exporter = RoutingGraphExporter(engine)
+ 
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_path = Path(tmpdir) / "routing_graph.pkl.gz"
+        exporter.export(output_path)
+        uri = upload_file_to_s3(
+            local_path=output_path,
+            bucket=bucket,
+            key=key,
+            logger=task_logger,
+        )
+ 
+    task_logger.info("Routing graph uploaded to %s", uri)
+    return {"uri": uri, "bucket": bucket, "key": key}
+ 
+ 
+@task
+def deploy_lambda(task_logger: Logger) -> dict:
+    """Build the Lambda deployment package and update the function code."""
+    bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
+    lambda_arn = os.environ["BIKE_MAP_ROUTING_LAMBDA_ARN"]
+    zip_key = "lambda/routing_api.zip"
+ 
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "routing_api.zip"
+        task_logger.info("Building Lambda zip at %s", zip_path)
+        build_lambda_zip(zip_path)
+ 
+        size_mb = zip_path.stat().st_size / 1_048_576
+        task_logger.info("Package size: %.1f MB", size_mb)
+ 
+        uri = upload_file_to_s3(
+            local_path=zip_path,
+            bucket=bucket,
+            key=zip_key,
+            logger=task_logger,
+        )
+ 
+    task_logger.info("Lambda package uploaded to %s", uri)
+ 
+    lam = boto3.client("lambda")
+    response = lam.update_function_code(
+        FunctionName=lambda_arn,
+        S3Bucket=bucket,
+        S3Key=zip_key,
+    )
+    task_logger.info(
+        "Lambda updated: version=%s state=%s",
+        response.get("Version"),
+        response.get("LastUpdateStatus"),
+    )
+ 
+    return {
+        "uri": uri,
+        "lambda_arn": lambda_arn,
+        "last_update_status": response.get("LastUpdateStatus"),
+    }
+ 

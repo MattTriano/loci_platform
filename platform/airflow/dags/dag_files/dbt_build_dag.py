@@ -38,7 +38,7 @@ from loci.transform.utils import run_dbt
 
 @task
 def alt_build() -> str:
-    return run_dbt("build", "--select", "+chicago_bike_network_edges")
+    return run_dbt("build", "--select", "+bike_safety_weighted_edges")
 
 
 @task

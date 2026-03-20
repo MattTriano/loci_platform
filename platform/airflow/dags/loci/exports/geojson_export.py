@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,7 +74,7 @@ class GeoJSONExportConfig:
 BIKE_MAP_EXPORTS: list[GeoJSONExportConfig] = [
     GeoJSONExportConfig(
         name="crashes",
-        schema="dbt_loci_marts",
+        schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
         table="bike_crash_hotspots",
         geometry_column="geom",
         properties=[
@@ -99,7 +100,7 @@ BIKE_MAP_EXPORTS: list[GeoJSONExportConfig] = [
     ),
     GeoJSONExportConfig(
         name="thefts",
-        schema="dbt_loci_marts",
+        schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
         table="chicago_bike_theft_hotspots",
         latitude_column="latitude",
         longitude_column="longitude",
@@ -117,7 +118,7 @@ BIKE_MAP_EXPORTS: list[GeoJSONExportConfig] = [
     ),
     GeoJSONExportConfig(
         name="parking",
-        schema="dbt_loci_marts",
+        schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
         table="chicago_bike_parking",
         geometry_column="geom",
         properties=[
