@@ -22,28 +22,69 @@
     inset: 0;
   }
 
-  /* ── Layer control panel ─────────────────────────────── */
-  #controls {
+  /* ── Shared panel styling ────────────────────────────── */
+  .panel {
     position: absolute;
-    top: 16px;
-    left: 16px;
     z-index: 10;
     background: rgba(18, 18, 20, 0.92);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
-    padding: 16px 18px;
-    min-width: 210px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
   }
 
-  #controls h2 {
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .panel-header h2 {
     font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 12px;
+    margin: 0;
+  }
+
+  .panel-chevron {
+    width: 16px;
+    height: 16px;
+    color: rgba(255, 255, 255, 0.3);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .panel.collapsed .panel-chevron {
+    transform: rotate(-90deg);
+  }
+
+  .panel-body {
+    padding: 0 18px 16px;
+    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+    max-height: 600px;
+    opacity: 1;
+    overflow: hidden;
+  }
+
+  .panel.collapsed .panel-body {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  /* ── Layer control panel ─────────────────────────────── */
+  #controls {
+    top: 16px;
+    left: 16px;
+    min-width: 210px;
   }
 
   .layer-toggle {
@@ -110,27 +151,10 @@
 
   /* ── Route panel ─────────────────────────────────────── */
   #route-panel {
-    position: absolute;
     top: 16px;
     right: 60px;
-    z-index: 10;
-    background: rgba(18, 18, 20, 0.92);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 16px 18px;
     min-width: 240px;
     max-width: 280px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  }
-
-  #route-panel h2 {
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 12px;
   }
 
   .route-step {
@@ -229,6 +253,26 @@
     color: rgba(255, 255, 255, 0.3);
     text-align: center;
     line-height: 1.4;
+  }
+
+  /* ── Mobile layout ───────────────────────────────────── */
+  @media (max-width: 640px) {
+    #controls, #route-panel {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      min-width: 0;
+      max-width: none;
+    }
+
+    #controls {
+      top: 8px;
+    }
+
+    #route-panel {
+      /* Positioned below controls via JS, but start with a safe default */
+      top: auto;
+    }
   }
 
   /* ── Popup styling ───────────────────────────────────── */
@@ -395,33 +439,42 @@
 
 <div id="map"></div>
 
-<div id="controls">
-  <h2>Layers</h2>
+<div id="controls" class="panel">
+  <div class="panel-header" data-panel="controls">
+    <h2>Layers</h2>
+    <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
+  </div>
+  <div class="panel-body" id="controls-body"></div>
 </div>
 
-<div id="route-panel">
-  <h2>Route</h2>
-  <div class="route-step">
-    <div class="route-step-marker start">A</div>
-    <div class="route-step-text" id="route-start-label">Click map to set start</div>
+<div id="route-panel" class="panel collapsed">
+  <div class="panel-header" data-panel="route-panel">
+    <h2>Route</h2>
+    <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
   </div>
-  <div class="route-connector"><div class="route-connector-line"></div></div>
-  <div class="route-step">
-    <div class="route-step-marker end">B</div>
-    <div class="route-step-text" id="route-end-label">Click map to set end</div>
-  </div>
-  <div class="route-info" id="route-info">
-    <div class="route-info-row">
-      <span class="route-info-key">Distance</span>
-      <span class="route-info-val" id="route-distance">—</span>
+  <div class="panel-body">
+    <div class="route-step">
+      <div class="route-step-marker start">A</div>
+      <div class="route-step-text" id="route-start-label">Click map to set start</div>
     </div>
-    <div class="route-info-row">
-      <span class="route-info-key">Est. time</span>
-      <span class="route-info-val" id="route-time">—</span>
+    <div class="route-connector"><div class="route-connector-line"></div></div>
+    <div class="route-step">
+      <div class="route-step-marker end">B</div>
+      <div class="route-step-text" id="route-end-label">Click map to set end</div>
     </div>
+    <div class="route-info" id="route-info">
+      <div class="route-info-row">
+        <span class="route-info-key">Distance</span>
+        <span class="route-info-val" id="route-distance">—</span>
+      </div>
+      <div class="route-info-row">
+        <span class="route-info-key">Est. time</span>
+        <span class="route-info-val" id="route-time">—</span>
+      </div>
+    </div>
+    <button class="route-btn" id="route-clear-btn" style="display:none">Clear route</button>
+    <div class="route-hint" id="route-hint">Click anywhere on the map to place start and end points</div>
   </div>
-  <button class="route-btn" id="route-clear-btn" style="display:none">Clear route</button>
-  <div class="route-hint" id="route-hint">Click anywhere on the map to place start and end points</div>
 </div>
 
 <a class="github-link" href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">
@@ -433,17 +486,58 @@
 
 <script>
 // ── Configuration ────────────────────────────────────────
-// Loaded from config.json at startup. Defaults used if fetch fails.
 const CONFIG = {
   log_endpoint: '',
-  osrm_base_url: 'https://router.project-osrm.org',
+  routing_api_url: '',
+  routing_api_key: '',
 };
 
-// Load environment-specific config (config.json is deployed per-env)
 fetch('config.json')
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(cfg => { Object.assign(CONFIG, cfg); })
-  .catch(() => { /* Use defaults — logging disabled, public OSRM */ });
+  .catch(() => { /* Use defaults */ });
+
+// ── Panel accordion ──────────────────────────────────────
+// On mobile, only one panel is expanded at a time.
+// On desktop, both can be open (no accordion behavior).
+function isMobile() { return window.innerWidth <= 640; }
+
+function togglePanel(panelId) {
+  const panel = document.getElementById(panelId);
+  const wasCollapsed = panel.classList.contains('collapsed');
+
+  if (isMobile() && wasCollapsed) {
+    // Collapse the other panel first
+    document.querySelectorAll('.panel').forEach(p => {
+      if (p.id !== panelId) p.classList.add('collapsed');
+    });
+  }
+
+  panel.classList.toggle('collapsed');
+  positionRoutePanelMobile();
+}
+
+function positionRoutePanelMobile() {
+  if (!isMobile()) {
+    document.getElementById('route-panel').style.top = '';
+    return;
+  }
+  // Place route panel just below controls
+  const controls = document.getElementById('controls');
+  const top = controls.offsetTop + controls.offsetHeight + 8;
+  document.getElementById('route-panel').style.top = top + 'px';
+}
+
+document.querySelectorAll('.panel-header').forEach(header => {
+  header.addEventListener('click', () => {
+    togglePanel(header.dataset.panel);
+  });
+});
+
+window.addEventListener('resize', positionRoutePanelMobile);
+
+// Run initial positioning after a tick (so layout is settled)
+requestAnimationFrame(positionRoutePanelMobile);
 
 // ── Layer configuration ──────────────────────────────────
 const LAYERS = {
@@ -520,10 +614,9 @@ let currentPopup = null;
 let popupFeatures = [];
 let popupIndex = 0;
 
-// Route state
-let routeOrigin = null;      // [lng, lat]
-let routeDestination = null;  // [lng, lat]
-let routeData = null;         // OSRM response
+let routeOrigin = null;
+let routeDestination = null;
+let routeData = null;
 let originMarker = null;
 let destMarker = null;
 
@@ -545,7 +638,7 @@ map.addControl(new maplibregl.GeolocateControl({
 }), 'top-right');
 
 // ── Build layer control panel ────────────────────────────
-const controlsEl = document.getElementById('controls');
+const controlsBody = document.getElementById('controls-body');
 
 for (const [id, cfg] of Object.entries(LAYERS)) {
   const label = document.createElement('label');
@@ -557,7 +650,7 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
     <span class="layer-label">${cfg.label}</span>
     <span class="layer-count" id="count-${id}"></span>
   `;
-  controlsEl.appendChild(label);
+  controlsBody.appendChild(label);
 
   label.querySelector('input').addEventListener('change', (e) => {
     toggleLayer(id, e.target.checked);
@@ -566,13 +659,11 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
 
 // ── Map load ─────────────────────────────────────────────
 map.on('load', () => {
-  // Add empty route source + layers (populated later)
   map.addSource('route', {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
   });
 
-  // Route casing (wider line behind for outline effect)
   map.addLayer({
     id: 'route-casing',
     type: 'line',
@@ -584,7 +675,6 @@ map.on('load', () => {
     },
   });
 
-  // Route line
   map.addLayer({
     id: 'route-line',
     type: 'line',
@@ -596,20 +686,20 @@ map.on('load', () => {
     },
   });
 
-  // Load default layers
   for (const [id, cfg] of Object.entries(LAYERS)) {
     if (cfg.defaultVisible) {
       loadLayer(id);
     }
   }
 
-  // Enable crosshair cursor for route placement
   map.getContainer().classList.add('crosshair-cursor');
+
+  // Position route panel after map is ready
+  positionRoutePanelMobile();
 });
 
 // ── Route: click-to-place ────────────────────────────────
 map.on('click', (e) => {
-  // Don't place route points if click was on a cluster or point layer
   const pointLayers = Object.keys(LAYERS)
     .flatMap(id => [`${id}-clusters`, `${id}-points`])
     .filter(lid => map.getLayer(lid));
@@ -624,11 +714,16 @@ map.on('click', (e) => {
     setDestination(lngLat);
     fetchRoute();
   }
-  // If both are set, clicks are ignored until cleared
 });
 
 function setOrigin(lngLat) {
   routeOrigin = lngLat;
+
+  // Auto-expand route panel when user starts placing points
+  const routePanel = document.getElementById('route-panel');
+  if (routePanel.classList.contains('collapsed')) {
+    togglePanel('route-panel');
+  }
 
   if (originMarker) originMarker.remove();
   const el = document.createElement('div');
@@ -671,7 +766,6 @@ function setDestination(lngLat) {
   document.getElementById('route-hint').style.display = 'none';
   document.getElementById('route-clear-btn').style.display = 'block';
 
-  // Disable crosshair since both points are placed
   map.getContainer().classList.remove('crosshair-cursor');
 }
 
@@ -681,52 +775,65 @@ function updateRouteLabel(which, lngLat) {
   labelEl.classList.add('set');
 }
 
-// ── Route: fetch from OSRM ──────────────────────────────
+// ── Route: fetch from Lambda ─────────────────────────────
 async function fetchRoute() {
+  if (!CONFIG.routing_api_url) {
+    console.warn('No routing_api_url configured');
+    return;
+  }
+
   const loadingEl = document.getElementById('loading');
   loadingEl.textContent = 'Finding route…';
   loadingEl.classList.remove('hidden');
 
-  const coords = `${routeOrigin[0]},${routeOrigin[1]};${routeDestination[0]},${routeDestination[1]}`;
-  const url = `${CONFIG.osrm_base_url}/route/v1/bike/${coords}?overview=full&geometries=geojson&steps=true`;
-
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`OSRM returned ${resp.status}`);
-    const data = await resp.json();
+    const resp = await fetch(CONFIG.routing_api_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': CONFIG.routing_api_key,
+      },
+      body: JSON.stringify({
+        origin: [routeOrigin[1], routeOrigin[0]],           // [lat, lon]
+        destination: [routeDestination[1], routeDestination[0]], // [lat, lon]
+      }),
+    });
 
-    if (data.code !== 'Ok' || !data.routes || !data.routes.length) {
-      throw new Error(data.message || 'No route found');
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.error || `API returned ${resp.status}`);
     }
 
+    const data = await resp.json();
     routeData = data;
-    const route = data.routes[0];
 
-    // Draw route on map
+    // Draw route on map — coordinates are already [lon, lat]
     map.getSource('route').setData({
       type: 'Feature',
-      geometry: route.geometry,
+      geometry: {
+        type: 'LineString',
+        coordinates: data.coordinates,
+      },
     });
 
     // Fit map to route bounds
-    const coords = route.geometry.coordinates;
-    const bounds = coords.reduce(
+    const bounds = data.coordinates.reduce(
       (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(coords[0], coords[0])
+      new maplibregl.LngLatBounds(data.coordinates[0], data.coordinates[0])
     );
     map.fitBounds(bounds, { padding: 80 });
 
     // Show route info
-    const distKm = route.distance / 1000;
+    const distKm = data.total_length_m / 1000;
     const distMi = distKm * 0.621371;
-    const durMin = Math.round(route.duration / 60);
+    // Rough estimate: ~15 km/h average city cycling speed
+    const durMin = Math.round((data.total_length_m / 1000) / 15 * 60);
 
     document.getElementById('route-distance').textContent = `${distMi.toFixed(1)} mi (${distKm.toFixed(1)} km)`;
-    document.getElementById('route-time').textContent = `${durMin} min`;
+    document.getElementById('route-time').textContent = `~${durMin} min`;
     document.getElementById('route-info').classList.add('visible');
 
-    // Log the route request
-    logRouteRequest(route);
+    logRouteRequest(data);
 
   } catch (err) {
     console.error('Routing failed:', err);
@@ -749,12 +856,10 @@ function clearRoute() {
   if (originMarker) { originMarker.remove(); originMarker = null; }
   if (destMarker) { destMarker.remove(); destMarker = null; }
 
-  // Clear route line
   if (map.getSource('route')) {
     map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
   }
 
-  // Reset panel
   const startLabel = document.getElementById('route-start-label');
   const endLabel = document.getElementById('route-end-label');
   startLabel.textContent = 'Click map to set start';
@@ -766,41 +871,35 @@ function clearRoute() {
   document.getElementById('route-hint').style.display = '';
   document.getElementById('route-hint').textContent = 'Click anywhere on the map to place start and end points';
 
-  // Re-enable crosshair
   map.getContainer().classList.add('crosshair-cursor');
 }
 
 // ── Route: log to API Gateway ────────────────────────────
-function logRouteRequest(route) {
+function logRouteRequest(data) {
   if (!CONFIG.log_endpoint) return;
 
   const payload = {
     timestamp: new Date().toISOString(),
     origin: { lng: routeOrigin[0], lat: routeOrigin[1] },
     destination: { lng: routeDestination[0], lat: routeDestination[1] },
-    distance_m: route.distance,
-    duration_s: route.duration,
-    route_geometry: route.geometry,
+    total_length_m: data.total_length_m,
+    total_cost: data.total_cost,
     user_agent: navigator.userAgent,
     screen: { width: screen.width, height: screen.height },
     viewport: { width: window.innerWidth, height: window.innerHeight },
     referrer: document.referrer || null,
-    // Visible layers at time of routing
     active_layers: Object.keys(LAYERS).filter(id => {
       const cb = document.querySelector(`input[data-layer="${id}"]`);
       return cb && cb.checked;
     }),
   };
 
-  // Fire and forget — don't block UX on logging
   fetch(CONFIG.log_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     keepalive: true,
-  }).catch(() => {
-    // Silently ignore logging failures
-  });
+  }).catch(() => {});
 }
 
 // ── Layer loading ────────────────────────────────────────
@@ -849,7 +948,6 @@ function addLayerToMap(id) {
     clusterRadius: cfg.clusterRadius,
   });
 
-  // Cluster circles
   map.addLayer({
     id: `${id}-clusters`,
     type: 'circle',
@@ -868,7 +966,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Cluster count labels
   map.addLayer({
     id: `${id}-cluster-count`,
     type: 'symbol',
@@ -883,7 +980,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Individual points
   map.addLayer({
     id: `${id}-points`,
     type: 'circle',
@@ -898,7 +994,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Click → zoom into cluster
   map.on('click', `${id}-clusters`, (e) => {
     const features = map.queryRenderedFeatures(e.point, { layers: [`${id}-clusters`] });
     const clusterId = features[0].properties.cluster_id;
@@ -908,7 +1003,6 @@ function addLayerToMap(id) {
     });
   });
 
-  // Click → popup on individual point
   map.on('click', `${id}-points`, (e) => {
     const allPointLayers = Object.keys(LAYERS)
       .map(lid => `${lid}-points`)
@@ -931,7 +1025,6 @@ function addLayerToMap(id) {
     showPopupAtIndex(popupFeatures[0].coords);
   });
 
-  // Cursor styling
   map.on('mouseenter', `${id}-clusters`, () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', `${id}-clusters`, () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseenter', `${id}-points`, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -963,7 +1056,6 @@ function showPopupAtIndex(coords) {
   });
 }
 
-// ── Popup HTML builder ───────────────────────────────────
 function buildPopupHTML(cfg, props, totalCount, currentIndex) {
   let nav = '';
   if (totalCount > 1) {

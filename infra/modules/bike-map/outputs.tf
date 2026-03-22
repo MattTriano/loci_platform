@@ -4,7 +4,7 @@ output "s3_bucket_name" {
 }
 
 output "routing_graph_bucket_name" {
-  description = "S3 bucket name for routing graph Parquet export."
+  description = "S3 bucket name for the routing graph and Lambda package."
   value       = aws_s3_bucket.routing_graph.bucket
 }
 
@@ -26,4 +26,14 @@ output "deploy_user_name" {
 output "site_url" {
   description = "Public URL of the site."
   value       = "https://${local.domain}"
+}
+
+output "routing_api_url" {
+  description = "HTTPS URL of the routing API."
+  value       = "https://${local.api_domain}"
+}
+
+output "routing_lambda_arn" {
+  description = "ARN of the routing Lambda function."
+  value       = aws_lambda_function.routing_api.arn
 }

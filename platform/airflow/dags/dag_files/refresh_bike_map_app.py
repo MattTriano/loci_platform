@@ -3,7 +3,7 @@ from datetime import datetime
 
 from airflow.sdk import dag, task, task_group
 from airflow.sdk.bases.operator import chain
-from loci.tasks.deploy_tasks import deploy_bike_map
+from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda, export_routing_graph
 from loci.tasks.export_tasks import export_bike_map_geojson
 from loci.tasks.transform_tasks import build_pre_geocode, geocode, run_dbt
 
@@ -39,6 +39,11 @@ def build_chicago_bike_crash_hotspots() -> str:
     return run_dbt("build", "--select", "+bike_crash_hotspots")
 
 
+@task
+def build_bike_safety_weighted_edges() -> str:
+    return run_dbt("build", "--select", "+bike_safety_weighted_edges")
+
+
 @dag(
     start_date=datetime(2024, 1, 1),
     schedule="0 3 * * 0",
@@ -53,11 +58,23 @@ def refresh_bike_map_app():
     )
     _build_parking_table = build_chicago_bike_parking()
     _build_crashes_table = build_chicago_bike_crash_hotspots()
-    _export_data = export_bike_map_geojson(conn_id=CONN_ID, task_logger=task_logger)
-    _deploy = deploy_bike_map(task_logger=task_logger)
+    _build_weights = build_bike_safety_weighted_edges()
+
+    _export_layer_data = export_bike_map_geojson(conn_id=CONN_ID, task_logger=task_logger)
+    _export_graph = export_routing_graph(conn_id=CONN_ID, task_logger=task_logger)
+
+    _deploy_map = deploy_bike_map(task_logger=task_logger)
+    _deploy_lambda = deploy_lambda(task_logger=task_logger)
 
     chain(
-        [_build_geocoded_tables, _build_parking_table, _build_crashes_table], _export_data, _deploy
+        [_build_geocoded_tables, _build_parking_table, _build_crashes_table],
+        _export_layer_data,
+        _deploy_map,
+    )
+    chain(
+        _build_weights,
+        _export_graph,
+        _deploy_lambda,
     )
 
 

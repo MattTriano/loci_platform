@@ -29,7 +29,7 @@ from pathlib import Path
 
 import boto3
 from airflow.sdk import task
-
+from loci.db.af_utils import get_postgres_engine
 from loci.deploy import upload_file_to_s3
 from loci.exports.graph_export import RoutingGraphExporter
 
@@ -174,6 +174,50 @@ def deploy_bike_map(task_logger: Logger) -> dict:
     }
 
 
+# def build_lambda_zip(output_path: Path) -> Path:
+#     """Build the Lambda deployment zip at the given path.
+
+#     Installs dependencies from requirements.txt into a python/ subdirectory
+#     alongside the handler, then zips everything up.
+
+#     The caller is responsible for managing the lifetime of output_path's
+#     parent directory (e.g. by using a tempfile.TemporaryDirectory).
+
+#     Parameters
+#     ----------
+#     output_path : Path
+#         Destination path for the zip file (e.g. Path(tmpdir) / "routing_api.zip").
+
+#     Returns
+#     -------
+#     Path to the written zip file.
+#     """
+#     requirements = Path(_LAMBDA_DIR) / "requirements.txt"
+#     handler_src = Path(_LAMBDA_DIR) / "handler.py"
+
+#     # Install dependencies into a python/ dir alongside the zip
+#     deps_dir = output_path.parent / "python"
+#     deps_dir.mkdir(exist_ok=True)
+
+#     subprocess.run(
+#         [
+#             "pip", "install",
+#             "--quiet",
+#             "--target", str(deps_dir),
+#             "-r", str(requirements),
+#         ],
+#         check=True,
+#     )
+
+#     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+#         zf.write(handler_src, "handler.py")
+#         for file in sorted(deps_dir.rglob("*")):
+#             if file.is_file():
+#                 zf.write(file, str(file.relative_to(output_path.parent)))
+
+#     return output_path
+
+
 def build_lambda_zip(output_path: Path) -> Path:
     """Build the Lambda deployment zip at the given path.
 
@@ -192,19 +236,21 @@ def build_lambda_zip(output_path: Path) -> Path:
     -------
     Path to the written zip file.
     """
-    requirements = _LAMBDA_DIR / "requirements.txt"
-    handler_src = _LAMBDA_DIR / "handler.py"
+    requirements = Path(_LAMBDA_DIR) / "requirements.txt"
+    handler_src = Path(_LAMBDA_DIR) / "handler.py"
 
-    # Install dependencies into a python/ dir alongside the zip
-    deps_dir = output_path.parent / "python"
+    deps_dir = output_path.parent / "deps"
     deps_dir.mkdir(exist_ok=True)
 
     subprocess.run(
         [
-            "pip", "install",
+            "pip",
+            "install",
             "--quiet",
-            "--target", str(deps_dir),
-            "-r", str(requirements),
+            "--target",
+            str(deps_dir),
+            "-r",
+            str(requirements),
         ],
         check=True,
     )
@@ -213,19 +259,19 @@ def build_lambda_zip(output_path: Path) -> Path:
         zf.write(handler_src, "handler.py")
         for file in sorted(deps_dir.rglob("*")):
             if file.is_file():
-                zf.write(file, str(file.relative_to(output_path.parent)))
+                zf.write(file, str(file.relative_to(deps_dir)))
 
     return output_path
 
 
 @task
-def export_routing_graph(engine, task_logger: Logger) -> dict:
+def export_routing_graph(conn_id: str, task_logger: Logger) -> dict:
     """Build the safety-weighted routing graph and upload it to S3."""
     bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
     key = os.environ.get("BIKE_MAP_ROUTING_GRAPH_KEY", "graph/routing_graph.pkl.gz")
- 
+    engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
     exporter = RoutingGraphExporter(engine)
- 
+
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir) / "routing_graph.pkl.gz"
         exporter.export(output_path)
@@ -235,36 +281,36 @@ def export_routing_graph(engine, task_logger: Logger) -> dict:
             key=key,
             logger=task_logger,
         )
- 
+
     task_logger.info("Routing graph uploaded to %s", uri)
     return {"uri": uri, "bucket": bucket, "key": key}
- 
- 
+
+
 @task
 def deploy_lambda(task_logger: Logger) -> dict:
     """Build the Lambda deployment package and update the function code."""
     bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
     lambda_arn = os.environ["BIKE_MAP_ROUTING_LAMBDA_ARN"]
     zip_key = "lambda/routing_api.zip"
- 
+
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "routing_api.zip"
         task_logger.info("Building Lambda zip at %s", zip_path)
         build_lambda_zip(zip_path)
- 
+
         size_mb = zip_path.stat().st_size / 1_048_576
         task_logger.info("Package size: %.1f MB", size_mb)
- 
+
         uri = upload_file_to_s3(
             local_path=zip_path,
             bucket=bucket,
             key=zip_key,
             logger=task_logger,
         )
- 
+
     task_logger.info("Lambda package uploaded to %s", uri)
- 
-    lam = boto3.client("lambda")
+
+    lam = boto3.client("lambda", region_name=os.environ.get("BIKE_MAP_AWS_REGION", "us-east-1"))
     response = lam.update_function_code(
         FunctionName=lambda_arn,
         S3Bucket=bucket,
@@ -275,10 +321,9 @@ def deploy_lambda(task_logger: Logger) -> dict:
         response.get("Version"),
         response.get("LastUpdateStatus"),
     )
- 
+
     return {
         "uri": uri,
         "lambda_arn": lambda_arn,
         "last_update_status": response.get("LastUpdateStatus"),
     }
- 

@@ -37,22 +37,24 @@
 with edges as (
     select *
     from {{ ref('chicago_bike_network_edges') }}
-    where
-        -- Trunk roads (highways, Lower Wacker) and their links
-        highway not in ('trunk', 'trunk_link', 'closed', 'emergency_bay')
-        and highway not like '%trunk%'
+    -- where
+    --     -- Trunk roads (highways, Lower Wacker) and their links
+        -- highway != 'closed'
+        -- and (name is null or name not ilike '% lower%')
+    --     highway not in ('trunk', 'trunk_link', 'closed', 'emergency_bay')
+    --     and highway not like '%trunk%'
 
-        -- Vehicle-only service roads (keep alley, null, emergency_access)
-        and (
-            service is null
-            or not (
-                service like '%parking_aisle%'
-                or service like '%driveway%'
-                or service like '%drive-through%'
-            )
-        )
-        -- Covered/underground tunnels (Lower Wacker and similar)
-        and (name is null or name ilike '% lower%')
+    -- --     -- Vehicle-only service roads (keep alley, null, emergency_access)
+    -- --     and (
+    -- --         service is null
+    -- --         or not (
+    -- --             service like '%parking_aisle%'
+    -- --             or service like '%driveway%'
+    -- --             or service like '%drive-through%'
+    -- --         )
+    -- --     )
+    -- --     -- Covered/underground tunnels (Lower Wacker and similar)
+    --     and (name is null or name not ilike '% lower%')
 ),
 
 crashes as (

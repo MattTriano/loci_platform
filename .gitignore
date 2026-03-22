@@ -1,8 +1,9 @@
 *.env
+*.tfvars
 *.tfstate
 *.tfstate.backup
 .terraform
 logs
 __pycache__
 raw_data
-
+apps/bike-map/config/

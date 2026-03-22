@@ -68,63 +68,85 @@ class OsmnxCollector:
     # Collection
     # ------------------------------------------------------------------
 
-    def collect(
-        self,
-        spec: OsmnxDatasetSpec,
-        force: bool = False,
-    ) -> dict:
-        """Download bike network tiles and ingest nodes and edges into PostGIS.
+    def collect(self, spec: OsmnxDatasetSpec, force: bool = False) -> dict:
+        if not force and self._already_ingested(spec, spec.name):
+            self.logger.info("Skipping %s (already ingested recently)", spec.name)
+            return {"spec_name": spec.name, "skipped": True}
 
-        Each tile is checked individually for freshness and skipped if it
-        was ingested recently. This makes collection idempotent — a run
-        that was interrupted can be resumed without re-ingesting tiles
-        that already completed.
+        self.logger.info("Downloading %s", spec.name)
+        G = self.client.get_bike_network(bbox=spec.bbox, network_type=spec.network_type)
 
-        Parameters
-        ----------
-        spec : OsmnxDatasetSpec
-        force : bool
-            If True, skip freshness checks and re-ingest all tiles.
+        nodes_gdf = self.client.get_nodes_gdf(G)
+        edges_gdf = self.client.get_edges_gdf(G)
+        del G
 
-        Returns
-        -------
-        dict with keys: spec_name, tiles (list of per-tile summaries).
-        """
-        tile_summaries = []
-
-        for tile_id, nodes_gdf, edges_gdf in self.client.iter_bike_network_tiles(
-            bbox=spec.bbox,
-            max_tile_degrees=spec.max_tile_degrees,
-            network_type=spec.network_type,
-        ):
-            if not force and self._already_ingested(spec, tile_id):
-                self.logger.info("Skipping tile %s (already ingested recently)", tile_id)
-                tile_summaries.append(
-                    {
-                        "tile_id": tile_id,
-                        "skipped": True,
-                        "nodes": None,
-                        "edges": None,
-                    }
-                )
-                continue
-
-            self.logger.info("Ingesting tile %s", tile_id)
-            nodes_summary = self._ingest_nodes(nodes_gdf, spec, tile_id)
-            edges_summary = self._ingest_edges(edges_gdf, spec, tile_id)
-            tile_summaries.append(
-                {
-                    "tile_id": tile_id,
-                    "skipped": False,
-                    "nodes": nodes_summary,
-                    "edges": edges_summary,
-                }
-            )
+        nodes_summary = self._ingest_nodes(nodes_gdf, spec, tile_id=spec.name)
+        edges_summary = self._ingest_edges(edges_gdf, spec, tile_id=spec.name)
 
         return {
             "spec_name": spec.name,
-            "tiles": tile_summaries,
+            "skipped": False,
+            "nodes": nodes_summary,
+            "edges": edges_summary,
         }
+
+    # def collect(
+    #     self,
+    #     spec: OsmnxDatasetSpec,
+    #     force: bool = False,
+    # ) -> dict:
+    #     """Download bike network tiles and ingest nodes and edges into PostGIS.
+
+    #     Each tile is checked individually for freshness and skipped if it
+    #     was ingested recently. This makes collection idempotent — a run
+    #     that was interrupted can be resumed without re-ingesting tiles
+    #     that already completed.
+
+    #     Parameters
+    #     ----------
+    #     spec : OsmnxDatasetSpec
+    #     force : bool
+    #         If True, skip freshness checks and re-ingest all tiles.
+
+    #     Returns
+    #     -------
+    #     dict with keys: spec_name, tiles (list of per-tile summaries).
+    #     """
+    #     tile_summaries = []
+
+    #     for tile_id, nodes_gdf, edges_gdf in self.client.iter_bike_network_tiles(
+    #         bbox=spec.bbox,
+    #         max_tile_degrees=spec.max_tile_degrees,
+    #         network_type=spec.network_type,
+    #     ):
+    #         if not force and self._already_ingested(spec, tile_id):
+    #             self.logger.info("Skipping tile %s (already ingested recently)", tile_id)
+    #             tile_summaries.append(
+    #                 {
+    #                     "tile_id": tile_id,
+    #                     "skipped": True,
+    #                     "nodes": None,
+    #                     "edges": None,
+    #                 }
+    #             )
+    #             continue
+
+    #         self.logger.info("Ingesting tile %s", tile_id)
+    #         nodes_summary = self._ingest_nodes(nodes_gdf, spec, tile_id)
+    #         edges_summary = self._ingest_edges(edges_gdf, spec, tile_id)
+    #         tile_summaries.append(
+    #             {
+    #                 "tile_id": tile_id,
+    #                 "skipped": False,
+    #                 "nodes": nodes_summary,
+    #                 "edges": edges_summary,
+    #             }
+    #         )
+
+    #     return {
+    #         "spec_name": spec.name,
+    #         "tiles": tile_summaries,
+    #     }
 
     def _already_ingested(
         self,

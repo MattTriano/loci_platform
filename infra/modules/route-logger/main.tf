@@ -89,8 +89,8 @@ resource "aws_api_gateway_integration" "s3_put" {
 
   # Map the request body + inject server-side context
   request_parameters = {
-    "integration.request.path.folder" = "context.requestTimeEpoch"
-    "integration.request.path.object" = "context.requestId"
+    "integration.request.path.folder"         = "context.requestTimeEpoch"
+    "integration.request.path.object"         = "context.requestId"
     "integration.request.header.Content-Type" = "'application/json'"
   }
 
@@ -217,8 +217,8 @@ resource "aws_api_gateway_method_settings" "throttle" {
   method_path = "*/*"
 
   settings {
-    throttling_rate_limit  = 10  # sustained requests per second
-    throttling_burst_limit = 50  # burst allowance
+    throttling_rate_limit  = 10 # sustained requests per second
+    throttling_burst_limit = 50 # burst allowance
   }
 }
 
