@@ -256,22 +256,31 @@
   }
 
   /* ── Mobile layout ───────────────────────────────────── */
+  #panel-container {
+    display: none;
+  }
+
   @media (max-width: 640px) {
-    #controls, #route-panel {
+    #panel-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       position: absolute;
+      top: 8px;
       left: 8px;
       right: 8px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    #panel-container > .panel {
+      position: relative;
+      top: auto;
+      left: auto;
+      right: auto;
       min-width: 0;
       max-width: none;
-    }
-
-    #controls {
-      top: 8px;
-    }
-
-    #route-panel {
-      /* Positioned below controls via JS, but start with a safe default */
-      top: auto;
+      pointer-events: auto;
     }
   }
 
@@ -439,6 +448,9 @@
 
 <div id="map"></div>
 
+<!-- Mobile: panels flow inside this container. Desktop: container is display:none, panels use absolute positioning. -->
+<div id="panel-container"></div>
+
 <div id="controls" class="panel">
   <div class="panel-header" data-panel="controls">
     <h2>Layers</h2>
@@ -498,9 +510,28 @@ fetch('config.json')
   .catch(() => { /* Use defaults */ });
 
 // ── Panel accordion ──────────────────────────────────────
-// On mobile, only one panel is expanded at a time.
-// On desktop, both can be open (no accordion behavior).
+// On mobile, panels live inside #panel-container (flexbox column).
+// On desktop, they stay as absolute-positioned elements on <body>.
 function isMobile() { return window.innerWidth <= 640; }
+
+const panelContainer = document.getElementById('panel-container');
+const controlsPanel = document.getElementById('controls');
+const routePanel = document.getElementById('route-panel');
+let panelsInContainer = false;
+
+function arrangePanels() {
+  if (isMobile() && !panelsInContainer) {
+    panelContainer.appendChild(controlsPanel);
+    panelContainer.appendChild(routePanel);
+    panelsInContainer = true;
+  } else if (!isMobile() && panelsInContainer) {
+    // Move panels back to body (before the loading bar)
+    const loading = document.getElementById('loading');
+    document.body.insertBefore(controlsPanel, loading);
+    document.body.insertBefore(routePanel, loading);
+    panelsInContainer = false;
+  }
+}
 
 function togglePanel(panelId) {
   const panel = document.getElementById(panelId);
@@ -514,18 +545,6 @@ function togglePanel(panelId) {
   }
 
   panel.classList.toggle('collapsed');
-  positionRoutePanelMobile();
-}
-
-function positionRoutePanelMobile() {
-  if (!isMobile()) {
-    document.getElementById('route-panel').style.top = '';
-    return;
-  }
-  // Place route panel just below controls
-  const controls = document.getElementById('controls');
-  const top = controls.offsetTop + controls.offsetHeight + 8;
-  document.getElementById('route-panel').style.top = top + 'px';
 }
 
 document.querySelectorAll('.panel-header').forEach(header => {
@@ -534,10 +553,8 @@ document.querySelectorAll('.panel-header').forEach(header => {
   });
 });
 
-window.addEventListener('resize', positionRoutePanelMobile);
-
-// Run initial positioning after a tick (so layout is settled)
-requestAnimationFrame(positionRoutePanelMobile);
+window.addEventListener('resize', arrangePanels);
+arrangePanels();
 
 // ── Layer configuration ──────────────────────────────────
 const LAYERS = {
@@ -693,9 +710,6 @@ map.on('load', () => {
   }
 
   map.getContainer().classList.add('crosshair-cursor');
-
-  // Position route panel after map is ready
-  positionRoutePanelMobile();
 });
 
 // ── Route: click-to-place ────────────────────────────────
@@ -783,7 +797,7 @@ async function fetchRoute() {
   }
 
   const loadingEl = document.getElementById('loading');
-  loadingEl.textContent = 'Finding route…';
+  loadingEl.textContent = 'Finding route (first route request may take ~10s as lambda func spins up)';
   loadingEl.classList.remove('hidden');
 
   try {
@@ -884,6 +898,7 @@ function logRouteRequest(data) {
     destination: { lng: routeDestination[0], lat: routeDestination[1] },
     total_length_m: data.total_length_m,
     total_cost: data.total_cost,
+    route_geometry: { type: 'LineString', coordinates: data.coordinates },
     user_agent: navigator.userAgent,
     screen: { width: screen.width, height: screen.height },
     viewport: { width: window.innerWidth, height: window.innerHeight },

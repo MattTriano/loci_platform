@@ -174,50 +174,6 @@ def deploy_bike_map(task_logger: Logger) -> dict:
     }
 
 
-# def build_lambda_zip(output_path: Path) -> Path:
-#     """Build the Lambda deployment zip at the given path.
-
-#     Installs dependencies from requirements.txt into a python/ subdirectory
-#     alongside the handler, then zips everything up.
-
-#     The caller is responsible for managing the lifetime of output_path's
-#     parent directory (e.g. by using a tempfile.TemporaryDirectory).
-
-#     Parameters
-#     ----------
-#     output_path : Path
-#         Destination path for the zip file (e.g. Path(tmpdir) / "routing_api.zip").
-
-#     Returns
-#     -------
-#     Path to the written zip file.
-#     """
-#     requirements = Path(_LAMBDA_DIR) / "requirements.txt"
-#     handler_src = Path(_LAMBDA_DIR) / "handler.py"
-
-#     # Install dependencies into a python/ dir alongside the zip
-#     deps_dir = output_path.parent / "python"
-#     deps_dir.mkdir(exist_ok=True)
-
-#     subprocess.run(
-#         [
-#             "pip", "install",
-#             "--quiet",
-#             "--target", str(deps_dir),
-#             "-r", str(requirements),
-#         ],
-#         check=True,
-#     )
-
-#     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-#         zf.write(handler_src, "handler.py")
-#         for file in sorted(deps_dir.rglob("*")):
-#             if file.is_file():
-#                 zf.write(file, str(file.relative_to(output_path.parent)))
-
-#     return output_path
-
-
 def build_lambda_zip(output_path: Path) -> Path:
     """Build the Lambda deployment zip at the given path.
 
