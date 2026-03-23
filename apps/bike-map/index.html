@@ -149,6 +149,87 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ── Date range filter ───────────────────────────────── */
+  .date-filter {
+    padding: 4px 0 8px 26px;
+    display: none;
+  }
+
+  .date-filter.active { display: block; }
+
+  .date-filter-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .date-filter-label span {
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+  }
+
+  .dual-range {
+    position: relative;
+    height: 20px;
+    width: 100%;
+  }
+
+  .dual-range input[type="range"] {
+    position: absolute;
+    width: 100%;
+    top: 0;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    appearance: none;
+    background: transparent;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .dual-range input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--layer-color, #fff);
+    border: 2px solid #fff;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+
+  .dual-range input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--layer-color, #fff);
+    border: 2px solid #fff;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+
+  .dual-range-track {
+    position: absolute;
+    top: 8px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .dual-range-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--layer-color, rgba(255, 255, 255, 0.4));
+    opacity: 0.5;
+  }
+
   /* ── Route panel ─────────────────────────────────────── */
   #route-panel {
     top: 16px;
@@ -566,6 +647,7 @@ const LAYERS = {
     clusterRadius: 45,
     pointRadius: 5,
     defaultVisible: true,
+    dateField: 'crash_date',
     popupTitle: 'Bike Crash',
     popupFields: [
       { key: 'crash_date',              label: 'Date' },
@@ -590,6 +672,7 @@ const LAYERS = {
     clusterRadius: 45,
     pointRadius: 5,
     defaultVisible: true,
+    dateField: 'theft_date',
     popupTitle: 'Bike Theft',
     popupFields: [
       { key: 'source',               label: 'Source' },
@@ -672,6 +755,155 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
   label.querySelector('input').addEventListener('change', (e) => {
     toggleLayer(id, e.target.checked);
   });
+
+  // Add date filter slider for layers with a dateField
+  if (cfg.dateField) {
+    const filterDiv = document.createElement('div');
+    filterDiv.className = 'date-filter';
+    filterDiv.id = `date-filter-${id}`;
+    filterDiv.style.setProperty('--layer-color', cfg.color);
+    filterDiv.innerHTML = `
+      <div class="date-filter-label" id="date-label-${id}">Loading dates…</div>
+      <div class="dual-range">
+        <div class="dual-range-track"><div class="dual-range-fill" id="date-fill-${id}"></div></div>
+        <input type="range" id="date-min-${id}" min="0" max="1" value="0" />
+        <input type="range" id="date-max-${id}" min="0" max="1" value="1" />
+      </div>
+    `;
+    controlsBody.appendChild(filterDiv);
+  }
+}
+
+// ── Date filter state ────────────────────────────────────
+// Stores per-layer: { dates: [sorted unique date strings], minIdx, maxIdx }
+const dateFilterState = {};
+
+function parseDate(val) {
+  // Extract YYYY-MM-DD from "2018-10-20 13:40:00+00:00" or similar
+  if (!val) return null;
+  return String(val).slice(0, 10);
+}
+
+function formatDateShort(dateStr) {
+  // "2018-10-20" → "Oct 2018"
+  const [y, m] = dateStr.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function initDateFilter(id) {
+  const cfg = LAYERS[id];
+  if (!cfg.dateField || !layerData[id]) return;
+
+  const features = layerData[id].features || [];
+  const dateSet = new Set();
+  for (const f of features) {
+    const d = parseDate(f.properties[cfg.dateField]);
+    if (d) dateSet.add(d);
+  }
+
+  const dates = Array.from(dateSet).sort();
+  if (dates.length < 2) return;
+
+  const state = { dates, minIdx: 0, maxIdx: dates.length - 1 };
+  dateFilterState[id] = state;
+
+  const minInput = document.getElementById(`date-min-${id}`);
+  const maxInput = document.getElementById(`date-max-${id}`);
+  const last = dates.length - 1;
+
+  minInput.min = 0; minInput.max = last; minInput.value = 0;
+  maxInput.min = 0; maxInput.max = last; maxInput.value = last;
+
+  updateDateLabel(id);
+
+  // Show the filter
+  document.getElementById(`date-filter-${id}`).classList.add('active');
+
+  // Debounce filtering to avoid thrashing on fast slider drags
+  let filterTimeout = null;
+  function onSliderInput() {
+    let lo = parseInt(minInput.value);
+    let hi = parseInt(maxInput.value);
+
+    // Prevent handles from crossing
+    if (lo > hi) {
+      if (this === minInput) { lo = hi; minInput.value = lo; }
+      else { hi = lo; maxInput.value = hi; }
+    }
+
+    state.minIdx = lo;
+    state.maxIdx = hi;
+    updateDateLabel(id);
+    updateDateFill(id);
+
+    clearTimeout(filterTimeout);
+    filterTimeout = setTimeout(() => applyDateFilter(id), 120);
+  }
+
+  minInput.addEventListener('input', onSliderInput);
+  maxInput.addEventListener('input', onSliderInput);
+  updateDateFill(id);
+}
+
+function updateDateLabel(id) {
+  const state = dateFilterState[id];
+  if (!state) return;
+  const fromStr = formatDateShort(state.dates[state.minIdx]);
+  const toStr = formatDateShort(state.dates[state.maxIdx]);
+  const total = layerData[id].features.length;
+  const filtered = countFilteredFeatures(id);
+  document.getElementById(`date-label-${id}`).innerHTML =
+    `<span>${fromStr}</span> — <span>${toStr}</span>  (${filtered.toLocaleString()})`;
+}
+
+function updateDateFill(id) {
+  const state = dateFilterState[id];
+  if (!state) return;
+  const fill = document.getElementById(`date-fill-${id}`);
+  const range = state.dates.length - 1;
+  const left = (state.minIdx / range) * 100;
+  const right = (state.maxIdx / range) * 100;
+  fill.style.left = left + '%';
+  fill.style.width = (right - left) + '%';
+}
+
+function countFilteredFeatures(id) {
+  const cfg = LAYERS[id];
+  const state = dateFilterState[id];
+  if (!state || !layerData[id]) return 0;
+  const minDate = state.dates[state.minIdx];
+  const maxDate = state.dates[state.maxIdx];
+  let count = 0;
+  for (const f of layerData[id].features) {
+    const d = parseDate(f.properties[cfg.dateField]);
+    if (d && d >= minDate && d <= maxDate) count++;
+  }
+  return count;
+}
+
+function applyDateFilter(id) {
+  const cfg = LAYERS[id];
+  const state = dateFilterState[id];
+  const sourceId = `src-${id}`;
+  if (!state || !map.getSource(sourceId)) return;
+
+  const minDate = state.dates[state.minIdx];
+  const maxDate = state.dates[state.maxIdx];
+
+  const filtered = {
+    type: 'FeatureCollection',
+    features: layerData[id].features.filter(f => {
+      const d = parseDate(f.properties[cfg.dateField]);
+      return d && d >= minDate && d <= maxDate;
+    }),
+  };
+
+  map.getSource(sourceId).setData(filtered);
+
+  // Update the count display
+  const countEl = document.getElementById(`count-${id}`);
+  if (countEl) countEl.textContent = filtered.features.length.toLocaleString();
 }
 
 // ── Map load ─────────────────────────────────────────────
@@ -940,6 +1172,7 @@ async function loadLayer(id) {
     if (countEl) countEl.textContent = layerCounts[id].toLocaleString();
 
     addLayerToMap(id);
+    initDateFilter(id);
   } catch (err) {
     console.error(`Failed to load ${cfg.file}:`, err);
     loadingEl.textContent = `Failed to load ${cfg.label}`;
