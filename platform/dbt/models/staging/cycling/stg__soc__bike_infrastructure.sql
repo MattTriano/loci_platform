@@ -4,6 +4,13 @@
 --
 -- Standardizes column names and maps displayrou values to the common
 -- infra_type taxonomy used across all bike infrastructure models.
+{{ config(
+    materialized='table',
+    post_hook=[
+        "CREATE INDEX ON {{ this }} USING GIST (geom)",
+        "ANALYZE {{ this }}"
+    ]
+) }}
 
 select
     -- We don't have a natural key, so build one from the segment definition

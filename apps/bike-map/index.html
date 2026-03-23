@@ -22,28 +22,69 @@
     inset: 0;
   }
 
-  /* ── Layer control panel ─────────────────────────────── */
-  #controls {
+  /* ── Shared panel styling ────────────────────────────── */
+  .panel {
     position: absolute;
-    top: 16px;
-    left: 16px;
     z-index: 10;
     background: rgba(18, 18, 20, 0.92);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
-    padding: 16px 18px;
-    min-width: 210px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
   }
 
-  #controls h2 {
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .panel-header h2 {
     font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 12px;
+    margin: 0;
+  }
+
+  .panel-chevron {
+    width: 16px;
+    height: 16px;
+    color: rgba(255, 255, 255, 0.3);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .panel.collapsed .panel-chevron {
+    transform: rotate(-90deg);
+  }
+
+  .panel-body {
+    padding: 0 18px 16px;
+    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+    max-height: 600px;
+    opacity: 1;
+    overflow: hidden;
+  }
+
+  .panel.collapsed .panel-body {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  /* ── Layer control panel ─────────────────────────────── */
+  #controls {
+    top: 16px;
+    left: 16px;
+    min-width: 210px;
   }
 
   .layer-toggle {
@@ -108,29 +149,110 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── Route panel ─────────────────────────────────────── */
-  #route-panel {
-    position: absolute;
-    top: 16px;
-    right: 60px;
-    z-index: 10;
-    background: rgba(18, 18, 20, 0.92);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 16px 18px;
-    min-width: 240px;
-    max-width: 280px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  /* ── Date range filter ───────────────────────────────── */
+  .date-filter {
+    padding: 4px 0 8px 26px;
+    display: none;
   }
 
-  #route-panel h2 {
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 12px;
+  .date-filter.active { display: block; }
+
+  .date-filter-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .date-filter-label span {
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+    display: inline-block;
+    min-width: 5.5em;
+    text-align: center;
+  }
+
+  .date-filter-count {
+    color: rgba(255, 255, 255, 0.35) !important;
+    font-weight: 500 !important;
+    min-width: 4.5em !important;
+    text-align: right !important;
+  }
+
+  .dual-range {
+    position: relative;
+    height: 20px;
+    width: 100%;
+  }
+
+  .dual-range input[type="range"] {
+    position: absolute;
+    width: 100%;
+    top: 0;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    appearance: none;
+    background: transparent;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .dual-range input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--layer-color, #fff);
+    border: 2px solid #fff;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+
+  .dual-range input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--layer-color, #fff);
+    border: 2px solid #fff;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+
+  .dual-range-track {
+    position: absolute;
+    top: 8px;
+    left: 0;
+    right: 0;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .dual-range-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--layer-color, rgba(255, 255, 255, 0.4));
+    opacity: 0.5;
+    cursor: grab;
+    z-index: 1;
+  }
+
+  .dual-range-fill.dragging {
+    cursor: grabbing;
+    opacity: 0.7;
+  }
+
+  /* ── Route panel ─────────────────────────────────────── */
+  #route-panel {
+    top: 16px;
+    right: 60px;
+    min-width: 240px;
+    max-width: 280px;
   }
 
   .route-step {
@@ -229,6 +351,35 @@
     color: rgba(255, 255, 255, 0.3);
     text-align: center;
     line-height: 1.4;
+  }
+
+  /* ── Mobile layout ───────────────────────────────────── */
+  #panel-container {
+    display: none;
+  }
+
+  @media (max-width: 640px) {
+    #panel-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    #panel-container > .panel {
+      position: relative;
+      top: auto;
+      left: auto;
+      right: auto;
+      min-width: 0;
+      max-width: none;
+      pointer-events: auto;
+    }
   }
 
   /* ── Popup styling ───────────────────────────────────── */
@@ -395,33 +546,45 @@
 
 <div id="map"></div>
 
-<div id="controls">
-  <h2>Layers</h2>
+<!-- Mobile: panels flow inside this container. Desktop: container is display:none, panels use absolute positioning. -->
+<div id="panel-container"></div>
+
+<div id="controls" class="panel">
+  <div class="panel-header" data-panel="controls">
+    <h2>Layers</h2>
+    <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
+  </div>
+  <div class="panel-body" id="controls-body"></div>
 </div>
 
-<div id="route-panel">
-  <h2>Route</h2>
-  <div class="route-step">
-    <div class="route-step-marker start">A</div>
-    <div class="route-step-text" id="route-start-label">Click map to set start</div>
+<div id="route-panel" class="panel collapsed">
+  <div class="panel-header" data-panel="route-panel">
+    <h2>Route</h2>
+    <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
   </div>
-  <div class="route-connector"><div class="route-connector-line"></div></div>
-  <div class="route-step">
-    <div class="route-step-marker end">B</div>
-    <div class="route-step-text" id="route-end-label">Click map to set end</div>
-  </div>
-  <div class="route-info" id="route-info">
-    <div class="route-info-row">
-      <span class="route-info-key">Distance</span>
-      <span class="route-info-val" id="route-distance">—</span>
+  <div class="panel-body">
+    <div class="route-step">
+      <div class="route-step-marker start">A</div>
+      <div class="route-step-text" id="route-start-label">Click map to set start</div>
     </div>
-    <div class="route-info-row">
-      <span class="route-info-key">Est. time</span>
-      <span class="route-info-val" id="route-time">—</span>
+    <div class="route-connector"><div class="route-connector-line"></div></div>
+    <div class="route-step">
+      <div class="route-step-marker end">B</div>
+      <div class="route-step-text" id="route-end-label">Click map to set end</div>
     </div>
+    <div class="route-info" id="route-info">
+      <div class="route-info-row">
+        <span class="route-info-key">Distance</span>
+        <span class="route-info-val" id="route-distance">—</span>
+      </div>
+      <div class="route-info-row">
+        <span class="route-info-key">Est. time</span>
+        <span class="route-info-val" id="route-time">—</span>
+      </div>
+    </div>
+    <button class="route-btn" id="route-clear-btn" style="display:none">Clear route</button>
+    <div class="route-hint" id="route-hint">Click anywhere on the map to place start and end points</div>
   </div>
-  <button class="route-btn" id="route-clear-btn" style="display:none">Clear route</button>
-  <div class="route-hint" id="route-hint">Click anywhere on the map to place start and end points</div>
 </div>
 
 <a class="github-link" href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">
@@ -433,17 +596,63 @@
 
 <script>
 // ── Configuration ────────────────────────────────────────
-// Loaded from config.json at startup. Defaults used if fetch fails.
 const CONFIG = {
   log_endpoint: '',
-  osrm_base_url: 'https://router.project-osrm.org',
+  routing_api_url: '',
+  routing_api_key: '',
 };
 
-// Load environment-specific config (config.json is deployed per-env)
 fetch('config.json')
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(cfg => { Object.assign(CONFIG, cfg); })
-  .catch(() => { /* Use defaults — logging disabled, public OSRM */ });
+  .catch(() => { /* Use defaults */ });
+
+// ── Panel accordion ──────────────────────────────────────
+// On mobile, panels live inside #panel-container (flexbox column).
+// On desktop, they stay as absolute-positioned elements on <body>.
+function isMobile() { return window.innerWidth <= 640; }
+
+const panelContainer = document.getElementById('panel-container');
+const controlsPanel = document.getElementById('controls');
+const routePanel = document.getElementById('route-panel');
+let panelsInContainer = false;
+
+function arrangePanels() {
+  if (isMobile() && !panelsInContainer) {
+    panelContainer.appendChild(controlsPanel);
+    panelContainer.appendChild(routePanel);
+    panelsInContainer = true;
+  } else if (!isMobile() && panelsInContainer) {
+    // Move panels back to body (before the loading bar)
+    const loading = document.getElementById('loading');
+    document.body.insertBefore(controlsPanel, loading);
+    document.body.insertBefore(routePanel, loading);
+    panelsInContainer = false;
+  }
+}
+
+function togglePanel(panelId) {
+  const panel = document.getElementById(panelId);
+  const wasCollapsed = panel.classList.contains('collapsed');
+
+  if (isMobile() && wasCollapsed) {
+    // Collapse the other panel first
+    document.querySelectorAll('.panel').forEach(p => {
+      if (p.id !== panelId) p.classList.add('collapsed');
+    });
+  }
+
+  panel.classList.toggle('collapsed');
+}
+
+document.querySelectorAll('.panel-header').forEach(header => {
+  header.addEventListener('click', () => {
+    togglePanel(header.dataset.panel);
+  });
+});
+
+window.addEventListener('resize', arrangePanels);
+arrangePanels();
 
 // ── Layer configuration ──────────────────────────────────
 const LAYERS = {
@@ -455,6 +664,7 @@ const LAYERS = {
     clusterRadius: 45,
     pointRadius: 5,
     defaultVisible: true,
+    dateField: 'crash_date',
     popupTitle: 'Bike Crash',
     popupFields: [
       { key: 'crash_date',              label: 'Date' },
@@ -479,6 +689,7 @@ const LAYERS = {
     clusterRadius: 45,
     pointRadius: 5,
     defaultVisible: true,
+    dateField: 'theft_date',
     popupTitle: 'Bike Theft',
     popupFields: [
       { key: 'source',               label: 'Source' },
@@ -520,10 +731,9 @@ let currentPopup = null;
 let popupFeatures = [];
 let popupIndex = 0;
 
-// Route state
-let routeOrigin = null;      // [lng, lat]
-let routeDestination = null;  // [lng, lat]
-let routeData = null;         // OSRM response
+let routeOrigin = null;
+let routeDestination = null;
+let routeData = null;
 let originMarker = null;
 let destMarker = null;
 
@@ -545,7 +755,7 @@ map.addControl(new maplibregl.GeolocateControl({
 }), 'top-right');
 
 // ── Build layer control panel ────────────────────────────
-const controlsEl = document.getElementById('controls');
+const controlsBody = document.getElementById('controls-body');
 
 for (const [id, cfg] of Object.entries(LAYERS)) {
   const label = document.createElement('label');
@@ -557,22 +767,229 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
     <span class="layer-label">${cfg.label}</span>
     <span class="layer-count" id="count-${id}"></span>
   `;
-  controlsEl.appendChild(label);
+  controlsBody.appendChild(label);
 
   label.querySelector('input').addEventListener('change', (e) => {
     toggleLayer(id, e.target.checked);
   });
+
+  // Add date filter slider for layers with a dateField
+  if (cfg.dateField) {
+    const filterDiv = document.createElement('div');
+    filterDiv.className = 'date-filter';
+    filterDiv.id = `date-filter-${id}`;
+    filterDiv.style.setProperty('--layer-color', cfg.color);
+    filterDiv.innerHTML = `
+      <div class="date-filter-label" id="date-label-${id}">Loading dates…</div>
+      <div class="dual-range">
+        <div class="dual-range-track"><div class="dual-range-fill" id="date-fill-${id}"></div></div>
+        <input type="range" id="date-min-${id}" min="0" max="1" value="0" />
+        <input type="range" id="date-max-${id}" min="0" max="1" value="1" />
+      </div>
+    `;
+    controlsBody.appendChild(filterDiv);
+  }
+}
+
+// ── Date filter state ────────────────────────────────────
+// Stores per-layer: { dates: [sorted unique date strings], minIdx, maxIdx }
+const dateFilterState = {};
+
+function parseDate(val) {
+  // Extract YYYY-MM-DD from "2018-10-20 13:40:00+00:00" or similar
+  if (!val) return null;
+  return String(val).slice(0, 10);
+}
+
+function formatDateShort(dateStr) {
+  // "2018-10-20" → "Oct 2018"
+  const [y, m] = dateStr.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function initDateFilter(id) {
+  const cfg = LAYERS[id];
+  if (!cfg.dateField || !layerData[id]) return;
+
+  const features = layerData[id].features || [];
+  const dateSet = new Set();
+
+  // Precompute parsed date for each feature (avoids repeated string slicing)
+  const featureDates = new Array(features.length);
+  for (let i = 0; i < features.length; i++) {
+    const d = parseDate(features[i].properties[cfg.dateField]);
+    featureDates[i] = d;
+    if (d) dateSet.add(d);
+  }
+
+  const dates = Array.from(dateSet).sort();
+  if (dates.length < 2) return;
+
+  const state = { dates, featureDates, minIdx: 0, maxIdx: dates.length - 1 };
+  dateFilterState[id] = state;
+
+  const minInput = document.getElementById(`date-min-${id}`);
+  const maxInput = document.getElementById(`date-max-${id}`);
+  const last = dates.length - 1;
+
+  minInput.min = 0; minInput.max = last; minInput.value = 0;
+  maxInput.min = 0; maxInput.max = last; maxInput.value = last;
+
+  updateDateLabel(id);
+
+  // Show the filter
+  document.getElementById(`date-filter-${id}`).classList.add('active');
+
+  let filterRAF = null;
+  function scheduleFilter() {
+    cancelAnimationFrame(filterRAF);
+    filterRAF = requestAnimationFrame(() => applyDateFilter(id));
+  }
+
+  function onSliderInput() {
+    let lo = parseInt(minInput.value);
+    let hi = parseInt(maxInput.value);
+
+    // Prevent handles from crossing
+    if (lo > hi) {
+      if (this === minInput) { lo = hi; minInput.value = lo; }
+      else { hi = lo; maxInput.value = hi; }
+    }
+
+    state.minIdx = lo;
+    state.maxIdx = hi;
+    updateDateLabel(id);
+    updateDateFill(id);
+    scheduleFilter();
+  }
+
+  minInput.addEventListener('input', onSliderInput);
+  maxInput.addEventListener('input', onSliderInput);
+  updateDateFill(id);
+
+  // Drag the fill bar to shift both handles together
+  const fill = document.getElementById(`date-fill-${id}`);
+  let dragStartX = null;
+  let dragStartMin = null;
+  let dragStartMax = null;
+
+  fill.addEventListener('mousedown', startDrag);
+  fill.addEventListener('touchstart', startDrag, { passive: false });
+
+  function startDrag(e) {
+    e.preventDefault();
+    dragStartX = (e.touches ? e.touches[0] : e).clientX;
+    dragStartMin = state.minIdx;
+    dragStartMax = state.maxIdx;
+    fill.classList.add('dragging');
+
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchend', stopDrag);
+  }
+
+  function onDrag(e) {
+    e.preventDefault();
+    const clientX = (e.touches ? e.touches[0] : e).clientX;
+    const track = fill.parentElement;
+    const pxPerStep = track.offsetWidth / last;
+    const deltaSteps = Math.round((clientX - dragStartX) / pxPerStep);
+
+    const span = dragStartMax - dragStartMin;
+    let newMin = dragStartMin + deltaSteps;
+    let newMax = dragStartMax + deltaSteps;
+
+    // Clamp to bounds
+    if (newMin < 0) { newMin = 0; newMax = span; }
+    if (newMax > last) { newMax = last; newMin = last - span; }
+
+    state.minIdx = newMin;
+    state.maxIdx = newMax;
+    minInput.value = newMin;
+    maxInput.value = newMax;
+
+    updateDateLabel(id);
+    updateDateFill(id);
+    scheduleFilter();
+  }
+
+  function stopDrag() {
+    fill.classList.remove('dragging');
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('touchmove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchend', stopDrag);
+  }
+}
+
+function updateDateLabel(id) {
+  const state = dateFilterState[id];
+  if (!state) return;
+  const fromStr = formatDateShort(state.dates[state.minIdx]);
+  const toStr = formatDateShort(state.dates[state.maxIdx]);
+  const total = layerData[id].features.length;
+  const filtered = countFilteredFeatures(id);
+  document.getElementById(`date-label-${id}`).innerHTML =
+    `<span>${fromStr}</span> — <span>${toStr}</span> <span class="date-filter-count">(${filtered.toLocaleString()})</span>`;
+}
+
+function updateDateFill(id) {
+  const state = dateFilterState[id];
+  if (!state) return;
+  const fill = document.getElementById(`date-fill-${id}`);
+  const range = state.dates.length - 1;
+  const left = (state.minIdx / range) * 100;
+  const right = (state.maxIdx / range) * 100;
+  fill.style.left = left + '%';
+  fill.style.width = (right - left) + '%';
+}
+
+function countFilteredFeatures(id) {
+  const state = dateFilterState[id];
+  if (!state || !layerData[id]) return 0;
+  const minDate = state.dates[state.minIdx];
+  const maxDate = state.dates[state.maxIdx];
+  const fd = state.featureDates;
+  let count = 0;
+  for (let i = 0; i < fd.length; i++) {
+    const d = fd[i];
+    if (d && d >= minDate && d <= maxDate) count++;
+  }
+  return count;
+}
+
+function applyDateFilter(id) {
+  const state = dateFilterState[id];
+  const sourceId = `src-${id}`;
+  if (!state || !map.getSource(sourceId)) return;
+
+  const minDate = state.dates[state.minIdx];
+  const maxDate = state.dates[state.maxIdx];
+  const features = layerData[id].features;
+  const fd = state.featureDates;
+  const out = [];
+
+  for (let i = 0; i < features.length; i++) {
+    const d = fd[i];
+    if (d && d >= minDate && d <= maxDate) out.push(features[i]);
+  }
+
+  map.getSource(sourceId).setData({ type: 'FeatureCollection', features: out });
+
+  // Update the count display
+  const countEl = document.getElementById(`count-${id}`);
+  if (countEl) countEl.textContent = out.length.toLocaleString();
 }
 
 // ── Map load ─────────────────────────────────────────────
 map.on('load', () => {
-  // Add empty route source + layers (populated later)
   map.addSource('route', {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
   });
 
-  // Route casing (wider line behind for outline effect)
   map.addLayer({
     id: 'route-casing',
     type: 'line',
@@ -584,7 +1001,6 @@ map.on('load', () => {
     },
   });
 
-  // Route line
   map.addLayer({
     id: 'route-line',
     type: 'line',
@@ -596,22 +1012,19 @@ map.on('load', () => {
     },
   });
 
-  // Load default layers
   for (const [id, cfg] of Object.entries(LAYERS)) {
     if (cfg.defaultVisible) {
       loadLayer(id);
     }
   }
 
-  // Enable crosshair cursor for route placement
   map.getContainer().classList.add('crosshair-cursor');
 });
 
 // ── Route: click-to-place ────────────────────────────────
 map.on('click', (e) => {
-  // Don't place route points if click was on a cluster or point layer
   const pointLayers = Object.keys(LAYERS)
-    .flatMap(id => [`${id}-clusters`, `${id}-points`])
+    .flatMap(id => [`${id}-clusters`, `${id}-points-hitarea`])
     .filter(lid => map.getLayer(lid));
   const hitFeatures = map.queryRenderedFeatures(e.point, { layers: pointLayers });
   if (hitFeatures.length > 0) return;
@@ -624,11 +1037,16 @@ map.on('click', (e) => {
     setDestination(lngLat);
     fetchRoute();
   }
-  // If both are set, clicks are ignored until cleared
 });
 
 function setOrigin(lngLat) {
   routeOrigin = lngLat;
+
+  // Auto-expand route panel when user starts placing points
+  const routePanel = document.getElementById('route-panel');
+  if (routePanel.classList.contains('collapsed')) {
+    togglePanel('route-panel');
+  }
 
   if (originMarker) originMarker.remove();
   const el = document.createElement('div');
@@ -671,7 +1089,6 @@ function setDestination(lngLat) {
   document.getElementById('route-hint').style.display = 'none';
   document.getElementById('route-clear-btn').style.display = 'block';
 
-  // Disable crosshair since both points are placed
   map.getContainer().classList.remove('crosshair-cursor');
 }
 
@@ -681,52 +1098,65 @@ function updateRouteLabel(which, lngLat) {
   labelEl.classList.add('set');
 }
 
-// ── Route: fetch from OSRM ──────────────────────────────
+// ── Route: fetch from Lambda ─────────────────────────────
 async function fetchRoute() {
+  if (!CONFIG.routing_api_url) {
+    console.warn('No routing_api_url configured');
+    return;
+  }
+
   const loadingEl = document.getElementById('loading');
-  loadingEl.textContent = 'Finding route…';
+  loadingEl.textContent = 'Finding route (first route request may take ~15s as lambda func spins up)';
   loadingEl.classList.remove('hidden');
 
-  const coords = `${routeOrigin[0]},${routeOrigin[1]};${routeDestination[0]},${routeDestination[1]}`;
-  const url = `${CONFIG.osrm_base_url}/route/v1/bike/${coords}?overview=full&geometries=geojson&steps=true`;
-
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`OSRM returned ${resp.status}`);
-    const data = await resp.json();
+    const resp = await fetch(CONFIG.routing_api_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': CONFIG.routing_api_key,
+      },
+      body: JSON.stringify({
+        origin: [routeOrigin[1], routeOrigin[0]],           // [lat, lon]
+        destination: [routeDestination[1], routeDestination[0]], // [lat, lon]
+      }),
+    });
 
-    if (data.code !== 'Ok' || !data.routes || !data.routes.length) {
-      throw new Error(data.message || 'No route found');
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.error || `API returned ${resp.status}`);
     }
 
+    const data = await resp.json();
     routeData = data;
-    const route = data.routes[0];
 
-    // Draw route on map
+    // Draw route on map — coordinates are already [lon, lat]
     map.getSource('route').setData({
       type: 'Feature',
-      geometry: route.geometry,
+      geometry: {
+        type: 'LineString',
+        coordinates: data.coordinates,
+      },
     });
 
     // Fit map to route bounds
-    const coords = route.geometry.coordinates;
-    const bounds = coords.reduce(
+    const bounds = data.coordinates.reduce(
       (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(coords[0], coords[0])
+      new maplibregl.LngLatBounds(data.coordinates[0], data.coordinates[0])
     );
     map.fitBounds(bounds, { padding: 80 });
 
     // Show route info
-    const distKm = route.distance / 1000;
+    const distKm = data.total_length_m / 1000;
     const distMi = distKm * 0.621371;
-    const durMin = Math.round(route.duration / 60);
+    // Rough estimate: ~15 km/h average city cycling speed
+    const durMin = Math.round((data.total_length_m / 1000) / 15 * 60);
 
     document.getElementById('route-distance').textContent = `${distMi.toFixed(1)} mi (${distKm.toFixed(1)} km)`;
-    document.getElementById('route-time').textContent = `${durMin} min`;
+    document.getElementById('route-time').textContent = `~${durMin} min`;
     document.getElementById('route-info').classList.add('visible');
 
-    // Log the route request
-    logRouteRequest(route);
+    logRouteRequest(data);
 
   } catch (err) {
     console.error('Routing failed:', err);
@@ -749,12 +1179,10 @@ function clearRoute() {
   if (originMarker) { originMarker.remove(); originMarker = null; }
   if (destMarker) { destMarker.remove(); destMarker = null; }
 
-  // Clear route line
   if (map.getSource('route')) {
     map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
   }
 
-  // Reset panel
   const startLabel = document.getElementById('route-start-label');
   const endLabel = document.getElementById('route-end-label');
   startLabel.textContent = 'Click map to set start';
@@ -766,41 +1194,36 @@ function clearRoute() {
   document.getElementById('route-hint').style.display = '';
   document.getElementById('route-hint').textContent = 'Click anywhere on the map to place start and end points';
 
-  // Re-enable crosshair
   map.getContainer().classList.add('crosshair-cursor');
 }
 
 // ── Route: log to API Gateway ────────────────────────────
-function logRouteRequest(route) {
+function logRouteRequest(data) {
   if (!CONFIG.log_endpoint) return;
 
   const payload = {
     timestamp: new Date().toISOString(),
     origin: { lng: routeOrigin[0], lat: routeOrigin[1] },
     destination: { lng: routeDestination[0], lat: routeDestination[1] },
-    distance_m: route.distance,
-    duration_s: route.duration,
-    route_geometry: route.geometry,
+    total_length_m: data.total_length_m,
+    total_cost: data.total_cost,
+    route_geometry: { type: 'LineString', coordinates: data.coordinates },
     user_agent: navigator.userAgent,
     screen: { width: screen.width, height: screen.height },
     viewport: { width: window.innerWidth, height: window.innerHeight },
     referrer: document.referrer || null,
-    // Visible layers at time of routing
     active_layers: Object.keys(LAYERS).filter(id => {
       const cb = document.querySelector(`input[data-layer="${id}"]`);
       return cb && cb.checked;
     }),
   };
 
-  // Fire and forget — don't block UX on logging
   fetch(CONFIG.log_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     keepalive: true,
-  }).catch(() => {
-    // Silently ignore logging failures
-  });
+  }).catch(() => {});
 }
 
 // ── Layer loading ────────────────────────────────────────
@@ -826,6 +1249,7 @@ async function loadLayer(id) {
     if (countEl) countEl.textContent = layerCounts[id].toLocaleString();
 
     addLayerToMap(id);
+    initDateFilter(id);
   } catch (err) {
     console.error(`Failed to load ${cfg.file}:`, err);
     loadingEl.textContent = `Failed to load ${cfg.label}`;
@@ -849,7 +1273,6 @@ function addLayerToMap(id) {
     clusterRadius: cfg.clusterRadius,
   });
 
-  // Cluster circles
   map.addLayer({
     id: `${id}-clusters`,
     type: 'circle',
@@ -868,7 +1291,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Cluster count labels
   map.addLayer({
     id: `${id}-cluster-count`,
     type: 'symbol',
@@ -883,7 +1305,19 @@ function addLayerToMap(id) {
     },
   });
 
-  // Individual points
+  // Invisible hit-area layer (larger radius for easier tapping)
+  map.addLayer({
+    id: `${id}-points-hitarea`,
+    type: 'circle',
+    source: sourceId,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': 'transparent',
+      'circle-radius': 16,
+    },
+  });
+
+  // Visible points (drawn on top of hit area)
   map.addLayer({
     id: `${id}-points`,
     type: 'circle',
@@ -898,7 +1332,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Click → zoom into cluster
   map.on('click', `${id}-clusters`, (e) => {
     const features = map.queryRenderedFeatures(e.point, { layers: [`${id}-clusters`] });
     const clusterId = features[0].properties.cluster_id;
@@ -908,17 +1341,16 @@ function addLayerToMap(id) {
     });
   });
 
-  // Click → popup on individual point
-  map.on('click', `${id}-points`, (e) => {
-    const allPointLayers = Object.keys(LAYERS)
-      .map(lid => `${lid}-points`)
+  map.on('click', `${id}-points-hitarea`, (e) => {
+    const allHitLayers = Object.keys(LAYERS)
+      .map(lid => `${lid}-points-hitarea`)
       .filter(lid => map.getLayer(lid) && map.getLayoutProperty(lid, 'visibility') !== 'none');
 
-    const allFeatures = map.queryRenderedFeatures(e.point, { layers: allPointLayers });
+    const allFeatures = map.queryRenderedFeatures(e.point, { layers: allHitLayers });
     if (!allFeatures.length) return;
 
     popupFeatures = allFeatures.map(feat => {
-      const layerId = feat.layer.id.replace('-points', '');
+      const layerId = feat.layer.id.replace('-points-hitarea', '');
       const featCfg = LAYERS[layerId];
       const coords = feat.geometry.coordinates.slice();
       while (Math.abs(e.lngLat.lng - coords[0]) > 180) {
@@ -931,11 +1363,10 @@ function addLayerToMap(id) {
     showPopupAtIndex(popupFeatures[0].coords);
   });
 
-  // Cursor styling
   map.on('mouseenter', `${id}-clusters`, () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', `${id}-clusters`, () => { map.getCanvas().style.cursor = ''; });
-  map.on('mouseenter', `${id}-points`, () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', `${id}-points`, () => { map.getCanvas().style.cursor = ''; });
+  map.on('mouseenter', `${id}-points-hitarea`, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', `${id}-points-hitarea`, () => { map.getCanvas().style.cursor = ''; });
 }
 
 // ── Popup display with pagination ────────────────────────
@@ -963,7 +1394,6 @@ function showPopupAtIndex(coords) {
   });
 }
 
-// ── Popup HTML builder ───────────────────────────────────
 function buildPopupHTML(cfg, props, totalCount, currentIndex) {
   let nav = '';
   if (totalCount > 1) {
@@ -1002,14 +1432,14 @@ function toggleLayer(id, visible) {
 }
 
 function showLayer(id) {
-  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points`];
+  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points-hitarea`, `${id}-points`];
   for (const lid of ids) {
     if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', 'visible');
   }
 }
 
 function hideLayer(id) {
-  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points`];
+  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points-hitarea`, `${id}-points`];
   for (const lid of ids) {
     if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', 'none');
   }

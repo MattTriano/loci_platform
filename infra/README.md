@@ -119,3 +119,9 @@ After a successful apply, these outputs are available:
 
 - `bike_map_url` — the public URL (e.g. `https://bike-map.dev.missinglastmile.net`)
 - `dns_zone_name_servers` — the NS records (needed for step 2 on first deploy)
+
+You can see outputs via
+
+```console
+AWS_PROFILE=dev_profile_name tofu output -json --var-file=dev.tfvars
+```

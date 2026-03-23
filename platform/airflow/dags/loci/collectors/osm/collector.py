@@ -32,6 +32,7 @@ from pathlib import Path
 import requests
 from loci.collectors.osm.metadata import OsmMetadata
 from loci.collectors.osm.spec import OsmDatasetSpec
+from loci.tracking.ingestion_tracker import IngestionTracker
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
@@ -67,7 +68,7 @@ class OsmCollector:
 
     def __init__(self, engine, tracker=None):
         self.engine = engine
-        self.tracker = tracker
+        self.tracker = tracker or IngestionTracker(engine=self.engine)
         self._metadata = OsmMetadata()
         self._session = requests.Session()
         self.logger = logging.getLogger("osm_collector")

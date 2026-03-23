@@ -89,6 +89,7 @@ x-airflow-common:
     - ./dbt:/opt/airflow/dbt:U
     - ./profiles.yml:/home/airflow/.dbt/profiles.yml
     - ../apps/bike-map:/opt/airflow/app-files/bike-map:ro
+    - ../infra/modules/bike-map/lambda:/opt/airflow/app-infra/bike-map/lambda:U
     - ~/.aws/config:/home/airflow/.aws/config:ro
     - ~/.aws/sso:/home/airflow/.aws/sso:ro
   user: "50000:0"

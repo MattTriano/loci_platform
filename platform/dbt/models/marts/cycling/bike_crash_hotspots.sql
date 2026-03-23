@@ -1,4 +1,4 @@
--- bike_commuter__crash_hotspots.sql
+-- bike_crash_hotspots.sql
 -- Bike crash data aggregated for heatmap display.
 --
 -- Two output modes in one model:
@@ -8,12 +8,20 @@
 -- For the grid aggregation we use a simple lat/lon grid rather than H3
 -- to avoid the PostGIS H3 extension dependency. Each cell is roughly
 -- 200m x 200m (~0.002 degrees at Chicago's latitude).
+{{ config(
+    materialized='table',
+    post_hook=[
+        "CREATE INDEX ON {{ this }} USING GIST (geom)",
+        "ANALYZE {{ this }}"
+    ]
+) }}
+
 with crashes_with_severity as (
     select
         crash_record_id,
         geom,
         crash_date,
-        local_crash_date
+        local_crash_date,
         local_crash_time,
         local_crash_day_of_week,
         first_crash_type,
