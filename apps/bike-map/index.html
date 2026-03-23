@@ -167,6 +167,9 @@
   .date-filter-label span {
     color: rgba(255, 255, 255, 0.7);
     font-weight: 600;
+    display: inline-block;
+    min-width: 5.5em;
+    text-align: center;
   }
 
   .dual-range {
@@ -228,6 +231,13 @@
     border-radius: 2px;
     background: var(--layer-color, rgba(255, 255, 255, 0.4));
     opacity: 0.5;
+    cursor: grab;
+    z-index: 1;
+  }
+
+  .dual-range-fill.dragging {
+    cursor: grabbing;
+    opacity: 0.7;
   }
 
   /* ── Route panel ─────────────────────────────────────── */
@@ -844,6 +854,63 @@ function initDateFilter(id) {
   minInput.addEventListener('input', onSliderInput);
   maxInput.addEventListener('input', onSliderInput);
   updateDateFill(id);
+
+  // Drag the fill bar to shift both handles together
+  const fill = document.getElementById(`date-fill-${id}`);
+  let dragStartX = null;
+  let dragStartMin = null;
+  let dragStartMax = null;
+
+  fill.addEventListener('mousedown', startDrag);
+  fill.addEventListener('touchstart', startDrag, { passive: false });
+
+  function startDrag(e) {
+    e.preventDefault();
+    dragStartX = (e.touches ? e.touches[0] : e).clientX;
+    dragStartMin = state.minIdx;
+    dragStartMax = state.maxIdx;
+    fill.classList.add('dragging');
+
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchend', stopDrag);
+  }
+
+  function onDrag(e) {
+    e.preventDefault();
+    const clientX = (e.touches ? e.touches[0] : e).clientX;
+    const track = fill.parentElement;
+    const pxPerStep = track.offsetWidth / last;
+    const deltaSteps = Math.round((clientX - dragStartX) / pxPerStep);
+
+    const span = dragStartMax - dragStartMin;
+    let newMin = dragStartMin + deltaSteps;
+    let newMax = dragStartMax + deltaSteps;
+
+    // Clamp to bounds
+    if (newMin < 0) { newMin = 0; newMax = span; }
+    if (newMax > last) { newMax = last; newMin = last - span; }
+
+    state.minIdx = newMin;
+    state.maxIdx = newMax;
+    minInput.value = newMin;
+    maxInput.value = newMax;
+
+    updateDateLabel(id);
+    updateDateFill(id);
+
+    clearTimeout(filterTimeout);
+    filterTimeout = setTimeout(() => applyDateFilter(id), 120);
+  }
+
+  function stopDrag() {
+    fill.classList.remove('dragging');
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('touchmove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchend', stopDrag);
+  }
 }
 
 function updateDateLabel(id) {
