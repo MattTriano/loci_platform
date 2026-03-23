@@ -715,7 +715,7 @@ map.on('load', () => {
 // ── Route: click-to-place ────────────────────────────────
 map.on('click', (e) => {
   const pointLayers = Object.keys(LAYERS)
-    .flatMap(id => [`${id}-clusters`, `${id}-points`])
+    .flatMap(id => [`${id}-clusters`, `${id}-points-hitarea`])
     .filter(lid => map.getLayer(lid));
   const hitFeatures = map.queryRenderedFeatures(e.point, { layers: pointLayers });
   if (hitFeatures.length > 0) return;
@@ -797,7 +797,7 @@ async function fetchRoute() {
   }
 
   const loadingEl = document.getElementById('loading');
-  loadingEl.textContent = 'Finding route (first route request may take ~10s as lambda func spins up)';
+  loadingEl.textContent = 'Finding route (first route request may take ~15s as lambda func spins up)';
   loadingEl.classList.remove('hidden');
 
   try {
@@ -995,6 +995,19 @@ function addLayerToMap(id) {
     },
   });
 
+  // Invisible hit-area layer (larger radius for easier tapping)
+  map.addLayer({
+    id: `${id}-points-hitarea`,
+    type: 'circle',
+    source: sourceId,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': 'transparent',
+      'circle-radius': 16,
+    },
+  });
+
+  // Visible points (drawn on top of hit area)
   map.addLayer({
     id: `${id}-points`,
     type: 'circle',
@@ -1018,16 +1031,16 @@ function addLayerToMap(id) {
     });
   });
 
-  map.on('click', `${id}-points`, (e) => {
-    const allPointLayers = Object.keys(LAYERS)
-      .map(lid => `${lid}-points`)
+  map.on('click', `${id}-points-hitarea`, (e) => {
+    const allHitLayers = Object.keys(LAYERS)
+      .map(lid => `${lid}-points-hitarea`)
       .filter(lid => map.getLayer(lid) && map.getLayoutProperty(lid, 'visibility') !== 'none');
 
-    const allFeatures = map.queryRenderedFeatures(e.point, { layers: allPointLayers });
+    const allFeatures = map.queryRenderedFeatures(e.point, { layers: allHitLayers });
     if (!allFeatures.length) return;
 
     popupFeatures = allFeatures.map(feat => {
-      const layerId = feat.layer.id.replace('-points', '');
+      const layerId = feat.layer.id.replace('-points-hitarea', '');
       const featCfg = LAYERS[layerId];
       const coords = feat.geometry.coordinates.slice();
       while (Math.abs(e.lngLat.lng - coords[0]) > 180) {
@@ -1042,8 +1055,8 @@ function addLayerToMap(id) {
 
   map.on('mouseenter', `${id}-clusters`, () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', `${id}-clusters`, () => { map.getCanvas().style.cursor = ''; });
-  map.on('mouseenter', `${id}-points`, () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', `${id}-points`, () => { map.getCanvas().style.cursor = ''; });
+  map.on('mouseenter', `${id}-points-hitarea`, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', `${id}-points-hitarea`, () => { map.getCanvas().style.cursor = ''; });
 }
 
 // ── Popup display with pagination ────────────────────────
@@ -1109,14 +1122,14 @@ function toggleLayer(id, visible) {
 }
 
 function showLayer(id) {
-  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points`];
+  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points-hitarea`, `${id}-points`];
   for (const lid of ids) {
     if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', 'visible');
   }
 }
 
 function hideLayer(id) {
-  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points`];
+  const ids = [`${id}-clusters`, `${id}-cluster-count`, `${id}-points-hitarea`, `${id}-points`];
   for (const lid of ids) {
     if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', 'none');
   }
