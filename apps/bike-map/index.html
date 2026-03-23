@@ -172,6 +172,13 @@
     text-align: center;
   }
 
+  .date-filter-count {
+    color: rgba(255, 255, 255, 0.35) !important;
+    font-weight: 500 !important;
+    min-width: 4.5em !important;
+    text-align: right !important;
+  }
+
   .dual-range {
     position: relative;
     height: 20px;
@@ -807,15 +814,19 @@ function initDateFilter(id) {
 
   const features = layerData[id].features || [];
   const dateSet = new Set();
-  for (const f of features) {
-    const d = parseDate(f.properties[cfg.dateField]);
+
+  // Precompute parsed date for each feature (avoids repeated string slicing)
+  const featureDates = new Array(features.length);
+  for (let i = 0; i < features.length; i++) {
+    const d = parseDate(features[i].properties[cfg.dateField]);
+    featureDates[i] = d;
     if (d) dateSet.add(d);
   }
 
   const dates = Array.from(dateSet).sort();
   if (dates.length < 2) return;
 
-  const state = { dates, minIdx: 0, maxIdx: dates.length - 1 };
+  const state = { dates, featureDates, minIdx: 0, maxIdx: dates.length - 1 };
   dateFilterState[id] = state;
 
   const minInput = document.getElementById(`date-min-${id}`);
@@ -830,8 +841,12 @@ function initDateFilter(id) {
   // Show the filter
   document.getElementById(`date-filter-${id}`).classList.add('active');
 
-  // Debounce filtering to avoid thrashing on fast slider drags
-  let filterTimeout = null;
+  let filterRAF = null;
+  function scheduleFilter() {
+    cancelAnimationFrame(filterRAF);
+    filterRAF = requestAnimationFrame(() => applyDateFilter(id));
+  }
+
   function onSliderInput() {
     let lo = parseInt(minInput.value);
     let hi = parseInt(maxInput.value);
@@ -846,9 +861,7 @@ function initDateFilter(id) {
     state.maxIdx = hi;
     updateDateLabel(id);
     updateDateFill(id);
-
-    clearTimeout(filterTimeout);
-    filterTimeout = setTimeout(() => applyDateFilter(id), 120);
+    scheduleFilter();
   }
 
   minInput.addEventListener('input', onSliderInput);
@@ -899,9 +912,7 @@ function initDateFilter(id) {
 
     updateDateLabel(id);
     updateDateFill(id);
-
-    clearTimeout(filterTimeout);
-    filterTimeout = setTimeout(() => applyDateFilter(id), 120);
+    scheduleFilter();
   }
 
   function stopDrag() {
@@ -921,7 +932,7 @@ function updateDateLabel(id) {
   const total = layerData[id].features.length;
   const filtered = countFilteredFeatures(id);
   document.getElementById(`date-label-${id}`).innerHTML =
-    `<span>${fromStr}</span> — <span>${toStr}</span>  (${filtered.toLocaleString()})`;
+    `<span>${fromStr}</span> — <span>${toStr}</span> <span class="date-filter-count">(${filtered.toLocaleString()})</span>`;
 }
 
 function updateDateFill(id) {
@@ -936,41 +947,40 @@ function updateDateFill(id) {
 }
 
 function countFilteredFeatures(id) {
-  const cfg = LAYERS[id];
   const state = dateFilterState[id];
   if (!state || !layerData[id]) return 0;
   const minDate = state.dates[state.minIdx];
   const maxDate = state.dates[state.maxIdx];
+  const fd = state.featureDates;
   let count = 0;
-  for (const f of layerData[id].features) {
-    const d = parseDate(f.properties[cfg.dateField]);
+  for (let i = 0; i < fd.length; i++) {
+    const d = fd[i];
     if (d && d >= minDate && d <= maxDate) count++;
   }
   return count;
 }
 
 function applyDateFilter(id) {
-  const cfg = LAYERS[id];
   const state = dateFilterState[id];
   const sourceId = `src-${id}`;
   if (!state || !map.getSource(sourceId)) return;
 
   const minDate = state.dates[state.minIdx];
   const maxDate = state.dates[state.maxIdx];
+  const features = layerData[id].features;
+  const fd = state.featureDates;
+  const out = [];
 
-  const filtered = {
-    type: 'FeatureCollection',
-    features: layerData[id].features.filter(f => {
-      const d = parseDate(f.properties[cfg.dateField]);
-      return d && d >= minDate && d <= maxDate;
-    }),
-  };
+  for (let i = 0; i < features.length; i++) {
+    const d = fd[i];
+    if (d && d >= minDate && d <= maxDate) out.push(features[i]);
+  }
 
-  map.getSource(sourceId).setData(filtered);
+  map.getSource(sourceId).setData({ type: 'FeatureCollection', features: out });
 
   // Update the count display
   const countEl = document.getElementById(`count-${id}`);
-  if (countEl) countEl.textContent = filtered.features.length.toLocaleString();
+  if (countEl) countEl.textContent = out.length.toLocaleString();
 }
 
 // ── Map load ─────────────────────────────────────────────
