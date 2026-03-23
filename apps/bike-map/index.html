@@ -255,6 +255,14 @@
     max-width: 280px;
   }
 
+  .panel-subtitle {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.3);
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+
   .route-step {
     display: flex;
     align-items: center;
@@ -327,6 +335,47 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .route-why {
+    margin-top: 8px;
+  }
+
+  .route-why-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+
+  .route-why-toggle:hover { color: rgba(255, 255, 255, 0.6); }
+
+  .route-why-toggle svg {
+    width: 12px;
+    height: 12px;
+    transition: transform 0.2s ease;
+  }
+
+  .route-why-toggle.expanded svg {
+    transform: rotate(90deg);
+  }
+
+  .route-why-text {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.4);
+    display: none;
+  }
+
+  .route-why-text.visible { display: block; }
+
   .route-btn {
     display: block;
     width: 100%;
@@ -352,6 +401,103 @@
     text-align: center;
     line-height: 1.4;
   }
+
+  /* ── About info button (in panel header) ──────────────── */
+  .panel-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-info-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .panel-info-btn:hover {
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .panel-info-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .about-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .about-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .about-card {
+    background: rgba(18, 18, 20, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 28px 28px 24px;
+    max-width: 380px;
+    width: calc(100% - 32px);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  }
+
+  .about-card h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e8e4df;
+    margin-bottom: 14px;
+  }
+
+  .about-card p {
+    font-size: 14px;
+    line-height: 1.65;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 12px;
+  }
+
+  .about-card p:last-of-type {
+    margin-bottom: 0;
+  }
+
+  .about-close {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 9px 0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .about-close:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
 
   /* ── Mobile layout ───────────────────────────────────── */
   #panel-container {
@@ -487,7 +633,7 @@
   .loading-bar.hidden { opacity: 0; pointer-events: none; }
 
   /* ── Custom cursor when placing route points ─────────── */
-  .crosshair-cursor .maplibregl-canvas { cursor: crosshair !important; }
+  .crosshair-cursor .maplibregl-canvas { cursor: crosshair; }
 
   /* ── Route markers ───────────────────────────────────── */
   .route-map-marker {
@@ -552,14 +698,22 @@
 <div id="controls" class="panel">
   <div class="panel-header" data-panel="controls">
     <h2>Layers</h2>
-    <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
+    <div class="panel-header-actions">
+      <button class="panel-info-btn" id="about-btn" aria-label="About this map" title="About this map">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7" x2="8" y2="11.5"/><circle cx="8" cy="5" r="0.75" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
+    </div>
   </div>
   <div class="panel-body" id="controls-body"></div>
 </div>
 
 <div id="route-panel" class="panel collapsed">
   <div class="panel-header" data-panel="route-panel">
-    <h2>Route</h2>
+    <div>
+      <h2>Route</h2>
+      <p class="panel-subtitle">Safety-weighted cycling routes</p>
+    </div>
     <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
   </div>
   <div class="panel-body">
@@ -581,9 +735,28 @@
         <span class="route-info-key">Est. time</span>
         <span class="route-info-val" id="route-time">—</span>
       </div>
+      <div class="route-why">
+        <button class="route-why-toggle" id="route-why-toggle">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><polyline points="4 2 8 6 4 10"/></svg>
+          Why this route?
+        </button>
+        <div class="route-why-text" id="route-why-text">
+          This route favors streets with a less severe recent crash history, lower max speed limits, better bike lane infrastructure, safer surface material, and lighting, even if that means a slightly longer ride. It may differ from the shortest path to help you avoid higher-risk areas.
+        </div>
+      </div>
     </div>
     <button class="route-btn" id="route-clear-btn" style="display:none">Clear route</button>
     <div class="route-hint" id="route-hint">Click anywhere on the map to place start and end points</div>
+  </div>
+</div>
+
+<!-- About overlay -->
+<div class="about-overlay" id="about-overlay">
+  <div class="about-card">
+    <h1>Chicago Bike Map</h1>
+    <p>Chicago Bike Map helps you ride smarter around the city. The map layers show where crashes, thefts, and bike parking are concentrated, so you can see what's happening in the areas you ride.</p>
+    <p>Routes are safety-weighted — they favor streets with less severe recent crash history, lower max speed limits, better bike lane infrastructure, safer surface material, and lighting, even if that means a slightly longer ride.</p>
+    <button class="about-close" id="about-close">Got it</button>
   </div>
 </div>
 
@@ -606,6 +779,26 @@ fetch('config.json')
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(cfg => { Object.assign(CONFIG, cfg); })
   .catch(() => { /* Use defaults */ });
+
+// ── About overlay ────────────────────────────────────────
+const aboutBtn = document.getElementById('about-btn');
+const aboutOverlay = document.getElementById('about-overlay');
+const aboutClose = document.getElementById('about-close');
+
+aboutBtn.addEventListener('click', (e) => { e.stopPropagation(); aboutOverlay.classList.add('visible'); });
+aboutClose.addEventListener('click', () => { aboutOverlay.classList.remove('visible'); });
+aboutOverlay.addEventListener('click', (e) => {
+  if (e.target === aboutOverlay) aboutOverlay.classList.remove('visible');
+});
+
+// ── "Why this route?" toggle ─────────────────────────────
+const whyToggle = document.getElementById('route-why-toggle');
+const whyText = document.getElementById('route-why-text');
+
+whyToggle.addEventListener('click', () => {
+  const expanded = whyToggle.classList.toggle('expanded');
+  whyText.classList.toggle('visible', expanded);
+});
 
 // ── Panel accordion ──────────────────────────────────────
 // On mobile, panels live inside #panel-container (flexbox column).
@@ -1193,6 +1386,10 @@ function clearRoute() {
   document.getElementById('route-clear-btn').style.display = 'none';
   document.getElementById('route-hint').style.display = '';
   document.getElementById('route-hint').textContent = 'Click anywhere on the map to place start and end points';
+
+  // Collapse the "Why this route?" if it was open
+  whyToggle.classList.remove('expanded');
+  whyText.classList.remove('visible');
 
   map.getContainer().classList.add('crosshair-cursor');
 }
