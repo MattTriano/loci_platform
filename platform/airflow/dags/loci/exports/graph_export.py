@@ -42,6 +42,14 @@ class RoutingGraphExporter:
     engine : PostgresEngine
     batch_size : int
         Rows per batch when streaming edges from the database.
+    marts_schema : str, optional
+        dbt marts schema name. Falls back to the MARTS_SCHEMA_NAME env var.
+    min_component_size : int
+        Weakly connected components smaller than this are dropped before
+        serialization. This removes isolated subgraphs (parking lots,
+        dead-end service roads, tile boundary fragments) that are
+        unreachable from the main network and would never appear in a
+        real route. Default is 50. Set to 1 to disable filtering.
     """
 
     _EDGE_QUERY = """
@@ -64,6 +72,7 @@ class RoutingGraphExporter:
             and n_v.valid_to is null
         where e.safety_cost is not null
         order by e.u, e.v, e.key """
+
     _CRS_QUERY = """
         select srtext
         from spatial_ref_sys
@@ -72,14 +81,18 @@ class RoutingGraphExporter:
         ) """
 
     def __init__(
-        self, engine: PostgresEngine, batch_size: int = 50_000, marts_schema: str | None = None
+        self,
+        engine: PostgresEngine,
+        batch_size: int = 50_000,
+        marts_schema: str | None = None,
+        min_component_size: int = 75,
     ):
         self.engine = engine
         self.batch_size = batch_size
-        if marts_schema is not None:
-            self.marts_schema = marts_schema
-        else:
-            self.marts_schema = os.environ["MARTS_SCHEMA_NAME"]
+        self.marts_schema = (
+            marts_schema if marts_schema is not None else os.environ["MARTS_SCHEMA_NAME"]
+        )
+        self.min_component_size = min_component_size
 
     def export(self, output_path: Path) -> Path:
         """Build the routing graph and write it to output_path as a gzip pickle.
@@ -97,6 +110,7 @@ class RoutingGraphExporter:
         logger.info("Building routing graph → %s", output_path)
 
         G = self._build_graph()
+        G = self._filter_small_components(G)
 
         logger.info(
             "Serializing graph (%d nodes, %d edges)",
@@ -143,6 +157,35 @@ class RoutingGraphExporter:
 
         logger.info(
             "Graph complete: %d nodes, %d edges",
+            G.number_of_nodes(),
+            G.number_of_edges(),
+        )
+        return G
+
+    def _filter_small_components(self, G: nx.DiGraph) -> nx.DiGraph:
+        """Remove weakly connected components smaller than min_component_size.
+
+        Uses weak connectivity (ignores edge direction) so that subgraphs
+        reachable only in one direction are still considered connected.
+        """
+        if self.min_component_size <= 1:
+            return G
+
+        components = list(nx.weakly_connected_components(G))
+        before_nodes = G.number_of_nodes()
+        before_edges = G.number_of_edges()
+
+        small = [c for c in components if len(c) < self.min_component_size]
+        nodes_to_remove = set().union(*small) if small else set()
+        G.remove_nodes_from(nodes_to_remove)
+
+        logger.info(
+            "Component filtering: removed %d components (%d nodes, %d edges) "
+            "smaller than %d nodes. Graph: %d nodes, %d edges remaining.",
+            len(small),
+            before_nodes - G.number_of_nodes(),
+            before_edges - G.number_of_edges(),
+            self.min_component_size,
             G.number_of_nodes(),
             G.number_of_edges(),
         )
