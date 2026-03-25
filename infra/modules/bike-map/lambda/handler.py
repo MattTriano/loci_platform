@@ -1,9 +1,8 @@
 """
 Lambda handler for the bike routing API.
 
-Loads a safety-weighted NetworkX graph from S3 on cold start and keeps
-it in memory across warm invocations. Uses A* search with a haversine
-heuristic for efficient routing.
+Thin wrapper around the routing module. Loads the graph from S3 on cold
+start and delegates routing to routing.find_route().
 
 Environment variables:
     BIKE_MAP_GRAPH_BUCKET : S3 bucket containing the graph file.
@@ -28,13 +27,11 @@ Response:
 import gzip
 import json
 import logging
-import math
 import os
 import pickle
 
 import boto3
-import networkx as nx
-from scipy.spatial import KDTree
+from routing import build_kdtree, find_route
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -43,12 +40,12 @@ log.setLevel(logging.INFO)
 # Cold-start globals — loaded once, reused across warm invocations
 # ---------------------------------------------------------------------------
 
-_graph: nx.DiGraph | None = None
-_kdtree: KDTree | None = None
-_node_ids: list | None = None  # parallel list to KDTree: _node_ids[i] = osmid
+_graph = None
+_kdtree = None
+_node_ids = None
 
 
-def _load_graph() -> tuple[nx.DiGraph, KDTree, list]:
+def _load_graph():
     """Download and deserialize the routing graph from S3."""
     bucket = os.environ["BIKE_MAP_GRAPH_BUCKET"]
     key = os.environ["BIKE_MAP_GRAPH_KEY"]
@@ -62,11 +59,7 @@ def _load_graph() -> tuple[nx.DiGraph, KDTree, list]:
     G = pickle.loads(gzip.decompress(compressed))
     log.info("Graph loaded: %d nodes, %d edges", G.number_of_nodes(), G.number_of_edges())
 
-    # Build KD-tree over node coordinates for fast nearest-node lookup.
-    # Nodes are stored as (osmid, {lat: ..., lon: ...}) in the graph.
-    node_ids = list(G.nodes())
-    coords = [(G.nodes[n]["y"], G.nodes[n]["x"]) for n in node_ids]
-    kdtree = KDTree(coords)
+    kdtree, node_ids = build_kdtree(G)
     log.info("KD-tree built over %d nodes", len(node_ids))
 
     return G, kdtree, node_ids
@@ -76,77 +69,6 @@ def _ensure_loaded():
     global _graph, _kdtree, _node_ids
     if _graph is None:
         _graph, _kdtree, _node_ids = _load_graph()
-
-
-# ---------------------------------------------------------------------------
-# Routing helpers
-# ---------------------------------------------------------------------------
-
-
-def _nearest_node(lat: float, lon: float) -> int:
-    """Return the osmid of the nearest graph node to (lat, lon)."""
-    _, idx = _kdtree.query([lat, lon])
-    return _node_ids[idx]
-
-
-def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Approximate distance in meters between two lat/lon points."""
-    r = 6_371_000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def _route(origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float) -> dict:
-    """Find the safest route between two coordinates."""
-    origin_node = _nearest_node(origin_lat, origin_lon)
-    dest_node = _nearest_node(dest_lat, dest_lon)
-
-    if origin_node == dest_node:
-        node_data = _graph.nodes[origin_node]
-        return {
-            "total_cost": 0.0,
-            "total_length_m": 0.0,
-            "nodes": [origin_node],
-            "coordinates": [[node_data["x"], node_data["y"]]],
-        }
-
-    def heuristic(u, v):
-        # Admissible heuristic: haversine distance to destination.
-        # safety_cost >= length_m for any edge, so this never overestimates.
-        u_data = _graph.nodes[u]
-        v_data = _graph.nodes[v]
-        return _haversine_m(u_data["y"], u_data["x"], v_data["y"], v_data["x"])
-
-    try:
-        path = nx.astar_path(
-            _graph,
-            origin_node,
-            dest_node,
-            heuristic=heuristic,
-            weight="safety_cost",
-        )
-    except nx.NetworkXNoPath:
-        raise ValueError(f"No route found between {origin_node} and {dest_node}")
-
-    # Accumulate cost and length along the path
-    total_cost = 0.0
-    total_length_m = 0.0
-    for u, v in zip(path[:-1], path[1:], strict=True):
-        edge_data = _graph[u][v]
-        total_cost += edge_data.get("safety_cost", 0.0)
-        total_length_m += edge_data.get("length_m", 0.0)
-
-    coordinates = [[_graph.nodes[n]["x"], _graph.nodes[n]["y"]] for n in path]
-
-    return {
-        "total_cost": round(total_cost, 4),
-        "total_length_m": round(total_length_m, 1),
-        "nodes": path,
-        "coordinates": coordinates,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -167,8 +89,8 @@ def lambda_handler(event: dict, context) -> dict:
     # Parse request body
     try:
         body = json.loads(event.get("body") or "{}")
-        origin = body["origin"]  # [lat, lon]
-        destination = body["destination"]  # [lat, lon]
+        origin = body["origin"]
+        destination = body["destination"]
         origin_lat, origin_lon = float(origin[0]), float(origin[1])
         dest_lat, dest_lon = float(destination[0]), float(destination[1])
     except (KeyError, ValueError, TypeError) as e:
@@ -189,7 +111,15 @@ def lambda_handler(event: dict, context) -> dict:
 
     # Route
     try:
-        result = _route(origin_lat, origin_lon, dest_lat, dest_lon)
+        result = find_route(
+            _graph,
+            _kdtree,
+            _node_ids,
+            origin_lat,
+            origin_lon,
+            dest_lat,
+            dest_lon,
+        )
     except ValueError as e:
         return {
             "statusCode": 422,

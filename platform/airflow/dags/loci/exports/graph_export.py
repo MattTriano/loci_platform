@@ -57,6 +57,7 @@ class RoutingGraphExporter:
             e.u,
             e.v,
             e.key,
+            e.name,
             e.length_m,
             e.safety_cost,
             n_u.latitude  as u_lat,
@@ -147,6 +148,7 @@ class RoutingGraphExporter:
                     key=row["key"],
                     length_m=row["length_m"],
                     safety_cost=row["safety_cost"],
+                    name=row["name"],
                 )
                 edge_count += 1
 

@@ -14,6 +14,7 @@ psycopg2-binary
 pyarrow
 PyMySQL
 requests
+scipy
 shapely
 sqlalchemy
 tenacity
