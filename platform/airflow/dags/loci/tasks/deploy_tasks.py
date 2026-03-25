@@ -35,7 +35,8 @@ from loci.exports.graph_export import RoutingGraphExporter
 
 BIKE_MAP_APP_DIR = "/opt/airflow/app-files/bike-map"
 BIKE_MAP_EXPORT_DIR = "/opt/airflow/exports/bike-map"
-_LAMBDA_DIR = "/opt/airflow/app-infra/bike-map/lambda"
+_LAMBDA_DIR = Path("/opt/airflow/app-infra/bike-map/lambda")
+_LOCI_DIR = Path("/opt/airflow/dags/loci")
 
 # Subdirectories to skip during the general S3 sync.
 # These are handled by dedicated upload steps (e.g. _sync_bike_map_config).
@@ -192,10 +193,11 @@ def build_lambda_zip(output_path: Path) -> Path:
     -------
     Path to the written zip file.
     """
-    requirements = Path(_LAMBDA_DIR) / "requirements.txt"
-    handler_src = Path(_LAMBDA_DIR) / "handler.py"
+    requirements = _LAMBDA_DIR.joinpath("requirements.txt")
+    handler_src = _LAMBDA_DIR.joinpath("handler.py")
+    routing_src = _LOCI_DIR.joinpath("routing.py")
 
-    deps_dir = output_path.parent / "deps"
+    deps_dir = output_path.parent.joinpath("deps")
     deps_dir.mkdir(exist_ok=True)
 
     subprocess.run(
@@ -213,6 +215,7 @@ def build_lambda_zip(output_path: Path) -> Path:
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(handler_src, "handler.py")
+        zf.write(routing_src, "routing.py")
         for file in sorted(deps_dir.rglob("*")):
             if file.is_file():
                 zf.write(file, str(file.relative_to(deps_dir)))
