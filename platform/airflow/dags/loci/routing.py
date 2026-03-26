@@ -81,12 +81,36 @@ def find_route(
 
     total_cost = 0.0
     total_length_m = 0.0
+    coordinates = []
+
     for u, v in zip(path[:-1], path[1:], strict=True):
         edge_data = G[u][v]
         total_cost += edge_data.get("safety_cost", 0.0)
         total_length_m += edge_data.get("length_m", 0.0)
 
-    coordinates = [[G.nodes[n]["x"], G.nodes[n]["y"]] for n in path]
+        edge_coords = edge_data.get("geometry_coords")
+        if edge_coords:
+            # The stored geometry may run opposite to the traversal direction.
+            # Check if the first point is closer to node u or node v.
+            u_data = G.nodes[u]
+            first = edge_coords[0]
+            last = edge_coords[-1]
+            dist_to_first = (first[0] - u_data["x"]) ** 2 + (first[1] - u_data["y"]) ** 2
+            dist_to_last = (last[0] - u_data["x"]) ** 2 + (last[1] - u_data["y"]) ** 2
+            oriented = edge_coords if dist_to_first <= dist_to_last else list(reversed(edge_coords))
+
+            # Skip the first point of each edge after the first to avoid duplicates
+            # at edge junctions (the last point of one edge = the first of the next).
+            if coordinates:
+                oriented = oriented[1:]
+            coordinates.extend(oriented)
+        else:
+            # Fallback: straight line between nodes (for edges without geometry)
+            if coordinates:
+                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+            else:
+                coordinates.append([G.nodes[u]["x"], G.nodes[u]["y"]])
+                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
 
     return {
         "total_cost": round(total_cost, 4),

@@ -23,6 +23,7 @@ Configuration via environment variables:
 from __future__ import annotations
 
 import gzip
+import json
 import logging
 import os
 import pickle
@@ -60,6 +61,7 @@ class RoutingGraphExporter:
             e.name,
             e.length_m,
             e.safety_cost,
+            ST_AsGeoJSON(ST_Simplify(e.geom, 0.00005)) as geom_geojson,
             n_u.latitude  as u_lat,
             n_u.longitude as u_lon,
             n_v.latitude  as v_lat,
@@ -126,6 +128,22 @@ class RoutingGraphExporter:
 
         return output_path
 
+    @staticmethod
+    def _parse_geojson_coords(geom_geojson: str | None) -> list | None:
+        """Parse a GeoJSON geometry string into a coordinate list.
+
+        Returns the coordinates array from the GeoJSON (e.g. [[lon, lat], ...])
+        or None if the input is null or unparseable. Parsing at export time
+        avoids repeated json.loads calls at request time in the Lambda.
+        """
+        if not geom_geojson:
+            return None
+        try:
+            geom = json.loads(geom_geojson)
+            return geom.get("coordinates")
+        except (json.JSONDecodeError, TypeError):
+            return None
+
     def _build_graph(self) -> nx.DiGraph:
         """Stream edges from the database and build a NetworkX DiGraph."""
         query = self._EDGE_QUERY.format(marts_schema=self.marts_schema)
@@ -149,6 +167,7 @@ class RoutingGraphExporter:
                     length_m=row["length_m"],
                     safety_cost=row["safety_cost"],
                     name=row["name"],
+                    geometry_coords=self._parse_geojson_coords(row["geom_geojson"]),
                 )
                 edge_count += 1
 
