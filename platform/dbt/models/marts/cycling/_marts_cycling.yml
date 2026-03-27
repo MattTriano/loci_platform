@@ -1,0 +1,190 @@
+version: 2
+
+models:
+  # ==================================================================
+  # bike_safety_weighted_edges
+  # ==================================================================
+  - name: bike_safety_weighted_edges
+    description: >
+      Safety-weighted directed edges for bike routing. One row per
+      directed edge (u, v, key). safety_cost is the primary routing
+      weight, combining length, speed, infrastructure, surface,
+      lighting, crash history, and traffic control penalties.
+
+    # ── Model-level tests ──
+    data_tests:
+      # Primary key: each directed edge is unique
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - u
+              - v
+              - key
+
+      # safety_cost must never be negative (A* correctness)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "safety_cost >= 0"
+          config:
+            name: safety_cost_non_negative
+
+
+      # crash_penalty must be non-negative (it's an additive cost)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "crash_penalty >= 0"
+          config:
+            name: crash_penalty_non_negative
+
+      # The multiplicative portion of safety_cost should equal the
+      # product of its factors times length
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              safety_cost = greatest(
+                length_m * speed_factor * infrastructure_factor
+                * surface_factor * lighting_factor
+                + crash_penalty
+                + traffic_control_penalty,
+                0.0
+              )
+          config:
+            name: safety_cost_formula_integrity
+
+    columns:
+      - name: u
+        data_tests:
+          - not_null
+      - name: v
+        data_tests:
+          - not_null
+      - name: key
+        data_tests:
+          - not_null
+      - name: length_m
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: safety_cost
+        data_tests:
+          - not_null
+      - name: speed_factor
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1.0
+                max_value: 2.0
+      - name: infrastructure_factor
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0.5
+                max_value: 2.2
+      - name: surface_factor
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1.0
+                max_value: 1.5
+      - name: lighting_factor
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1.0
+                max_value: 1.2
+      - name: crash_penalty
+        data_tests:
+          - not_null
+      - name: traffic_control_penalty
+        data_tests:
+          - not_null
+      - name: geom
+        data_tests:
+          - not_null
+
+  # ==================================================================
+  # stg__traffic_control_nodes
+  # ==================================================================
+  - name: stg__traffic_control_nodes
+    description: >
+      Per-node traffic control classification. Enriches each node with
+      graph degree, intersection status, max road classification, and
+      a safety penalty/bonus for use in edge cost computation.
+
+    data_tests:
+      # Signals always get a bonus (negative penalty)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "traffic_control_penalty < 0"
+          config:
+            name: signals_get_bonus
+            where: "traffic_control = 'traffic_signals'"
+
+      # Uncontrolled intersections always get a positive penalty
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "traffic_control_penalty > 0"
+          config:
+            name: uncontrolled_intersections_penalized
+            where: "traffic_control is null and is_intersection"
+
+      # Mid-segment nodes (not intersections, no device) get zero
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "traffic_control_penalty = 0"
+          config:
+            name: mid_segment_nodes_neutral
+            where: "traffic_control is null and not is_intersection"
+
+      # Penalty should scale with road class: for uncontrolled
+      # intersections, primary > secondary > tertiary > minor
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              traffic_control_penalty >= 2.0
+              and (
+                (max_road_class = 'primary'   and traffic_control_penalty >= 15.0)
+                or (max_road_class = 'secondary' and traffic_control_penalty >= 10.0)
+                or (max_road_class = 'tertiary'  and traffic_control_penalty >= 5.0)
+                or (max_road_class = 'minor'     and traffic_control_penalty >= 2.0)
+              )
+          config:
+            name: uncontrolled_penalty_scales_with_road_class
+            where: "traffic_control is null and is_intersection"
+
+    columns:
+      - name: osmid
+        data_tests:
+          - unique
+          - not_null
+      - name: degree
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+      - name: is_intersection
+        data_tests:
+          - not_null
+      - name: max_road_rank
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
+                quote: false
+      - name: max_road_class
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['minor', 'tertiary', 'secondary', 'primary']
+      - name: traffic_control_penalty
+        data_tests:
+          - not_null
