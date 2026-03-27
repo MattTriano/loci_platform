@@ -119,13 +119,12 @@ models:
       a safety penalty/bonus for use in edge cost computation.
 
     data_tests:
-      # Signals always get a bonus (negative penalty)
+      # All penalties are non-negative
       - dbt_utils.expression_is_true:
           arguments:
-            expression: "traffic_control_penalty < 0"
+            expression: "traffic_control_penalty >= 0"
           config:
-            name: signals_get_bonus
-            where: "traffic_control = 'traffic_signals'"
+            name: traffic_control_penalty_non_negative
 
       # Uncontrolled intersections always get a positive penalty
       - dbt_utils.expression_is_true:
@@ -134,6 +133,15 @@ models:
           config:
             name: uncontrolled_intersections_penalized
             where: "traffic_control is null and is_intersection"
+
+      # Signals always cost less than uncontrolled intersections
+      # at the same road class
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "traffic_control_penalty <= 7.0"
+          config:
+            name: signals_are_cheapest_intersection
+            where: "traffic_control = 'traffic_signals'"
 
       # Mid-segment nodes (not intersections, no device) get zero
       - dbt_utils.expression_is_true:
@@ -168,7 +176,8 @@ models:
         data_tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 1
+              arguments:
+                min_value: 1
       - name: is_intersection
         data_tests:
           - not_null

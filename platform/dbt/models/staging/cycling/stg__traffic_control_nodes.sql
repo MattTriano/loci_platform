@@ -11,10 +11,15 @@
 --   - Intersection detection uses graph degree (in + out edges >= 3).
 --   - Road classification is the "worst" (highest-traffic) highway type
 --     among all edges touching the node, via a numeric rank.
---   - Controlled intersections receive a negative penalty (safety bonus)
---     because traffic control devices reduce crash risk for cyclists.
---   - Uncontrolled intersections receive a positive penalty scaled by
---     the road classification of the most dangerous leg.
+--   - All intersection penalties are non-negative. Every intersection
+--     adds cost relative to a mid-segment node (which has penalty 0).
+--     Traffic control devices reduce the penalty but never eliminate
+--     the inherent risk of an intersection crossing.
+--   - The best-case intersection (signal on a primary road) has
+--     penalty 0 — as safe as an intersection can be, but no safer
+--     than a mid-block segment.
+--   - Uncontrolled intersections receive the largest penalties, scaled
+--     by the road classification of the most dangerous leg.
 
 {{ config(materialized='table') }}
 
@@ -81,54 +86,53 @@ weighting as (
         max_road_rank,
         max_road_class,
         case
-            -- ── Signalized intersections: protected phase = safety bonus ──
+            -- ── Signalized intersections: safest intersection type ──
+            -- A signal on a primary road is the best case (0); on smaller
+            -- roads the signal helps less because the baseline risk is lower.
             when traffic_control = 'traffic_signals' then
                 case max_road_class
-                    when 'primary'   then -10.0
-                    when 'secondary' then  -8.0
-                    when 'tertiary'  then  -5.0
-                    else                   -3.0
+                    when 'primary'   then  0.0
+                    when 'secondary' then  2.0
+                    when 'tertiary'  then  5.0
+                    else                   7.0
                 end
             -- ── Marked crossings (type unknown): some visibility benefit ──
             when traffic_control = 'crossing' then
                 case max_road_class
-                    when 'primary'   then -3.0
-                    when 'secondary' then -3.0
-                    when 'tertiary'  then -2.0
-                    else                  -1.0
+                    when 'primary'   then  7.0
+                    when 'secondary' then  7.0
+                    when 'tertiary'  then  8.0
+                    else                   9.0
                 end
             -- ── Stop signs: slows cross-traffic ──
             when traffic_control = 'stop' then
                 case max_road_class
-                    when 'primary'   then -3.0
-                    when 'secondary' then -3.0
-                    when 'tertiary'  then -2.0
-                    else                  -1.0
+                    when 'primary'   then  7.0
+                    when 'secondary' then  7.0
+                    when 'tertiary'  then  8.0
+                    else                   9.0
                 end
             -- ── Mini roundabouts: traffic calming ──
             when traffic_control = 'mini_roundabout' then
                 case max_road_class
-                    when 'primary'   then -3.0
-                    when 'secondary' then -3.0
-                    when 'tertiary'  then -3.0
-                    else                  -2.0
+                    when 'primary'   then  7.0
+                    when 'secondary' then  7.0
+                    when 'tertiary'  then  7.0
+                    else                   8.0
                 end
             -- ── Yield / give way: minimal protection ──
-            when traffic_control = 'give_way' then 0.0
-
-            -- ── Uncontrolled intersection: positive penalty scaled by road class ──
+            when traffic_control = 'give_way' then 10.0
+            -- ── Uncontrolled intersection: highest risk, scaled by road class ──
             when traffic_control is null and is_intersection then
                 case max_road_class
-                    when 'primary'   then 15.0
-                    when 'secondary' then 10.0
-                    when 'tertiary'  then  5.0
-                    else                   2.0
+                    when 'primary'   then 25.0
+                    when 'secondary' then 20.0
+                    when 'tertiary'  then 15.0
+                    else                  12.0
                 end
-
             -- ── Mid-segment node or non-intersection: no adjustment ──
             else 0.0
         end as traffic_control_penalty
-
     from nodes
 )
 
