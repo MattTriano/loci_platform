@@ -168,10 +168,13 @@ factors as (
             when e.lit = 'yes'          then 1.0
             when e.lit = 'no'           then 1.2
             else                             1.1  -- unknown
-        end                             as lighting_factor
+        end                             as lighting_factor,
+        coalesce(ntc.traffic_control_penalty, 0) as traffic_control_penalty
 
     from edges e
     left join crash_scores cs using (u, v, key)
+    left join {{ ref('stg__traffic_control_nodes') }} as ntc
+        on ntc.osmid = e.v
 ),
 
 -- =====================================================================
@@ -227,20 +230,23 @@ final as (
         infrastructure_factor,
         surface_factor,
         lighting_factor,
+        traffic_control_penalty,
 
         -- Crash penalty (additive, scaled by length and weight)
         crash_score_per_meter * length_m * {{ crash_weight }}
                                 as crash_penalty,
 
         -- Final safety cost
-        length_m
-            * speed_factor
-            * infrastructure_factor
-            * surface_factor
-            * lighting_factor
-            + (crash_score_per_meter * length_m * {{ crash_weight }})
-                                as safety_cost
-
+        greatest(
+            length_m
+                * speed_factor
+                * infrastructure_factor
+                * surface_factor
+                * lighting_factor
+                + (crash_score_per_meter * length_m * {{ crash_weight }})
+                + traffic_control_penalty,
+            0
+        ) as safety_cost
     from factors
 )
 

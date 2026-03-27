@@ -2,38 +2,13 @@ import subprocess
 from datetime import datetime
 
 from airflow.sdk import dag, task
-
+from airflow.sdk.bases.operator import chain
 from loci.transform.utils import run_dbt
 
-# @task
-# def alt_build() -> str:
-#     import subprocess
 
-#     process = subprocess.Popen(
-#         [
-#             "/home/airflow/dbt_venv/bin/dbt",
-#             "build",
-#             "--project-dir",
-#             "/opt/airflow/dbt",
-#             "--select",
-#             "+bike_safety_routing_costs",
-#         ],
-#         stdout=subprocess.PIPE,
-#         stderr=subprocess.STDOUT,
-#         text=True,
-#         bufsize=1,
-#     )
-
-#     output_lines = []
-#     for line in process.stdout:
-#         print(line, end="")  # prints to Airflow logs immediately
-#         output_lines.append(line)
-
-#     returncode = process.wait()
-#     if returncode != 0:
-#         raise Exception(f"dbt build failed with exit code {returncode}\n{''.join(output_lines)}")
-
-#     return "".join(output_lines)
+@task
+def install_dependencies() -> str:
+    return run_dbt("deps")
 
 
 @task
@@ -77,7 +52,10 @@ def dbt_build() -> str:
     tags=["dbt"],
 )
 def dbt_build_dag():
-    alt_build()
+    _deps = install_dependencies()
+    _build = alt_build()
+
+    chain(_deps, _build)
 
 
 dbt_build_dag()
