@@ -334,7 +334,7 @@ resource "aws_lambda_function" "routing_api" {
   runtime          = "python3.12"
   handler          = "handler.lambda_handler"
   timeout          = 30
-  memory_size      = 1024
+  memory_size      = 2048
 
   environment {
     variables = {

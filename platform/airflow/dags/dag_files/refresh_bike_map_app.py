@@ -94,7 +94,7 @@ def deploy_graph(graph_path: str, task_logger: logging.Logger) -> str:
 
 @dag(
     start_date=datetime(2024, 1, 1),
-    schedule="0 3 * * 0",
+    schedule=None,
     catchup=False,
     tags=["dbt"],
 )

@@ -139,7 +139,7 @@ factors as (
             when e.highway in ('unclassified')                  then 1.2
             when e.highway in ('busway')                        then 1.2
             when e.highway in ('service')
-                 and e.service = 'alley'                        then 0.9
+                 and e.service = 'alley'                        then 1.5
             when e.highway in ('service')                       then 1.1
             when e.highway in ('tertiary', 'tertiary_link')     then 1.4
             when e.highway like '%tertiary%'                    then 1.4
