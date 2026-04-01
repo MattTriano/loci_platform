@@ -5,6 +5,7 @@
 -- Cost formula:
 --   safety_cost = length_m
 --               * speed_factor
+--               * road_type_factor
 --               * infrastructure_factor
 --               * surface_factor
 --               * lighting_factor
@@ -13,12 +14,21 @@
 -- crash_penalty = crash_score_per_meter * length_m * crash_weight
 -- crash_score uses severity^2 * time-decay, summed per edge.
 --
+-- road_type_factor captures the inherent danger of the road environment
+-- (traffic volume, road design, turning movements) based on highway class.
+--
+-- infrastructure_factor captures how much bike infrastructure mitigates
+-- that danger. Uses OSM-derived infra_type as primary signal (from
+-- cycleway tags we actively maintain), falling back to Socrata
+-- display_route_type. Edges with no bike infra get a neutral 1.0.
+--
+-- The two factors multiply: a sharrow on a residential (1.1 * 1.3 = 1.43)
+-- costs far less than a sharrow on a primary (2.2 * 1.3 = 2.86).
+--
 -- All tunable weights are jinja variables at the top of this file.
 -- Intermediate factors are preserved as columns for inspection and tuning.
 --
 -- Grain: one row per directed edge (u, v, key).
--- Excludes edges unsuitable for cycling (trunks, parking aisles,
--- underground tunnels, emergency bays).
 
 {{ config(
     materialized='table',
@@ -37,24 +47,6 @@
 with edges as (
     select *
     from {{ ref('chicago_bike_network_edges') }}
-    -- where
-    --     -- Trunk roads (highways, Lower Wacker) and their links
-        -- highway != 'closed'
-        -- and (name is null or name not ilike '% lower%')
-    --     highway not in ('trunk', 'trunk_link', 'closed', 'emergency_bay')
-    --     and highway not like '%trunk%'
-
-    -- --     -- Vehicle-only service roads (keep alley, null, emergency_access)
-    -- --     and (
-    -- --         service is null
-    -- --         or not (
-    -- --             service like '%parking_aisle%'
-    -- --             or service like '%driveway%'
-    -- --             or service like '%drive-through%'
-    -- --         )
-    -- --     )
-    -- --     -- Covered/underground tunnels (Lower Wacker and similar)
-    --     and (name is null or name not ilike '% lower%')
 ),
 
 crashes as (
@@ -117,37 +109,58 @@ factors as (
             else 1.4
         end                             as speed_factor,
 
-        -- Infrastructure factor: separation from traffic is the strongest
-        -- safety signal. Socrata display_route_type takes precedence over
-        -- OSMnx highway type since it reflects actual installed infrastructure.
+        -- Road type factor: inherent danger of the road environment
+        -- independent of bike infrastructure. Based on highway class as
+        -- a proxy for traffic volume, road design, and turning conflicts.
         case
-            -- Socrata-matched infrastructure
-            when e.display_route_type = 'Protected Bike Lane'   then 0.5
-            when e.display_route_type = 'Neighborhood Greenway' then 0.7
-            when e.display_route_type = 'Buffered Bike Lane'    then 0.8
-            when e.display_route_type = 'Bike Lane'             then 1.0
-            when e.display_route_type = 'Marked Shared Lane'    then 1.3
-            -- OSMnx highway type fallback (no Socrata match)
             when e.highway in ('cycleway')                      then 0.6
             when e.highway like '%cycleway%'                    then 0.6
-            when e.highway in ('path')                          then 0.7
+            when e.highway in ('path', 'footway', 'bridleway')  then 0.7
             when e.highway like '%path%'                        then 0.7
-            when e.highway in ('living_street')                 then 1.0
-            when e.highway in ('pedestrian')                    then 1.0
+            when e.highway in ('pedestrian')                    then 0.8
+            when e.highway in ('living_street')                 then 0.9
+            when e.highway = 'service' and e.service = 'alley'  then 1.3
+            when e.highway in ('service')                       then 1.0
             when e.highway in ('residential')                   then 1.1
             when e.highway like '%residential%'                 then 1.1
-            when e.highway in ('unclassified')                  then 1.2
-            when e.highway in ('busway')                        then 1.2
-            when e.highway in ('service')
-                 and e.service = 'alley'                        then 1.5
-            when e.highway in ('service')                       then 1.1
-            when e.highway in ('tertiary', 'tertiary_link')     then 1.4
-            when e.highway like '%tertiary%'                    then 1.4
-            when e.highway in ('secondary', 'secondary_link')   then 1.7
-            when e.highway like '%secondary%'                   then 1.7
-            when e.highway in ('primary', 'primary_link')       then 2.2
-            when e.highway like '%primary%'                     then 2.2
-            else 1.5
+            when e.highway in ('unclassified')                  then 1.4
+            when e.highway in ('busway')                        then 1.4
+            when e.highway in ('tertiary', 'tertiary_link')     then 1.7
+            when e.highway like '%tertiary%'                    then 1.7
+            when e.highway in ('secondary', 'secondary_link')   then 2.2
+            when e.highway like '%secondary%'                   then 2.2
+            when e.highway in ('primary', 'primary_link')       then 2.7
+            when e.highway like '%primary%'                     then 2.7
+            else 1.3
+        end                             as road_type_factor,
+
+        -- Infrastructure factor: how much bike infrastructure mitigates
+        -- the road's inherent danger. Edges with no bike infra get 1.0
+        -- (neutral — road_type_factor alone determines their cost).
+        --
+        -- Priority: OSM infra_type (actively maintained tags) > Socrata
+        -- display_route_type > neutral fallback.
+        case
+            -- 1. OSM-derived infra_type (primary signal)
+            when e.osm_infra_type = 'protected_lane'    then 0.4
+            when e.osm_infra_type = 'track'             then 0.5
+            when e.osm_infra_type = 'shared_path'       then 0.6
+            when e.osm_infra_type = 'buffered_lane'     then 0.7
+            when e.osm_infra_type = 'designated_path'   then 0.7
+            when e.osm_infra_type = 'bicycle_road'      then 0.8
+            when e.osm_infra_type = 'bike_lane'         then 0.85
+            when e.osm_infra_type = 'share_busway'      then 0.9
+            when e.osm_infra_type = 'sharrow'           then 0.95
+
+            -- 2. Socrata display_route_type (fallback)
+            when e.display_route_type = 'Protected Bike Lane'   then 0.4
+            when e.display_route_type = 'Neighborhood Greenway' then 0.6
+            when e.display_route_type = 'Buffered Bike Lane'    then 0.7
+            when e.display_route_type = 'Bike Lane'             then 0.85
+            when e.display_route_type = 'Marked Shared Lane'    then 0.95
+
+            -- 3. No bike infrastructure — neutral
+            else 1.0
         end                             as infrastructure_factor,
 
         -- Surface factor: affects control and crash risk.
@@ -200,11 +213,26 @@ final as (
         maxspeed,
         access,
 
-        -- Bike infrastructure
+        -- Bike infrastructure: OSM classification
+        osm_infra_category,
+        osm_infra_type,
+        osm_has_buffer,
+
+        -- Bike infrastructure: OSM raw tags
         cycleway,
         cycleway_right,
         cycleway_left,
+        cycleway_both,
+        cycleway_separation,
+        cycleway_right_separation,
+        cycleway_left_separation,
+        cycleway_both_separation,
         bicycle,
+        class_bicycle,
+        bicycle_road,
+        cyclestreet,
+
+        -- Bike infrastructure: Socrata enrichment
         display_route_type,
         soc_infra_type,
         bike_route_oneway,
@@ -212,6 +240,8 @@ final as (
 
         -- Physical conditions
         surface,
+        cycleway_surface,
+        cycleway_smoothness,
         lit,
         bridge,
         tunnel,
@@ -227,6 +257,7 @@ final as (
 
         -- Intermediate safety factors (preserved for tuning)
         speed_factor,
+        road_type_factor,
         infrastructure_factor,
         surface_factor,
         lighting_factor,
@@ -240,6 +271,7 @@ final as (
         greatest(
             length_m
                 * speed_factor
+                * road_type_factor
                 * infrastructure_factor
                 * surface_factor
                 * lighting_factor

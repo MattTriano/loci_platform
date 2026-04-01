@@ -40,11 +40,55 @@ select
     maxspeed,
     access,
 
-    -- Bike infrastructure
-    cycleway,
-    cycleway_right,
-    cycleway_left,
+    -- Bicycle general
     bicycle,
+    bicycle_lanes,
+    bicycle_lanes_backward,
+    bicycle_lanes_forward,
+    bicycle_right,
+    bicycle_road,
+    class_bicycle,
+    cyclestreet,
+    oneway_bicycle,
+    ramp_bicycle,
+    sidewalk_both_bicycle,
+
+    -- Cycleway general
+    cycleway,
+    cycleway_buffer,
+    cycleway_lane,
+    cycleway_oneway,
+    cycleway_separation,
+    cycleway_shared_lane,
+    cycleway_smoothness,
+    cycleway_surface,
+
+    -- Cycleway: both sides
+    cycleway_both,
+    cycleway_both_buffer,
+    cycleway_both_colour,
+    cycleway_both_lane,
+    cycleway_both_separation,
+    cycleway_both_shared_lane,
+    cycleway_both_traffic_sign,
+
+    -- Cycleway: left
+    cycleway_left,
+    cycleway_left_buffer,
+    cycleway_left_lane,
+    cycleway_left_oneway,
+    cycleway_left_separation,
+    cycleway_left_shared_lane,
+    cycleway_left_traffic_sign,
+
+    -- Cycleway: right
+    cycleway_right,
+    cycleway_right_buffer,
+    cycleway_right_lane,
+    cycleway_right_oneway,
+    cycleway_right_separation,
+    cycleway_right_shared_lane,
+    cycleway_right_traffic_sign,
 
     -- Physical conditions
     surface,
