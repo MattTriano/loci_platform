@@ -181,6 +181,12 @@ class OsmnxClient:
     ) -> nx.MultiDiGraph:
         """Download a single graph from Overpass via OSMnx."""
         import osmnx as ox
+        from loci.collectors.osmnx.collector import EXTRA_USEFUL_TAGS_WAY
+
+        # Ensure our cycling tags are included in the download
+        for tag in EXTRA_USEFUL_TAGS_WAY:
+            if tag not in ox.settings.useful_tags_way:
+                ox.settings.useful_tags_way.append(tag)
 
         west, south, east, north = bbox
         kwargs = dict(

@@ -1,10 +1,12 @@
 -- chicago_bike_network_edges.sql
--- OSMnx bike network edges enriched with Chicago Data Portal route info.
+-- OSMnx bike network edges enriched with Chicago Data Portal route info
+-- and OSM-derived infrastructure classification.
 --
 -- Grain: one row per directed OSMnx edge (u, v, key).
 -- Each edge is matched to the safest Socrata bike route that runs along it,
 -- using endpoint proximity, street name similarity, and direction compatibility
--- as match signals.
+-- as match signals. Each edge is also joined to the OSM-derived infra_type
+-- from stg__osm__bike_infrastructure.
 --
 -- Match logic:
 --   Hard filter : both endpoints of the OSMnx edge are within ~10m of the
@@ -16,7 +18,7 @@
 --                 display_route_type, then prefer name matches, then direction
 --                 matches.
 --
--- Unmatched edges are kept with null Socrata columns.
+-- Unmatched edges are kept with null Socrata/infra columns.
 
 {{ config(
     materialized='table',
@@ -30,6 +32,15 @@
 
 with edges as (
     select * from {{ ref('stg__osmnx__bike_network_edges') }}
+),
+
+osm_infra as (
+    select
+        segment_id,
+        infra_category  as osm_infra_category,
+        infra_type      as osm_infra_type,
+        has_buffer       as osm_has_buffer
+    from {{ ref('stg__osm__bike_infrastructure') }}
 ),
 
 soc_routes as (
@@ -68,8 +79,6 @@ candidates as (
         ) as is_name_match,
 
         -- Soft signal: direction compatibility.
-        -- True if the route is two-way, direction is unknown/unspecified,
-        -- or the OSMnx edge bearing matches the route's cardinal direction.
         case
             when s.bike_route_oneway = '2W'                       then true
             when s.bike_route_oneway_dir in ('-', null)           then null
@@ -103,7 +112,6 @@ candidates as (
         and ST_DWithin(e.geom, s.geom, {{ dupe_buffer_degrees }})
 ),
 
--- Apply hard filter and rank remaining candidates per edge.
 ranked as (
     select
         u, v, key,
@@ -120,7 +128,6 @@ ranked as (
             order by
                 safety_rank asc,
                 is_name_match desc,
-                -- nulls (unknown direction) treated as neutral, not penalized
                 coalesce(is_direction_compatible, true) desc
         ) as rn
     from candidates
@@ -137,6 +144,7 @@ final as (
         e.u,
         e.v,
         e.key,
+        e.segment_id,
         e.osmid,
 
         -- Road attributes
@@ -151,13 +159,26 @@ final as (
         e.maxspeed,
         e.access,
 
-        -- Bike infrastructure (OSMnx tags)
+        -- Bike infrastructure: OSM-derived classification
+        oi.osm_infra_category,
+        oi.osm_infra_type,
+        oi.osm_has_buffer,
+
+        -- Bike infrastructure: OSM raw tags (for downstream refinement)
         e.cycleway,
         e.cycleway_right,
         e.cycleway_left,
+        e.cycleway_both,
+        e.cycleway_separation,
+        e.cycleway_right_separation,
+        e.cycleway_left_separation,
+        e.cycleway_both_separation,
         e.bicycle,
+        e.class_bicycle,
+        e.bicycle_road,
+        e.cyclestreet,
 
-        -- Bike infrastructure (Socrata enrichment)
+        -- Bike infrastructure: Socrata enrichment
         m.display_route_type,
         m.soc_infra_type,
         m.bike_route_oneway,
@@ -165,6 +186,8 @@ final as (
 
         -- Physical conditions
         e.surface,
+        e.cycleway_surface,
+        e.cycleway_smoothness,
         e.lit,
         e.bridge,
         e.tunnel,
@@ -174,6 +197,7 @@ final as (
         e.geom
 
     from edges e
+    left join osm_infra oi on oi.segment_id = e.segment_id
     left join best_match m using (u, v, key)
 )
 

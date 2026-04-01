@@ -159,6 +159,7 @@ class StagedIngest:
         entity_key: list[str] | None = None,
         metadata_columns: set[str] | None = None,
         hash_exclude_columns: set[str] | None = None,
+        invalidate_missing: bool = False,
     ) -> None:
         self._engine = engine
         self._target_table = target_table
@@ -176,11 +177,15 @@ class StagedIngest:
         self._entity_key = entity_key
         self._metadata_columns = metadata_columns
         self._hash_exclude_columns = hash_exclude_columns or metadata_columns
+        self._invalidate_missing = invalidate_missing
 
         if entity_key and conflict_column:
             raise ValueError(
                 "Specify either entity_key (SCD2) or conflict_column (simple merge), not both."
             )
+
+        if invalidate_missing and not entity_key:
+            raise ValueError("invalidate_missing requires entity_key (SCD2 mode).")
 
         # Use a short random suffix so parallel ingests don't collide
         suffix = uuid.uuid4().hex[:8]
@@ -196,12 +201,14 @@ class StagedIngest:
 
         self.rows_staged = 0
         self.rows_merged = 0
+        self.rows_invalidated = 0
 
         self._engine.logger.info(
-            "StagedIngest: staging table %s for target %s (mode: %s)",
+            "StagedIngest: staging table %s for target %s (mode: %s%s)",
             self._staging_table,
             self._fqn,
             "scd2" if entity_key else "simple",
+            ", invalidate_missing" if invalidate_missing else "",
         )
 
     # ------------------------------------------------------------------
@@ -326,8 +333,10 @@ class StagedIngest:
         """
         SCD Type 2 merge:
         1. Compute record_hash on staging rows
-        2. Close out current versions in target whose hash differs
-        3. Insert new versions (new entities + changed entities)
+        2. If invalidate_missing is True, invalidate current target rows
+           whose entity key is absent from staging
+        3. Close out current versions in target whose hash differs
+        4. Insert new versions (new entities + changed entities)
         Skips rows whose (entity_key, record_hash) already exists in target.
         """
         hash_columns = self._get_hash_columns()
@@ -342,7 +351,26 @@ class StagedIngest:
             )
             cur.execute(f'update {self._staging_table} set "record_hash" = {hash_expr}')
 
-            # 2. Close out current versions that have a new incoming version
+            # 2. Invalidate current target rows whose entity key is absent
+            #    from staging (e.g. edges removed or split into new keys)
+            if self._invalidate_missing:
+                cur.execute(f"""
+                    update {self._fqn} t
+                    set "valid_to" = now() at time zone 'utc'
+                    where "valid_to" is null
+                      and not exists (
+                        select 1 from {self._staging_table} s
+                        where {entity_join}
+                      )
+                """)
+                self.rows_invalidated = cur.rowcount
+                self._engine.logger.info(
+                    "SCD2: invalidated %d removed entities in %s",
+                    self.rows_invalidated,
+                    self._fqn,
+                )
+
+            # 3. Close out current versions that have a new incoming version
             #    (entity exists in both, but hash differs)
             cur.execute(f"""
                 update {self._fqn} t
@@ -361,7 +389,7 @@ class StagedIngest:
                 self._fqn,
             )
 
-            # 3. Insert new versions, skipping any (entity_key, record_hash)
+            # 4. Insert new versions, skipping any (entity_key, record_hash)
             #    that already exists in the target
             select_cols = ", ".join(f's."{c}"' for c in self._columns)
             insert_col_list = f'{self._col_list}, "record_hash"'
@@ -375,10 +403,11 @@ class StagedIngest:
             self.rows_merged = cur.rowcount
 
         self._engine.logger.info(
-            "SCD2: inserted %d new versions into %s (staged %d, closed %d)",
+            "SCD2: inserted %d new versions into %s (staged %d, invalidated %d, closed %d)",
             self.rows_merged,
             self._fqn,
             self.rows_staged,
+            self.rows_invalidated,
             rows_closed,
         )
 
@@ -555,6 +584,7 @@ class PostgresEngine:
         entity_key: list[str] | None = None,
         metadata_columns: set[str] | None = None,
         hash_exclude_columns: set[str] | None = None,
+        invalidate_missing: bool = False,
     ) -> StagedIngest:
         """
         Return a StagedIngest context manager that accumulates batches
@@ -571,7 +601,13 @@ class PostgresEngine:
                                        entity_key=["case_number"]) as stager:
                 stager.write_batch(rows)
 
-        print(stager.rows_staged, stager.rows_merged)
+        For SCD Type 2 with full-refresh invalidation:
+            with engine.staged_ingest("edges", "raw_data",
+                                       entity_key=["u", "v", "key"],
+                                       invalidate_missing=True) as stager:
+                stager.write_batch(rows)
+
+        print(stager.rows_staged, stager.rows_merged, stager.rows_invalidated)
         """
         return StagedIngest(
             engine=self,
@@ -582,6 +618,7 @@ class PostgresEngine:
             entity_key=entity_key,
             metadata_columns=metadata_columns,
             hash_exclude_columns=hash_exclude_columns,
+            invalidate_missing=invalidate_missing,
         )
 
     @pg_retry()

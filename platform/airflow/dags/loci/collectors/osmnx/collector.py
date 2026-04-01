@@ -29,6 +29,123 @@ from loci.tracking.ingestion_tracker import IngestionTracker
 logger = logging.getLogger(__name__)
 
 
+# OSM tags to collect for edges, mapped to Postgres column names.
+# Colon-separated tags become underscore-separated columns so they
+# can be queried without double-quotes.
+#
+# Format: (osm_tag, column_name, column_type)
+# column_type is used in DDL generation; flatten always calls _to_str_or_none
+# except for the few non-text columns handled explicitly in _flatten_edges.
+EDGE_TAG_COLUMNS = [
+    # --- existing tags ---
+    ("name", "name", "text"),
+    ("highway", "highway", "text"),
+    ("oneway", "oneway", "boolean"),
+    ("reversed", "reversed", "text"),
+    ("maxspeed", "maxspeed", "text"),
+    ("surface", "surface", "text"),
+    ("lanes", "lanes", "text"),
+    ("ref", "ref", "text"),
+    ("service", "service", "text"),
+    ("width", "width", "text"),
+    ("lit", "lit", "text"),
+    ("access", "access", "text"),
+    ("bridge", "bridge", "text"),
+    ("tunnel", "tunnel", "text"),
+    # --- bicycle general ---
+    ("bicycle", "bicycle", "text"),
+    ("bicycle:lanes", "bicycle_lanes", "text"),
+    ("bicycle:lanes:backward", "bicycle_lanes_backward", "text"),
+    ("bicycle:lanes:forward", "bicycle_lanes_forward", "text"),
+    ("bicycle:right", "bicycle_right", "text"),
+    ("bicycle_road", "bicycle_road", "text"),
+    ("class:bicycle", "class_bicycle", "text"),
+    ("cyclestreet", "cyclestreet", "text"),
+    ("oneway:bicycle", "oneway_bicycle", "text"),
+    ("ramp:bicycle", "ramp_bicycle", "text"),
+    ("sidewalk:both:bicycle", "sidewalk_both_bicycle", "text"),
+    # --- cycleway general ---
+    ("cycleway", "cycleway", "text"),
+    ("cycleway:buffer", "cycleway_buffer", "text"),
+    ("cycleway:lane", "cycleway_lane", "text"),
+    ("cycleway:oneway", "cycleway_oneway", "text"),
+    ("cycleway:separation", "cycleway_separation", "text"),
+    ("cycleway:shared_lane", "cycleway_shared_lane", "text"),
+    ("cycleway:smoothness", "cycleway_smoothness", "text"),
+    ("cycleway:surface", "cycleway_surface", "text"),
+    # --- cycleway:both ---
+    ("cycleway:both", "cycleway_both", "text"),
+    ("cycleway:both:buffer", "cycleway_both_buffer", "text"),
+    ("cycleway:both:colour", "cycleway_both_colour", "text"),
+    ("cycleway:both:lane", "cycleway_both_lane", "text"),
+    ("cycleway:both:separation", "cycleway_both_separation", "text"),
+    ("cycleway:both:shared_lane", "cycleway_both_shared_lane", "text"),
+    ("cycleway:both:traffic_sign", "cycleway_both_traffic_sign", "text"),
+    # --- cycleway:left ---
+    ("cycleway:left", "cycleway_left", "text"),
+    ("cycleway:left:buffer", "cycleway_left_buffer", "text"),
+    ("cycleway:left:lane", "cycleway_left_lane", "text"),
+    ("cycleway:left:oneway", "cycleway_left_oneway", "text"),
+    ("cycleway:left:separation", "cycleway_left_separation", "text"),
+    ("cycleway:left:shared_lane", "cycleway_left_shared_lane", "text"),
+    ("cycleway:left:traffic_sign", "cycleway_left_traffic_sign", "text"),
+    # --- cycleway:right ---
+    ("cycleway:right", "cycleway_right", "text"),
+    ("cycleway:right:buffer", "cycleway_right_buffer", "text"),
+    ("cycleway:right:lane", "cycleway_right_lane", "text"),
+    ("cycleway:right:oneway", "cycleway_right_oneway", "text"),
+    ("cycleway:right:separation", "cycleway_right_separation", "text"),
+    ("cycleway:right:shared_lane", "cycleway_right_shared_lane", "text"),
+    ("cycleway:right:traffic_sign", "cycleway_right_traffic_sign", "text"),
+]
+
+# Tags that need to be added to ox.settings.useful_tags_way before fetching.
+# This is the union of all OSM tags in EDGE_TAG_COLUMNS that aren't already
+# in OSMnx's default useful_tags_way.
+EXTRA_USEFUL_TAGS_WAY = [
+    "bicycle",
+    "bicycle:lanes",
+    "bicycle:lanes:backward",
+    "bicycle:lanes:forward",
+    "bicycle:right",
+    "bicycle_road",
+    "class:bicycle",
+    "cyclestreet",
+    "cycleway",
+    "cycleway:both",
+    "cycleway:both:buffer",
+    "cycleway:both:colour",
+    "cycleway:both:lane",
+    "cycleway:both:separation",
+    "cycleway:both:shared_lane",
+    "cycleway:both:traffic_sign",
+    "cycleway:buffer",
+    "cycleway:lane",
+    "cycleway:left",
+    "cycleway:left:buffer",
+    "cycleway:left:lane",
+    "cycleway:left:oneway",
+    "cycleway:left:separation",
+    "cycleway:left:shared_lane",
+    "cycleway:left:traffic_sign",
+    "cycleway:oneway",
+    "cycleway:right",
+    "cycleway:right:buffer",
+    "cycleway:right:lane",
+    "cycleway:right:oneway",
+    "cycleway:right:separation",
+    "cycleway:right:shared_lane",
+    "cycleway:right:traffic_sign",
+    "cycleway:separation",
+    "cycleway:shared_lane",
+    "cycleway:smoothness",
+    "cycleway:surface",
+    "oneway:bicycle",
+    "ramp:bicycle",
+    "sidewalk:both:bicycle",
+]
+
+
 class OsmnxCollector:
     """Collects OSMnx bike network data and ingests into PostGIS.
 
@@ -268,35 +385,25 @@ class OsmnxCollector:
             else:
                 osmid = None
 
-            rows.append(
-                {
-                    "u": int(row["u"]),
-                    "v": int(row["v"]),
-                    "key": int(row["key"]),
-                    "osmid": osmid,
-                    "name": self._to_str_or_none(row.get("name")),
-                    "highway": self._to_str_or_none(row.get("highway")),
-                    "oneway": bool(row.get("oneway", False)),
-                    "reversed": self._to_str_or_none(row.get("reversed")),
-                    "length_m": float(row["length"]) if "length" in row else None,
-                    "maxspeed": self._to_str_or_none(row.get("maxspeed")),
-                    "surface": self._to_str_or_none(row.get("surface")),
-                    "cycleway": self._to_str_or_none(row.get("cycleway")),
-                    "cycleway_right": self._to_str_or_none(row.get("cycleway:right")),
-                    "cycleway_left": self._to_str_or_none(row.get("cycleway:left")),
-                    "bicycle": self._to_str_or_none(row.get("bicycle")),
-                    "lanes": self._to_str_or_none(row.get("lanes")),
-                    "ref": self._to_str_or_none(row.get("ref")),
-                    "service": self._to_str_or_none(row.get("service")),
-                    "width": self._to_str_or_none(row.get("width")),
-                    "lit": self._to_str_or_none(row.get("lit")),
-                    "access": self._to_str_or_none(row.get("access")),
-                    "bridge": self._to_str_or_none(row.get("bridge")),
-                    "tunnel": self._to_str_or_none(row.get("tunnel")),
-                    "geom": geom.wkt if geom is not None else None,
-                    "tile_id": tile_id,
-                }
-            )
+            edge = {
+                "u": int(row["u"]),
+                "v": int(row["v"]),
+                "key": int(row["key"]),
+                "osmid": osmid,
+                "length_m": float(row["length"]) if "length" in row else None,
+                "geom": geom.wkt if geom is not None else None,
+                "tile_id": tile_id,
+            }
+
+            # Extract all tag columns. The "oneway" tag is boolean;
+            # everything else is text via _to_str_or_none.
+            for osm_tag, col_name, col_type in EDGE_TAG_COLUMNS:
+                if col_type == "boolean":
+                    edge[col_name] = bool(row.get(osm_tag, False))
+                else:
+                    edge[col_name] = self._to_str_or_none(row.get(osm_tag))
+
+            rows.append(edge)
         return rows
 
     # ------------------------------------------------------------------
@@ -322,6 +429,7 @@ class OsmnxCollector:
             entity_key=entity_key,
             metadata_columns=self.METADATA_COLUMNS,
             hash_exclude_columns=self.HASH_EXCLUDE_COLUMNS,
+            invalidate_missing=True,
         ) as stager:
             for start in range(0, len(gdf), batch_size):
                 batch = gdf.iloc[start : start + batch_size]
@@ -364,22 +472,22 @@ class OsmnxCollector:
 
     def _generate_nodes_ddl(self, spec: OsmnxDatasetSpec) -> str:
         fqn = f"{spec.target_schema}.{spec.target_table_nodes}"
-        ek_cols = ", ".join(f'"{c}"' for c in spec.entity_key_nodes)
+        ek_cols = ", ".join(spec.entity_key_nodes)
 
         columns = [
-            '"osmid" bigint not null',
-            '"latitude" double precision',
-            '"longitude" double precision',
-            '"street_count" integer',
-            '"highway" text',
-            '"ref" text',
-            '"geom" geometry(Point, 4326)',
-            '"tile_id" text',
+            "osmid bigint not null",
+            "latitude double precision",
+            "longitude double precision",
+            "street_count integer",
+            "highway text",
+            "ref text",
+            "geom geometry(Point, 4326)",
+            "tile_id text",
             # SCD2 metadata
-            "\"ingested_at\" timestamptz not null default (now() at time zone 'UTC')",
-            '"record_hash" text not null',
-            "\"valid_from\" timestamptz not null default (now() at time zone 'UTC')",
-            '"valid_to" timestamptz',
+            "ingested_at timestamptz not null default (now() at time zone 'UTC')",
+            "record_hash text not null",
+            "valid_from timestamptz not null default (now() at time zone 'UTC')",
+            "valid_to timestamptz",
         ]
 
         lines = [f"create table {fqn} ("]
@@ -390,13 +498,13 @@ class OsmnxCollector:
         lines.append("")
         lines.append(f"alter table {fqn}")
         lines.append(f"    add constraint {constraint_name}")
-        lines.append(f'    unique ({ek_cols}, "record_hash");')
+        lines.append(f"    unique ({ek_cols}, record_hash);")
 
         index_name = f"ix_{spec.target_table_nodes}_current"
         lines.append("")
         lines.append(f"create index {index_name}")
         lines.append(f"    on {fqn} ({ek_cols})")
-        lines.append('    where "valid_to" is null;')
+        lines.append("    where valid_to is null;")
 
         lines.append("")
         lines.append(f"create index ix_{spec.target_table_nodes}_geom")
@@ -405,46 +513,38 @@ class OsmnxCollector:
         lines.append("")
         lines.append(f"create index ix_{spec.target_table_nodes}_tile_id")
         lines.append(f"    on {fqn} (tile_id)")
-        lines.append('    where "valid_to" is null;')
+        lines.append("    where valid_to is null;")
 
         return "\n".join(lines)
 
     def _generate_edges_ddl(self, spec: OsmnxDatasetSpec) -> str:
         fqn = f"{spec.target_schema}.{spec.target_table_edges}"
-        ek_cols = ", ".join(f'"{c}"' for c in spec.entity_key_edges)
+        ek_cols = ", ".join(spec.entity_key_edges)
 
+        # Structural columns
         columns = [
-            '"u" bigint not null',
-            '"v" bigint not null',
-            '"key" integer not null',
-            '"osmid" text',
-            '"name" text',
-            '"highway" text',
-            '"oneway" boolean',
-            '"reversed" text',
-            '"length_m" double precision',
-            '"maxspeed" text',
-            '"surface" text',
-            '"cycleway" text',
-            '"cycleway_right" text',
-            '"cycleway_left" text',
-            '"bicycle" text',
-            '"lanes" text',
-            '"ref" text',
-            '"service" text',
-            '"width" text',
-            '"lit" text',
-            '"access" text',
-            '"bridge" text',
-            '"tunnel" text',
-            '"geom" geometry(LineString, 4326)',
-            '"tile_id" text',
-            # SCD2 metadata
-            "\"ingested_at\" timestamptz not null default (now() at time zone 'UTC')",
-            '"record_hash" text not null',
-            "\"valid_from\" timestamptz not null default (now() at time zone 'UTC')",
-            '"valid_to" timestamptz',
+            "u bigint not null",
+            "v bigint not null",
+            "key integer not null",
+            "osmid text",
+            "length_m double precision",
         ]
+
+        # Tag columns from the mapping
+        for _osm_tag, col_name, col_type in EDGE_TAG_COLUMNS:
+            columns.append(f"{col_name} {col_type}")
+
+        # Geometry, tile, and SCD2 metadata
+        columns.extend(
+            [
+                "geom geometry(LineString, 4326)",
+                "tile_id text",
+                "ingested_at timestamptz not null default (now() at time zone 'UTC')",
+                "record_hash text not null",
+                "valid_from timestamptz not null default (now() at time zone 'UTC')",
+                "valid_to timestamptz",
+            ]
+        )
 
         lines = [f"create table {fqn} ("]
         lines.append("    " + ",\n    ".join(columns))
@@ -454,13 +554,13 @@ class OsmnxCollector:
         lines.append("")
         lines.append(f"alter table {fqn}")
         lines.append(f"    add constraint {constraint_name}")
-        lines.append(f'    unique ({ek_cols}, "record_hash");')
+        lines.append(f"    unique ({ek_cols}, record_hash);")
 
         index_name = f"ix_{spec.target_table_edges}_current"
         lines.append("")
         lines.append(f"create index {index_name}")
         lines.append(f"    on {fqn} ({ek_cols})")
-        lines.append('    where "valid_to" is null;')
+        lines.append("    where valid_to is null;")
 
         lines.append("")
         lines.append(f"create index ix_{spec.target_table_edges}_geom")
@@ -469,16 +569,16 @@ class OsmnxCollector:
         lines.append("")
         lines.append(f"create index ix_{spec.target_table_edges}_u")
         lines.append(f"    on {fqn} (u)")
-        lines.append('    where "valid_to" is null;')
+        lines.append("    where valid_to is null;")
 
         lines.append("")
         lines.append(f"create index ix_{spec.target_table_edges}_v")
         lines.append(f"    on {fqn} (v)")
-        lines.append('    where "valid_to" is null;')
+        lines.append("    where valid_to is null;")
 
         lines.append("")
         lines.append(f"create index ix_{spec.target_table_edges}_tile_id")
         lines.append(f"    on {fqn} (tile_id)")
-        lines.append('    where "valid_to" is null;')
+        lines.append("    where valid_to is null;")
 
         return "\n".join(lines)

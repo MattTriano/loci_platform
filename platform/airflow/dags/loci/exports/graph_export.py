@@ -6,8 +6,9 @@ the marts schema, builds a NetworkX DiGraph, serializes it with gzip pickle,
 and writes it to a local path.
 
 The graph stores only what the Lambda routing function needs:
-    - Node attributes: lat, lon
-    - Edge attributes: key, length_m, safety_cost
+    - Node attributes: lat (y), lon (x)
+    - Edge attributes: key, length_m, safety_cost, name, highway,
+      geometry_coords
 
 Usage from an Airflow task:
 
@@ -50,7 +51,7 @@ class RoutingGraphExporter:
         serialization. This removes isolated subgraphs (parking lots,
         dead-end service roads, tile boundary fragments) that are
         unreachable from the main network and would never appear in a
-        real route. Default is 50. Set to 1 to disable filtering.
+        real route. Default is 75. Set to 1 to disable filtering.
     """
 
     _EDGE_QUERY = """
@@ -59,6 +60,7 @@ class RoutingGraphExporter:
             e.v,
             e.key,
             e.name,
+            e.highway,
             e.length_m,
             e.safety_cost,
             ST_AsGeoJSON(ST_Simplify(e.geom, 0.00005)) as geom_geojson,
@@ -167,6 +169,7 @@ class RoutingGraphExporter:
                     length_m=row["length_m"],
                     safety_cost=row["safety_cost"],
                     name=row["name"],
+                    highway=row["highway"],
                     geometry_coords=self._parse_geojson_coords(row["geom_geojson"]),
                 )
                 edge_count += 1
