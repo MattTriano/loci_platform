@@ -259,6 +259,45 @@ resource "aws_iam_user_policy" "deploy" {
 
 
 # -----------------------------------------------------------------------------
+# SSM Parameter Store — routing API key (encrypted at rest via KMS)
+#
+# The Lambda reads this on cold start instead of using a plaintext env var.
+# To rotate: update the parameter value (via CLI or console), then update
+# config.json in S3 and invalidate CloudFront so the frontend sends the
+# new key.
+#
+# ignore_changes on value means `tofu apply` won't overwrite a key that
+# was rotated out-of-band. Remove the lifecycle block if you want OpenTofu
+# to always enforce the value from tfvars.
+# -----------------------------------------------------------------------------
+
+resource "aws_ssm_parameter" "routing_api_key" {
+  name  = "/${var.basename}/${var.environment}/bike-map/routing-api-key"
+  type  = "SecureString"
+  value = var.bike_map_routing_api_key
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+
+# -----------------------------------------------------------------------------
+# CloudWatch — managed log group for routing Lambda
+#
+# Creating it here (rather than letting Lambda auto-create it) gives us
+# control over retention and lets us scope the IAM policy to this ARN.
+# The name is derived from local.resource_name (not the Lambda resource)
+# to avoid a circular dependency.
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "routing_lambda" {
+  name              = "/aws/lambda/${local.resource_name}-routing-api"
+  retention_in_days = 14
+}
+
+
+# -----------------------------------------------------------------------------
 # IAM — Lambda execution role
 # -----------------------------------------------------------------------------
 
@@ -288,11 +327,10 @@ resource "aws_iam_role_policy" "routing_lambda" {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "arn:aws:logs:*:*:*"
+        Resource = "${aws_cloudwatch_log_group.routing_lambda.arn}:*"
       },
       {
         Sid    = "ReadRoutingGraph"
@@ -302,6 +340,12 @@ resource "aws_iam_role_policy" "routing_lambda" {
           aws_s3_bucket.routing_graph.arn,
           "${aws_s3_bucket.routing_graph.arn}/*"
         ]
+      },
+      {
+        Sid      = "ReadApiKey"
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = aws_ssm_parameter.routing_api_key.arn
       }
     ]
   })
@@ -312,8 +356,9 @@ resource "aws_iam_role_policy" "routing_lambda" {
 # Lambda — routing API function
 #
 # The deployment package is managed by the Airflow deploy DAG, not OpenTofu.
-# On first apply the zip must already exist at s3_key in the routing graph
-# bucket. Subsequent code deploys are done via lambda:UpdateFunctionCode.
+# On first apply the dummy handler is deployed so the function can be created
+# without requiring the real package in S3. Subsequent code deploys happen
+# via lambda:UpdateFunctionCode.
 # -----------------------------------------------------------------------------
 
 data "archive_file" "lambda_dummy" {
@@ -338,11 +383,13 @@ resource "aws_lambda_function" "routing_api" {
 
   environment {
     variables = {
-      BIKE_MAP_GRAPH_BUCKET = aws_s3_bucket.routing_graph.bucket
-      BIKE_MAP_GRAPH_KEY    = "graph/routing_graph.pkl.gz"
-      BIKE_MAP_API_KEY      = var.bike_map_routing_api_key
+      BIKE_MAP_GRAPH_BUCKET    = aws_s3_bucket.routing_graph.bucket
+      BIKE_MAP_GRAPH_KEY       = "graph/routing_graph.pkl.gz"
+      BIKE_MAP_API_KEY_SSM_ARN = aws_ssm_parameter.routing_api_key.name
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.routing_lambda]
 
   lifecycle {
     ignore_changes = [
@@ -360,6 +407,41 @@ resource "aws_lambda_permission" "api_gateway" {
   function_name = aws_lambda_function.routing_api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.routing.execution_arn}/*/*"
+}
+
+
+# -----------------------------------------------------------------------------
+# EventBridge — warming ping to reduce Lambda cold starts
+#
+# Invokes the routing Lambda every 5 minutes with a recognizable event.
+# The handler detects this and returns immediately after loading the graph,
+# keeping the execution environment warm for real user requests.
+#
+# Cost: ~288 invocations/day × ~100ms × 2GB ≈ 58 GB-s/day ≈ 1,740 GB-s/month
+# (well within the 400,000 GB-s/month free tier)
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_event_rule" "warming_ping" {
+  name                = "${local.resource_name}-warming-ping"
+  description         = "Ping routing Lambda every 5 min to keep it warm"
+  schedule_expression = "rate(5 minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "warming_ping" {
+  rule = aws_cloudwatch_event_rule.warming_ping.name
+  arn  = aws_lambda_function.routing_api.arn
+
+  input = jsonencode({
+    source = "warming-ping"
+  })
+}
+
+resource "aws_lambda_permission" "eventbridge_warming" {
+  statement_id  = "AllowEventBridgeWarmingPing"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.routing_api.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.warming_ping.arn
 }
 
 

@@ -5,9 +5,10 @@ Thin wrapper around the routing module. Loads the graph from S3 on cold
 start and delegates routing to routing.find_route().
 
 Environment variables:
-    BIKE_MAP_GRAPH_BUCKET : S3 bucket containing the graph file.
-    BIKE_MAP_GRAPH_KEY    : S3 key of the gzip-pickled graph file.
-    BIKE_MAP_API_KEY      : Required value of the X-Api-Key request header.
+    BIKE_MAP_GRAPH_BUCKET    : S3 bucket containing the graph file.
+    BIKE_MAP_GRAPH_KEY       : S3 key of the gzip-pickled graph file.
+    BIKE_MAP_API_KEY_SSM_ARN : SSM parameter name for the API key (preferred).
+    BIKE_MAP_API_KEY         : Fallback plaintext API key (for local testing).
 
 Request (POST /route):
     {
@@ -43,6 +44,7 @@ log.setLevel(logging.INFO)
 _graph = None
 _kdtree = None
 _node_ids = None
+_api_key = None
 
 
 def _load_graph():
@@ -65,10 +67,30 @@ def _load_graph():
     return G, kdtree, node_ids
 
 
+def _load_api_key() -> str:
+    """Load the API key, preferring SSM Parameter Store over env var.
+
+    SSM is preferred because the key is encrypted at rest via KMS and
+    doesn't appear in Lambda console output or OpenTofu state as
+    plaintext. The env var fallback supports local testing without SSM.
+    """
+    ssm_name = os.environ.get("BIKE_MAP_API_KEY_SSM_ARN", "")
+    if ssm_name:
+        log.info("Loading API key from SSM parameter: %s", ssm_name)
+        ssm = boto3.client("ssm")
+        resp = ssm.get_parameter(Name=ssm_name, WithDecryption=True)
+        return resp["Parameter"]["Value"]
+
+    log.info("SSM parameter not configured, using BIKE_MAP_API_KEY env var")
+    return os.environ.get("BIKE_MAP_API_KEY", "")
+
+
 def _ensure_loaded():
-    global _graph, _kdtree, _node_ids
+    global _graph, _kdtree, _node_ids, _api_key
     if _graph is None:
         _graph, _kdtree, _node_ids = _load_graph()
+    if _api_key is None:
+        _api_key = _load_api_key()
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +99,29 @@ def _ensure_loaded():
 
 
 def lambda_handler(event: dict, context) -> dict:
+    # Warming ping — load the graph and API key but skip request processing.
+    # EventBridge invokes the Lambda directly (not through API Gateway),
+    # so there is no X-Api-Key header. This is safe because the Lambda
+    # permission resource scopes invocation to the specific EventBridge
+    # rule ARN — arbitrary callers cannot invoke the function this way.
+    if event.get("source") == "warming-ping":
+        _ensure_loaded()
+        log.info("Warming ping handled, graph in memory")
+        return {"statusCode": 200, "body": "warm"}
+
+    # Ensure graph and API key are loaded (no-op on warm invocations)
+    try:
+        _ensure_loaded()
+    except Exception:
+        log.exception("Failed to load graph or API key")
+        return {
+            "statusCode": 503,
+            "body": json.dumps({"error": "Service unavailable"}),
+        }
+
     # API key check
-    api_key = os.environ.get("BIKE_MAP_API_KEY", "")
     request_key = (event.get("headers") or {}).get("x-api-key", "")
-    if not api_key or request_key != api_key:
+    if not _api_key or request_key != _api_key:
         return {
             "statusCode": 401,
             "body": json.dumps({"error": "Unauthorized"}),
@@ -97,16 +138,6 @@ def lambda_handler(event: dict, context) -> dict:
         return {
             "statusCode": 400,
             "body": json.dumps({"error": f"Invalid request: {e}"}),
-        }
-
-    # Ensure graph is loaded (no-op on warm invocations)
-    try:
-        _ensure_loaded()
-    except Exception:
-        log.exception("Failed to load graph")
-        return {
-            "statusCode": 503,
-            "body": json.dumps({"error": "Graph unavailable"}),
         }
 
     # Route
