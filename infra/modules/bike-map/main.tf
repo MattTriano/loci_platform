@@ -411,37 +411,62 @@ resource "aws_lambda_permission" "api_gateway" {
 
 
 # -----------------------------------------------------------------------------
-# EventBridge — warming ping to reduce Lambda cold starts
+# EventBridge Scheduler — warming ping to reduce Lambda cold starts
 #
-# Invokes the routing Lambda every 5 minutes with a recognizable event.
+# Invokes the routing Lambda every 5 minutes with a recognizable payload.
 # The handler detects this and returns immediately after loading the graph,
 # keeping the execution environment warm for real user requests.
-#
-# Cost: ~288 invocations/day × ~100ms × 2GB ≈ 58 GB-s/day ≈ 1,740 GB-s/month
-# (well within the 400,000 GB-s/month free tier)
 # -----------------------------------------------------------------------------
 
-resource "aws_cloudwatch_event_rule" "warming_ping" {
-  name                = "${local.resource_name}-warming-ping"
-  description         = "Ping routing Lambda every 5 min to keep it warm"
+resource "aws_scheduler_schedule" "warming_ping" {
+  name       = "${local.resource_name}-warming-ping"
+  group_name = "default"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
   schedule_expression = "rate(5 minutes)"
+
+  target {
+    arn      = aws_lambda_function.routing_api.arn
+    role_arn = aws_iam_role.scheduler_warming.arn
+
+    input = jsonencode({
+      source = "warming-ping"
+    })
+  }
 }
 
-resource "aws_cloudwatch_event_target" "warming_ping" {
-  rule = aws_cloudwatch_event_rule.warming_ping.name
-  arn  = aws_lambda_function.routing_api.arn
+resource "aws_iam_role" "scheduler_warming" {
+  name = "${local.resource_name}-scheduler-warming"
 
-  input = jsonencode({
-    source = "warming-ping"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "scheduler.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
   })
 }
 
-resource "aws_lambda_permission" "eventbridge_warming" {
-  statement_id  = "AllowEventBridgeWarmingPing"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.routing_api.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.warming_ping.arn
+resource "aws_iam_role_policy" "scheduler_warming" {
+  name = "${local.resource_name}-scheduler-warming"
+  role = aws_iam_role.scheduler_warming.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "lambda:InvokeFunction"
+        Resource = aws_lambda_function.routing_api.arn
+      }
+    ]
+  })
 }
 
 
