@@ -39,7 +39,121 @@ import numpy as np
 from loci.collectors.utils import make_temp_dir
 from scipy.spatial import cKDTree
 
-log = logging.getLogger(__name__)
+# OSM tags to collect for edges, mapped to Postgres column names.
+# Colon-separated tags become underscore-separated columns so they
+# can be queried without double-quotes.
+#
+# Format: (osm_tag, column_name, column_type)
+# column_type is used in DDL generation; flatten always calls _to_str_or_none
+# except for the few non-text columns handled explicitly in _flatten_edges.
+EDGE_TAG_COLUMNS = [
+    # --- existing tags ---
+    ("name", "name", "text"),
+    ("highway", "highway", "text"),
+    ("oneway", "oneway", "boolean"),
+    ("reversed", "reversed", "text"),
+    ("maxspeed", "maxspeed", "text"),
+    ("surface", "surface", "text"),
+    ("lanes", "lanes", "text"),
+    ("ref", "ref", "text"),
+    ("service", "service", "text"),
+    ("width", "width", "text"),
+    ("lit", "lit", "text"),
+    ("access", "access", "text"),
+    ("bridge", "bridge", "text"),
+    ("tunnel", "tunnel", "text"),
+    # --- bicycle general ---
+    ("bicycle", "bicycle", "text"),
+    ("bicycle:lanes", "bicycle_lanes", "text"),
+    ("bicycle:lanes:backward", "bicycle_lanes_backward", "text"),
+    ("bicycle:lanes:forward", "bicycle_lanes_forward", "text"),
+    ("bicycle:right", "bicycle_right", "text"),
+    ("bicycle_road", "bicycle_road", "text"),
+    ("class:bicycle", "class_bicycle", "text"),
+    ("cyclestreet", "cyclestreet", "text"),
+    ("oneway:bicycle", "oneway_bicycle", "text"),
+    ("ramp:bicycle", "ramp_bicycle", "text"),
+    ("sidewalk:both:bicycle", "sidewalk_both_bicycle", "text"),
+    # --- cycleway general ---
+    ("cycleway", "cycleway", "text"),
+    ("cycleway:buffer", "cycleway_buffer", "text"),
+    ("cycleway:lane", "cycleway_lane", "text"),
+    ("cycleway:oneway", "cycleway_oneway", "text"),
+    ("cycleway:separation", "cycleway_separation", "text"),
+    ("cycleway:shared_lane", "cycleway_shared_lane", "text"),
+    ("cycleway:smoothness", "cycleway_smoothness", "text"),
+    ("cycleway:surface", "cycleway_surface", "text"),
+    # --- cycleway:both ---
+    ("cycleway:both", "cycleway_both", "text"),
+    ("cycleway:both:buffer", "cycleway_both_buffer", "text"),
+    ("cycleway:both:colour", "cycleway_both_colour", "text"),
+    ("cycleway:both:lane", "cycleway_both_lane", "text"),
+    ("cycleway:both:separation", "cycleway_both_separation", "text"),
+    ("cycleway:both:shared_lane", "cycleway_both_shared_lane", "text"),
+    ("cycleway:both:traffic_sign", "cycleway_both_traffic_sign", "text"),
+    # --- cycleway:left ---
+    ("cycleway:left", "cycleway_left", "text"),
+    ("cycleway:left:buffer", "cycleway_left_buffer", "text"),
+    ("cycleway:left:lane", "cycleway_left_lane", "text"),
+    ("cycleway:left:oneway", "cycleway_left_oneway", "text"),
+    ("cycleway:left:separation", "cycleway_left_separation", "text"),
+    ("cycleway:left:shared_lane", "cycleway_left_shared_lane", "text"),
+    ("cycleway:left:traffic_sign", "cycleway_left_traffic_sign", "text"),
+    # --- cycleway:right ---
+    ("cycleway:right", "cycleway_right", "text"),
+    ("cycleway:right:buffer", "cycleway_right_buffer", "text"),
+    ("cycleway:right:lane", "cycleway_right_lane", "text"),
+    ("cycleway:right:oneway", "cycleway_right_oneway", "text"),
+    ("cycleway:right:separation", "cycleway_right_separation", "text"),
+    ("cycleway:right:shared_lane", "cycleway_right_shared_lane", "text"),
+    ("cycleway:right:traffic_sign", "cycleway_right_traffic_sign", "text"),
+]
+
+# Tags that need to be added to ox.settings.useful_tags_way before fetching.
+# This is the union of all OSM tags in EDGE_TAG_COLUMNS that aren't already
+# in OSMnx's default useful_tags_way.
+EXTRA_USEFUL_TAGS_WAY = [
+    "bicycle",
+    "bicycle:lanes",
+    "bicycle:lanes:backward",
+    "bicycle:lanes:forward",
+    "bicycle:right",
+    "bicycle_road",
+    "class:bicycle",
+    "cyclestreet",
+    "cycleway",
+    "cycleway:both",
+    "cycleway:both:buffer",
+    "cycleway:both:colour",
+    "cycleway:both:lane",
+    "cycleway:both:separation",
+    "cycleway:both:shared_lane",
+    "cycleway:both:traffic_sign",
+    "cycleway:buffer",
+    "cycleway:lane",
+    "cycleway:left",
+    "cycleway:left:buffer",
+    "cycleway:left:lane",
+    "cycleway:left:oneway",
+    "cycleway:left:separation",
+    "cycleway:left:shared_lane",
+    "cycleway:left:traffic_sign",
+    "cycleway:oneway",
+    "cycleway:right",
+    "cycleway:right:buffer",
+    "cycleway:right:lane",
+    "cycleway:right:oneway",
+    "cycleway:right:separation",
+    "cycleway:right:shared_lane",
+    "cycleway:right:traffic_sign",
+    "cycleway:separation",
+    "cycleway:shared_lane",
+    "cycleway:smoothness",
+    "cycleway:surface",
+    "oneway:bicycle",
+    "ramp:bicycle",
+    "sidewalk:both:bicycle",
+]
 
 
 class OsmnxClient:
@@ -53,13 +167,23 @@ class OsmnxClient:
         '["service"!~"private"]'
     )
 
-    def __init__(self, cache_dir: str | Path | None = None):
+    EDGE_TAG_COLUMNS = EDGE_TAG_COLUMNS
+    EXTRA_USEFUL_TAGS_WAY = EXTRA_USEFUL_TAGS_WAY
+
+    def __init__(
+        self,
+        cache_dir: str | Path | None = None,
+        logger: logging.Logger | None = None,
+    ):
+        self.logger = logger or logging.getLogger(__name__)
+
         if cache_dir:
             self.cache_dir = Path(cache_dir)
             self._temp_dir_handle = None
         else:
             self.cache_dir, self._temp_dir_handle = make_temp_dir(prefix="osmnx_cache_")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.logger.info("OsmnxClient initialized with cache_dir=%s", self.cache_dir)
 
     # ------------------------------------------------------------------ #
     #  Public API
@@ -71,6 +195,7 @@ class OsmnxClient:
         network_type: str = "bike",
         include_bikeable_footways: bool = True,
         merge_threshold_meters: float | None = 15,
+        simplify: bool = True,
     ) -> nx.MultiDiGraph:
         """Fetch a bike network graph, optionally including bikeable footways.
 
@@ -101,14 +226,25 @@ class OsmnxClient:
         cache_path = self._cache_path(bbox, cache_key)
 
         if cache_path and cache_path.exists():
-            log.info("Loading cached graph from %s", cache_path)
+            self.logger.info("Loading cached graph from %s", cache_path)
             import osmnx as ox
 
-            return ox.load_graphml(cache_path)
+            G = ox.load_graphml(cache_path)
+            self.logger.info(
+                "Loaded cached graph: %d nodes, %d edges",
+                G.number_of_nodes(),
+                G.number_of_edges(),
+            )
+            return G
+
+        self.logger.info(
+            "No cache found at %s, fetching from Overpass API",
+            cache_path,
+        )
 
         # --- Base bike network ---
         G = self._fetch_graph(bbox, network_type=network_type)
-        log.info(
+        self.logger.info(
             "Base bike graph: %d nodes, %d edges",
             G.number_of_nodes(),
             G.number_of_edges(),
@@ -122,8 +258,9 @@ class OsmnxClient:
                     bbox,
                     network_type=None,
                     custom_filter=self._BIKEABLE_FOOTWAY_FILTER,
+                    simplify=simplify,
                 )
-                log.info(
+                self.logger.info(
                     "Bikeable footways graph: %d nodes, %d edges",
                     G_footways.number_of_nodes(),
                     G_footways.number_of_edges(),
@@ -131,7 +268,7 @@ class OsmnxClient:
                 # Track which nodes are footway-only (not already in the base graph)
                 footway_nodes = set(G_footways.nodes) - set(G.nodes)
                 G = self._merge_graphs(G, G_footways)
-                log.info(
+                self.logger.info(
                     "Merged graph: %d nodes, %d edges (%d footway-only nodes)",
                     G.number_of_nodes(),
                     G.number_of_edges(),
@@ -139,7 +276,7 @@ class OsmnxClient:
                 )
             except Exception as e:
                 if "Found no graph nodes" in str(e) or "EmptyOverpassResponse" in str(e):
-                    log.info("No bikeable footways found in bbox %s, skipping merge", bbox)
+                    self.logger.info("No bikeable footways found in bbox %s, skipping merge", bbox)
                 else:
                     raise
 
@@ -149,12 +286,13 @@ class OsmnxClient:
                 G,
                 threshold_meters=merge_threshold_meters,
                 cross_graph_nodes=footway_nodes,
+                logger=self.logger,
             )
 
         if cache_path:
             import osmnx as ox
 
-            log.info("Caching graph to %s", cache_path)
+            self.logger.info("Caching graph to %s", cache_path)
             ox.save_graphml(G, cache_path)
 
         return G
@@ -178,13 +316,13 @@ class OsmnxClient:
         bbox: tuple[float, float, float, float],
         network_type: str | None = "bike",
         custom_filter: str | None = None,
+        simplify: bool = True,
     ) -> nx.MultiDiGraph:
         """Download a single graph from Overpass via OSMnx."""
         import osmnx as ox
-        from loci.collectors.osmnx.collector import EXTRA_USEFUL_TAGS_WAY
 
         # Ensure our cycling tags are included in the download
-        for tag in EXTRA_USEFUL_TAGS_WAY:
+        for tag in self.EXTRA_USEFUL_TAGS_WAY:
             if tag not in ox.settings.useful_tags_way:
                 ox.settings.useful_tags_way.append(tag)
 
@@ -198,6 +336,14 @@ class OsmnxClient:
             kwargs["network_type"] = None
         else:
             kwargs["network_type"] = network_type
+        kwargs["simplify"] = simplify
+
+        self.logger.info(
+            "Fetching graph from Overpass: bbox=%s, network_type=%s, custom_filter=%s",
+            bbox,
+            kwargs.get("network_type"),
+            custom_filter,
+        )
 
         return ox.graph_from_bbox(**kwargs)
 
@@ -231,6 +377,7 @@ class OsmnxClient:
         G: nx.MultiDiGraph,
         threshold_meters: float = 15,
         cross_graph_nodes: set | None = None,
+        logger: logging.Logger | None = None,
     ) -> nx.MultiDiGraph:
         """Merge nodes that are within `threshold_meters` of each other.
 
@@ -251,12 +398,16 @@ class OsmnxClient:
             Node IDs that came from the supplemental graph (e.g. footways).
             If provided, only pairs where exactly one node is in this set
             will be merged. The base-graph node is always kept.
+        logger : logging.Logger or None
+            Logger instance. Falls back to module-level logger if None.
 
         Returns
         -------
         nx.MultiDiGraph
             A copy of the graph with near-duplicate nodes contracted.
         """
+        _log = logger or logging.getLogger(__name__)
+
         nodes = list(G.nodes(data=True))
         node_ids = [n for n, _ in nodes]
 
@@ -330,7 +481,7 @@ class OsmnxClient:
         # Resolve transitive chains: if A→B and B→C, make A→C
         merge_map = {k: OsmnxClient._resolve_merge_chain(merge_map, k) for k in merge_map}
 
-        log.info(
+        _log.info(
             "connect_near_nodes: %d pairs to merge, "
             "skipped %d (same graph), %d (layer mismatch), "
             "%d (grade separation mismatch)",
@@ -343,7 +494,7 @@ class OsmnxClient:
         if not merge_map:
             return G
 
-        return OsmnxClient._apply_merges(G, merge_map)
+        return OsmnxClient._apply_merges(G, merge_map, logger=_log)
 
     # ------------------------------------------------------------------ #
     #  Vertical separation helpers
@@ -415,12 +566,15 @@ class OsmnxClient:
     def _apply_merges(
         G: nx.MultiDiGraph,
         merge_map: dict,
+        logger: logging.Logger | None = None,
     ) -> nx.MultiDiGraph:
         """Rewire edges and remove merged nodes.
 
         For each dropped node, all its edges are rewired to point to/from
         the kept node instead, then the dropped node is removed.
         """
+        _log = logger or logging.getLogger(__name__)
+
         G_new = G.copy()
 
         for drop, keep in merge_map.items():
@@ -441,7 +595,7 @@ class OsmnxClient:
 
             G_new.remove_node(drop)
 
-        log.info(
+        _log.info(
             "After merging: %d nodes, %d edges",
             G_new.number_of_nodes(),
             G_new.number_of_edges(),

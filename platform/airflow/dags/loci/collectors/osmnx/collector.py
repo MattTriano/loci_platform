@@ -29,123 +29,6 @@ from loci.tracking.ingestion_tracker import IngestionTracker
 logger = logging.getLogger(__name__)
 
 
-# OSM tags to collect for edges, mapped to Postgres column names.
-# Colon-separated tags become underscore-separated columns so they
-# can be queried without double-quotes.
-#
-# Format: (osm_tag, column_name, column_type)
-# column_type is used in DDL generation; flatten always calls _to_str_or_none
-# except for the few non-text columns handled explicitly in _flatten_edges.
-EDGE_TAG_COLUMNS = [
-    # --- existing tags ---
-    ("name", "name", "text"),
-    ("highway", "highway", "text"),
-    ("oneway", "oneway", "boolean"),
-    ("reversed", "reversed", "text"),
-    ("maxspeed", "maxspeed", "text"),
-    ("surface", "surface", "text"),
-    ("lanes", "lanes", "text"),
-    ("ref", "ref", "text"),
-    ("service", "service", "text"),
-    ("width", "width", "text"),
-    ("lit", "lit", "text"),
-    ("access", "access", "text"),
-    ("bridge", "bridge", "text"),
-    ("tunnel", "tunnel", "text"),
-    # --- bicycle general ---
-    ("bicycle", "bicycle", "text"),
-    ("bicycle:lanes", "bicycle_lanes", "text"),
-    ("bicycle:lanes:backward", "bicycle_lanes_backward", "text"),
-    ("bicycle:lanes:forward", "bicycle_lanes_forward", "text"),
-    ("bicycle:right", "bicycle_right", "text"),
-    ("bicycle_road", "bicycle_road", "text"),
-    ("class:bicycle", "class_bicycle", "text"),
-    ("cyclestreet", "cyclestreet", "text"),
-    ("oneway:bicycle", "oneway_bicycle", "text"),
-    ("ramp:bicycle", "ramp_bicycle", "text"),
-    ("sidewalk:both:bicycle", "sidewalk_both_bicycle", "text"),
-    # --- cycleway general ---
-    ("cycleway", "cycleway", "text"),
-    ("cycleway:buffer", "cycleway_buffer", "text"),
-    ("cycleway:lane", "cycleway_lane", "text"),
-    ("cycleway:oneway", "cycleway_oneway", "text"),
-    ("cycleway:separation", "cycleway_separation", "text"),
-    ("cycleway:shared_lane", "cycleway_shared_lane", "text"),
-    ("cycleway:smoothness", "cycleway_smoothness", "text"),
-    ("cycleway:surface", "cycleway_surface", "text"),
-    # --- cycleway:both ---
-    ("cycleway:both", "cycleway_both", "text"),
-    ("cycleway:both:buffer", "cycleway_both_buffer", "text"),
-    ("cycleway:both:colour", "cycleway_both_colour", "text"),
-    ("cycleway:both:lane", "cycleway_both_lane", "text"),
-    ("cycleway:both:separation", "cycleway_both_separation", "text"),
-    ("cycleway:both:shared_lane", "cycleway_both_shared_lane", "text"),
-    ("cycleway:both:traffic_sign", "cycleway_both_traffic_sign", "text"),
-    # --- cycleway:left ---
-    ("cycleway:left", "cycleway_left", "text"),
-    ("cycleway:left:buffer", "cycleway_left_buffer", "text"),
-    ("cycleway:left:lane", "cycleway_left_lane", "text"),
-    ("cycleway:left:oneway", "cycleway_left_oneway", "text"),
-    ("cycleway:left:separation", "cycleway_left_separation", "text"),
-    ("cycleway:left:shared_lane", "cycleway_left_shared_lane", "text"),
-    ("cycleway:left:traffic_sign", "cycleway_left_traffic_sign", "text"),
-    # --- cycleway:right ---
-    ("cycleway:right", "cycleway_right", "text"),
-    ("cycleway:right:buffer", "cycleway_right_buffer", "text"),
-    ("cycleway:right:lane", "cycleway_right_lane", "text"),
-    ("cycleway:right:oneway", "cycleway_right_oneway", "text"),
-    ("cycleway:right:separation", "cycleway_right_separation", "text"),
-    ("cycleway:right:shared_lane", "cycleway_right_shared_lane", "text"),
-    ("cycleway:right:traffic_sign", "cycleway_right_traffic_sign", "text"),
-]
-
-# Tags that need to be added to ox.settings.useful_tags_way before fetching.
-# This is the union of all OSM tags in EDGE_TAG_COLUMNS that aren't already
-# in OSMnx's default useful_tags_way.
-EXTRA_USEFUL_TAGS_WAY = [
-    "bicycle",
-    "bicycle:lanes",
-    "bicycle:lanes:backward",
-    "bicycle:lanes:forward",
-    "bicycle:right",
-    "bicycle_road",
-    "class:bicycle",
-    "cyclestreet",
-    "cycleway",
-    "cycleway:both",
-    "cycleway:both:buffer",
-    "cycleway:both:colour",
-    "cycleway:both:lane",
-    "cycleway:both:separation",
-    "cycleway:both:shared_lane",
-    "cycleway:both:traffic_sign",
-    "cycleway:buffer",
-    "cycleway:lane",
-    "cycleway:left",
-    "cycleway:left:buffer",
-    "cycleway:left:lane",
-    "cycleway:left:oneway",
-    "cycleway:left:separation",
-    "cycleway:left:shared_lane",
-    "cycleway:left:traffic_sign",
-    "cycleway:oneway",
-    "cycleway:right",
-    "cycleway:right:buffer",
-    "cycleway:right:lane",
-    "cycleway:right:oneway",
-    "cycleway:right:separation",
-    "cycleway:right:shared_lane",
-    "cycleway:right:traffic_sign",
-    "cycleway:separation",
-    "cycleway:shared_lane",
-    "cycleway:smoothness",
-    "cycleway:surface",
-    "oneway:bicycle",
-    "ramp:bicycle",
-    "sidewalk:both:bicycle",
-]
-
-
 class OsmnxCollector:
     """Collects OSMnx bike network data and ingests into PostGIS.
 
@@ -177,9 +60,9 @@ class OsmnxCollector:
         logger: logging.Logger | None = None,
     ):
         self.engine = engine
-        self.client = client or OsmnxClient()
-        self.tracker = tracker or IngestionTracker(engine=self.engine)
         self.logger = logger or logging.getLogger("osmnx_collector")
+        self.client = client or OsmnxClient(logger=self.logger)
+        self.tracker = tracker or IngestionTracker(engine=self.engine)
 
     # ------------------------------------------------------------------
     # Collection
@@ -192,6 +75,14 @@ class OsmnxCollector:
 
         self.logger.info("Downloading %s", spec.name)
         G = self.client.get_bike_network(bbox=spec.bbox, network_type=spec.network_type)
+
+        self.logger.info(
+            "Graph for %s: %d nodes, %d edges (cache_dir=%s)",
+            spec.name,
+            G.number_of_nodes(),
+            G.number_of_edges(),
+            self.client.cache_dir,
+        )
 
         nodes_gdf = self.client.get_nodes_gdf(G)
         edges_gdf = self.client.get_edges_gdf(G)
@@ -222,20 +113,20 @@ class OsmnxCollector:
                 select 1 from {node_fqn}
                 where valid_to is null
                     and tile_id = %(tile_id)s
-                    and ingested_at >= now() - interval '%(mms)s months'
+                    and ingested_at >= now() - interval '{max_months_stale} months'
                 limit 1
                 """,
-                {"tile_id": tile_id, "mms": max_months_stale},
+                {"tile_id": tile_id},
             )
             edge_df = self.engine.query(
                 f"""
                 select 1 from {edge_fqn}
                 where valid_to is null
                     and tile_id = %(tile_id)s
-                    and ingested_at >= now() - interval '%(mms)s months'
+                    and ingested_at >= now() - interval '{max_months_stale} months'
                 limit 1
                 """,
-                {"tile_id": tile_id, "mms": max_months_stale},
+                {"tile_id": tile_id},
             )
             return (not node_df.empty) and (not edge_df.empty)
         except Exception as e:
@@ -397,7 +288,7 @@ class OsmnxCollector:
 
             # Extract all tag columns. The "oneway" tag is boolean;
             # everything else is text via _to_str_or_none.
-            for osm_tag, col_name, col_type in EDGE_TAG_COLUMNS:
+            for osm_tag, col_name, col_type in self.client.EDGE_TAG_COLUMNS:
                 if col_type == "boolean":
                     edge[col_name] = bool(row.get(osm_tag, False))
                 else:
@@ -530,8 +421,8 @@ class OsmnxCollector:
             "length_m double precision",
         ]
 
-        # Tag columns from the mapping
-        for _osm_tag, col_name, col_type in EDGE_TAG_COLUMNS:
+        # Tag columns from the client's mapping
+        for _osm_tag, col_name, col_type in self.client.EDGE_TAG_COLUMNS:
             columns.append(f"{col_name} {col_type}")
 
         # Geometry, tile, and SCD2 metadata
