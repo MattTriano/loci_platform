@@ -194,7 +194,7 @@ class OsmnxClient:
         bbox: tuple[float, float, float, float],
         network_type: str = "bike",
         include_bikeable_footways: bool = True,
-        merge_threshold_meters: float | None = 15,
+        merge_threshold_meters: float | None = 10,
         simplify: bool = True,
     ) -> nx.MultiDiGraph:
         """Fetch a bike network graph, optionally including bikeable footways.
