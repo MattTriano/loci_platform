@@ -40,42 +40,69 @@
     ]
 ) }}
 
-{% set crash_weight = 2.0 %}
+{% set crash_weight = 4.0 %}
 {% set crash_decay_lambda = 0.4 %}
-{% set crash_buffer_degrees = 0.0004 %}
+{% set crash_buffer_degrees = 0.0002 %}
 
 with edges as (
     select *
     from {{ ref('chicago_bike_network_edges') }}
 ),
-
 crashes as (
     select * from {{ ref('bike_crash_hotspots') }}
 ),
-
 -- =====================================================================
--- Crash scores: driven from small crashes table onto edge spatial index.
+-- Crash deduplication: assign each crash to exactly one edge.
+-- Priority: most dangerous highway class, then nearest by distance.
+-- This prevents a single crash near an intersection from being counted
+-- on multiple short segments.
+-- =====================================================================
+crash_nearest as (
+    select distinct on (c.crash_record_id)
+        c.crash_record_id,
+        c.severity_score,
+        c.crash_date,
+        e.u, e.v, e.key
+    from crashes c
+    inner join edges e
+        on e.geom && ST_Expand(c.geom, {{ crash_buffer_degrees }})
+        and ST_DWithin(c.geom, e.geom, {{ crash_buffer_degrees }})
+    order by c.crash_record_id,
+        case
+            when e.highway in ('primary', 'primary_link')       then 1
+            when e.highway like '%primary%'                     then 1
+            when e.highway in ('secondary', 'secondary_link')   then 2
+            when e.highway like '%secondary%'                   then 2
+            when e.highway in ('tertiary', 'tertiary_link')     then 3
+            when e.highway like '%tertiary%'                    then 3
+            when e.highway in ('unclassified')                  then 4
+            when e.highway in ('residential')                   then 5
+            when e.highway like '%residential%'                 then 5
+            when e.highway in ('service')                       then 6
+            else 7
+        end,
+        ST_Distance(c.geom, e.geom)
+),
+-- =====================================================================
+-- Crash scores: aggregate deduplicated crashes per edge.
 -- Severity is squared per crash before summing to amplify the difference
 -- between fatal and minor crashes.
 -- =====================================================================
 crash_scores as (
     select
-        e.u,
-        e.v,
-        e.key,
+        cn.u,
+        cn.v,
+        cn.key,
         count(*)                                        as crash_count,
         sum(
-            power(c.severity_score, 2) * exp(
+            power(cn.severity_score, 2) * exp(
                 -{{ crash_decay_lambda }}
-                * extract(epoch from (current_date - c.crash_date))
+                * extract(epoch from (current_date - cn.crash_date))
                 / (365.25 * 86400)
             )
         )                                               as crash_score
-    from crashes c
-    inner join edges e
-        on e.geom && ST_Expand(c.geom, {{ crash_buffer_degrees }})
-        and ST_DWithin(c.geom, e.geom, {{ crash_buffer_degrees }})
-    group by e.u, e.v, e.key
+    from crash_nearest cn
+    group by cn.u, cn.v, cn.key
 ),
 
 -- =====================================================================
@@ -162,6 +189,20 @@ factors as (
             -- 3. No bike infrastructure — neutral
             else 1.0
         end                             as infrastructure_factor,
+
+        -- Tunnel factor: penalizes tunnels without protective bike infrastructure.
+        -- infrastructure_factor <= 0.7 indicates at least a buffered lane or better.
+        case
+            when e.tunnel = 'yes'
+                and coalesce(e.osm_infra_type, '') not in (
+                    'protected_lane', 'track', 'shared_path', 'buffered_lane'
+                )
+                and coalesce(e.display_route_type, '') not in (
+                    'Protected Bike Lane', 'Neighborhood Greenway', 'Buffered Bike Lane'
+                )
+            then 2.5
+            else 1.0
+        end as tunnel_factor,
 
         -- Surface factor: affects control and crash risk.
         case
@@ -259,6 +300,7 @@ final as (
         speed_factor,
         road_type_factor,
         infrastructure_factor,
+        tunnel_factor,
         surface_factor,
         lighting_factor,
         traffic_control_penalty,
@@ -273,6 +315,7 @@ final as (
                 * speed_factor
                 * road_type_factor
                 * infrastructure_factor
+                * tunnel_factor
                 * surface_factor
                 * lighting_factor
                 + (crash_score_per_meter * length_m * {{ crash_weight }})

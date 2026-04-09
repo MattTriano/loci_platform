@@ -389,7 +389,10 @@ resource "aws_lambda_function" "routing_api" {
     }
   }
 
-  depends_on = [aws_cloudwatch_log_group.routing_lambda]
+  depends_on = [
+    aws_cloudwatch_log_group.routing_lambda,
+    aws_iam_role_policy.routing_lambda
+  ]
 
   lifecycle {
     ignore_changes = [
