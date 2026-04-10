@@ -59,6 +59,12 @@ models:
               # exceed length_m even at factor=1.0. We test the subset where
               # factors are elevated.
               severity: warn
+      - compare_aggregations:
+          arguments:
+            other_model: "ref('bike_crash_hotspots')"
+            this_model_agg: "sum(crash_count)"
+            other_model_agg: "count(distinct crash_record_id)"
+            assertion: "this_model_agg / other_model_agg::float between 0.995 and 1.0"
 
     columns:
       - name: u
