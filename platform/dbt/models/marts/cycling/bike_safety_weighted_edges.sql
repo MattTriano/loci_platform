@@ -40,7 +40,7 @@
     ]
 ) }}
 
-{% set crash_weight = 4.0 %}
+{% set crash_weight = 24.0 %}
 {% set crash_decay_lambda = 0.4 %}
 {% set crash_buffer_degrees = 0.0002 %}
 
@@ -68,6 +68,7 @@ crash_nearest as (
         on e.geom && ST_Expand(c.geom, {{ crash_buffer_degrees }})
         and ST_DWithin(c.geom, e.geom, {{ crash_buffer_degrees }})
     order by c.crash_record_id,
+        ST_Distance(c.geom, e.geom),
         case
             when e.highway in ('primary', 'primary_link')       then 1
             when e.highway like '%primary%'                     then 1
@@ -80,8 +81,7 @@ crash_nearest as (
             when e.highway like '%residential%'                 then 5
             when e.highway in ('service')                       then 6
             else 7
-        end,
-        ST_Distance(c.geom, e.geom)
+        end
 ),
 -- =====================================================================
 -- Crash scores: aggregate deduplicated crashes per edge.
@@ -140,13 +140,13 @@ factors as (
         -- independent of bike infrastructure. Based on highway class as
         -- a proxy for traffic volume, road design, and turning conflicts.
         case
-            when e.highway in ('cycleway')                      then 0.6
-            when e.highway like '%cycleway%'                    then 0.6
-            when e.highway in ('path', 'footway', 'bridleway')  then 0.7
-            when e.highway like '%path%'                        then 0.7
-            when e.highway in ('pedestrian')                    then 0.8
+            when e.highway in ('cycleway')                      then 0.3
+            when e.highway like '%cycleway%'                    then 0.3
+            when e.highway in ('path', 'footway', 'bridleway')  then 0.4
+            when e.highway like '%path%'                        then 0.4
+            when e.highway in ('pedestrian')                    then 0.5
             when e.highway in ('living_street')                 then 0.9
-            when e.highway = 'service' and e.service = 'alley'  then 1.3
+            when e.highway = 'service' and e.service = 'alley'  then 1.5
             when e.highway in ('service')                       then 1.0
             when e.highway in ('residential')                   then 1.1
             when e.highway like '%residential%'                 then 1.1
