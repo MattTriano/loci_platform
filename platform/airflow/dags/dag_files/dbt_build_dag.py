@@ -25,7 +25,7 @@ def dbt_build() -> str:
             "--project-dir",
             "/opt/airflow/dbt",
             "--select",
-            "+bike_safety_weighted_edges",
+            "bike_safety_weighted_edges",
         ],
         capture_output=True,
         text=True,

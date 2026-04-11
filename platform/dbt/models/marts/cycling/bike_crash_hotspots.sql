@@ -45,6 +45,12 @@ with crashes_with_severity as (
         end as severity_score,
         extract(year from crash_date) as crash_year
     from {{ ref('stg__bike_involved_crashes') }}
+    where geom is not null
+),
+deduplication as (
+    select distinct on (crash_record_id) *
+    from crashes_with_severity
+    order by crash_record_id, severity_score desc
 )
 -- ,grid_agg as (
 --     select
@@ -71,4 +77,4 @@ with crashes_with_severity as (
 -- To use the grid aggregation instead, change the final select to:
 --   select *, ST_SetSRID(ST_MakePoint(grid_lon, grid_lat), 4326) as geom
 --   from grid_agg
-select * from crashes_with_severity
+select * from deduplication
