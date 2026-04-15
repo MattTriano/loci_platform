@@ -243,7 +243,7 @@ class OsmnxClient:
         )
 
         # --- Base bike network ---
-        G = self._fetch_graph(bbox, network_type=network_type)
+        G = self._fetch_graph(bbox, network_type=network_type, simplify=simplify)
         self.logger.info(
             "Base bike graph: %d nodes, %d edges",
             G.number_of_nodes(),
