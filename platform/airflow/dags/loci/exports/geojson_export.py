@@ -75,7 +75,7 @@ BIKE_MAP_EXPORTS: list[GeoJSONExportConfig] = [
     GeoJSONExportConfig(
         name="crashes",
         schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
-        table="bike_crash_hotspots",
+        table="chicago_bike_crash_hotspots",
         geometry_column="geom",
         properties=[
             "crash_record_id",

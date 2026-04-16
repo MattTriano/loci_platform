@@ -50,5 +50,5 @@ sources:
       - name: osm_nodes
       - name: osm_relations
       - name: osm_ways
-      - name: osmnx_bike_network_edges
-      - name: osmnx_bike_network_nodes
+      - name: osmnx_chicago_bike_network_edges
+      - name: osmnx_chicago_bike_network_nodes

@@ -225,7 +225,7 @@ def build_lambda_zip(output_path: Path) -> Path:
 
 @task
 def export_routing_graph(conn_id: str, task_logger: Logger) -> dict:
-    """Build the safety-weighted routing graph and upload it to S3."""
+    """Build the stress-weighted routing graph and upload it to S3."""
     bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
     key = os.environ.get("BIKE_MAP_ROUTING_GRAPH_KEY", "graph/routing_graph.pkl.gz")
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)

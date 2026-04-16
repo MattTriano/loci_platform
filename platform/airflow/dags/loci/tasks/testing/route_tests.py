@@ -1,5 +1,5 @@
 """
-Route quality tests for the bike safety routing graph.
+Route quality tests for the bike stress routing graph.
 
 Loads a real graph file and checks that known routes use (or avoid)
 specific streets. These encode local knowledge about which corridors

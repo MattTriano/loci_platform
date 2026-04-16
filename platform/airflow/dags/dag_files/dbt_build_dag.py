@@ -13,7 +13,7 @@ def install_dependencies() -> str:
 
 @task
 def alt_build() -> str:
-    return run_dbt("build", "--select", "+bike_safety_weighted_edges")
+    return run_dbt("build", "--select", "+chicago_bike_stress_weighted_edges")
 
 
 @task
@@ -25,7 +25,7 @@ def dbt_build() -> str:
             "--project-dir",
             "/opt/airflow/dbt",
             "--select",
-            "bike_safety_weighted_edges",
+            "chicago_bike_stress_weighted_edges",
         ],
         capture_output=True,
         text=True,

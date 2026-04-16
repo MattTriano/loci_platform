@@ -1,5 +1,5 @@
 """
-Core bike-safety routing logic.
+Core bike routing logic.
 
 Pure functions that operate on a NetworkX DiGraph and a KDTree index.
 No Lambda, S3, or global-state dependencies — easy to test and reuse.
@@ -13,8 +13,8 @@ of the *target* edge the cyclist is turning onto — crossing a lane of
 fast arterial traffic is far riskier than turning left onto a quiet
 residential street.
 
-The penalty is additive (meters of "virtual safety cost") so it
-composes naturally with the per-edge safety_cost already stored in the
+The penalty is additive (meters of "virtual strees cost") so it
+composes naturally with the per-edge stress_cost already stored in the
 graph.
 """
 
@@ -35,7 +35,7 @@ from scipy.spatial import KDTree
 # 3-way junctions from triggering the penalty.
 _MIN_TURN_ANGLE_DEG = 45
 
-# Base penalty in "virtual meters" of safety cost, scaled by the road
+# Base penalty in "virtual meters" of stress cost, scaled by the road
 # classification of the edge being turned onto.
 _LEFT_TURN_BASE_PENALTY = 30  # meters
 
@@ -125,7 +125,7 @@ def compute_left_turn_penalty(
     next_node: int,
     next_edge_data: dict,
 ) -> float:
-    """Return the left-turn penalty (in virtual safety-cost meters) for
+    """Return the left-turn penalty (in virtual stress-cost meters) for
     the transition prev → curr → next_node.
 
     Returns 0 if:
@@ -183,7 +183,7 @@ def _astar_with_turn_costs(
     Parameters
     ----------
     G : nx.DiGraph
-        Routing graph with 'safety_cost' edge attribute and 'x'/'y'
+        Routing graph with 'stress_cost' edge attribute and 'x'/'y'
         node attributes.
     source, target : int
         Origin and destination node IDs.
@@ -237,7 +237,7 @@ def _astar_with_turn_costs(
         curr_g = g_score[state]
 
         for _, next_node, edge_data in G.edges(curr, data=True):
-            edge_cost = edge_data.get("safety_cost", 0.0)
+            edge_cost = edge_data.get("stress_cost", 0.0)
 
             # Compute turn penalty if we have a predecessor
             turn_penalty = 0.0
@@ -286,7 +286,7 @@ def find_route(
 ) -> dict:
     """Find the safest route between two coordinates.
 
-    Uses A* with safety_cost edge weights and left-turn penalties at
+    Uses A* with stress_cost edge weights and left-turn penalties at
     intersections.
 
     Returns a dict with total_cost, total_length_m, nodes, and coordinates.
@@ -317,7 +317,7 @@ def find_route(
     prev_node = None
     for u, v in zip(path[:-1], path[1:], strict=True):
         edge_data = G[u][v]
-        edge_cost = edge_data.get("safety_cost", 0.0)
+        edge_cost = edge_data.get("stress_cost", 0.0)
         total_length_m += edge_data.get("length_m", 0.0)
 
         # Include turn penalty in the reported total_cost

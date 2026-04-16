@@ -17,13 +17,13 @@ GRAPH_PATH = "/tmp/routing_graph.pkl.gz"
 
 
 @task
-def build_bike_safety_weighted_edges() -> str:
-    return run_dbt("build", "--select", "+bike_safety_weighted_edges")
+def build_chicago_bike_stress_weighted_edges() -> str:
+    return run_dbt("build", "--select", "+chicago_bike_stress_weighted_edges")
 
 
 @task
 def build_routing_graph(conn_id: str, task_logger: logging.Logger, graph_path: str) -> str:
-    """Build the safety-weighted routing graph for testing."""
+    """Build the stress-weighted routing graph for testing."""
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
     exporter = RoutingGraphExporter(engine)
     output_path = Path(graph_path)
@@ -50,7 +50,7 @@ def run_tests(task_logger: logging.Logger, graph_path) -> list:
     tags=["dbt"],
 )
 def refresh_and_test_bike_map_routing_data():
-    _build_weights = build_bike_safety_weighted_edges()
+    _build_weights = build_chicago_bike_stress_weighted_edges()
     _export_graph = build_routing_graph(
         conn_id=CONN_ID, task_logger=task_logger, graph_path=GRAPH_PATH
     )

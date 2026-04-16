@@ -1,4 +1,4 @@
--- bike_crash_hotspots.sql
+-- chicago_bike_crash_hotspots.sql
 -- Bike crash data aggregated for heatmap display.
 --
 -- Two output modes in one model:
@@ -44,7 +44,7 @@ with crashes_with_severity as (
             else 1
         end as severity_score,
         extract(year from crash_date) as crash_year
-    from {{ ref('stg__bike_involved_crashes') }}
+    from {{ ref('stg__chicago_bike_involved_crashes') }}
     where geom is not null
 ),
 deduplication as (

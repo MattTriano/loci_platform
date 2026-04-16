@@ -1,13 +1,13 @@
 """
-Export a safety-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
+Export a stress-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
 
-Queries mart__bike_safety_weighted_edges and osmnx_bike_network_nodes from
+Queries chicago_bike_stress_weighted_edges and osmnx_chicago_bike_network_nodes from
 the marts schema, builds a NetworkX DiGraph, serializes it with gzip pickle,
 and writes it to a local path.
 
 The graph stores only what the Lambda routing function needs:
     - Node attributes: lat (y), lon (x)
-    - Edge attributes: key, length_m, safety_cost, name, highway,
+    - Edge attributes: key, length_m, stress_cost, name, highway,
       geometry_coords
 
 Usage from an Airflow task:
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class RoutingGraphExporter:
-    """Builds a safety-weighted routing graph and writes it to a local file.
+    """Builds a stress-weighted routing graph and writes it to a local file.
 
     Parameters
     ----------
@@ -62,27 +62,27 @@ class RoutingGraphExporter:
             e.name,
             e.highway,
             e.length_m,
-            e.safety_cost,
+            e.stress_cost,
             ST_AsGeoJSON(ST_Simplify(e.geom, 0.00005)) as geom_geojson,
             n_u.latitude  as u_lat,
             n_u.longitude as u_lon,
             n_v.latitude  as v_lat,
             n_v.longitude as v_lon
-        from {marts_schema}.bike_safety_weighted_edges e
-        join raw_data.osmnx_bike_network_nodes n_u
+        from {marts_schema}.chicago_bike_stress_weighted_edges e
+        join raw_data.osmnx_chicago_bike_network_nodes n_u
             on n_u.osmid = e.u
             and n_u.valid_to is null
-        join raw_data.osmnx_bike_network_nodes n_v
+        join raw_data.osmnx_chicago_bike_network_nodes n_v
             on n_v.osmid = e.v
             and n_v.valid_to is null
-        where e.safety_cost is not null
+        where e.stress_cost is not null
         order by e.u, e.v, e.key """
 
     _CRS_QUERY = """
         select srtext
         from spatial_ref_sys
         where srid = (
-            select Find_SRID('{marts_schema}', 'bike_safety_weighted_edges', 'geom')
+            select Find_SRID('{marts_schema}', 'chicago_bike_stress_weighted_edges', 'geom')
         ) """
 
     def __init__(
@@ -167,7 +167,7 @@ class RoutingGraphExporter:
                     v,
                     key=row["key"],
                     length_m=row["length_m"],
-                    safety_cost=row["safety_cost"],
+                    stress_cost=row["stress_cost"],
                     name=row["name"],
                     highway=row["highway"],
                     geometry_coords=self._parse_geojson_coords(row["geom_geojson"]),

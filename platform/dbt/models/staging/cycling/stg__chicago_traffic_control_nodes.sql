@@ -1,4 +1,4 @@
--- stg__traffic_control_nodes.sql
+-- stg__chicago_traffic_control_nodes.sql
 -- Classifies each node in the bike network by its traffic control type,
 -- intersection status, and the highest road classification meeting there.
 --
@@ -70,7 +70,7 @@ nodes as (
             when 2 then 'tertiary'
             else        'minor'
         end                                     as max_road_class
-    from {{ source('raw_data', 'osmnx_bike_network_nodes') }} as n
+    from {{ source('raw_data', 'osmnx_chicago_bike_network_nodes') }} as n
     inner join node_degree nd
         on nd.node_id = n.osmid
     inner join edge_road_ranks err
