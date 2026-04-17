@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -73,11 +74,10 @@ class CKANCollector:
         self,
         engine: Any,
         tracker: IngestionTracker | None = None,
-        logger: logging.Logger | None = None,
     ) -> None:
         self.engine = engine
         self.tracker = tracker or IngestionTracker(engine=self.engine)
-        self.logger = logger or logging.getLogger("ckan_collector")
+        self.logger = logging.getLogger("ckan_collector")
 
         self._client_cache: dict[str, CKANClient] = {}
 
@@ -192,16 +192,24 @@ class CKANCollector:
                 geometry_column = self.engine._get_geometry_column(
                     spec.target_table, spec.target_schema
                 )
-                batches, geojson_result = parse_geojson(
-                    filepath, geometry_column=geometry_column
-                )
+                batches, geojson_result = parse_geojson(filepath, geometry_column=geometry_column)
             else:
                 batches = parse_csv(filepath)
 
             table_columns = self._get_table_columns(spec.target_table, spec.target_schema)
+            name_map: dict[str, str] | None = None
 
             for batch in batches:
                 batch = self._strip_ckan_internal_columns(batch)
+
+                # Build the raw -> normalized name map from the first batch's keys
+                # and reuse it for all subsequent batches from this resource.
+                if name_map is None and batch:
+                    name_map = self._normalize_column_names(list(batch[0].keys()))
+
+                if name_map:
+                    batch = self._rename_batch_keys(batch, name_map)
+
                 batch = self._filter_to_table_columns(batch, table_columns)
                 stager.write_batch(batch)
 
@@ -244,10 +252,65 @@ class CKANCollector:
                 row.pop(col, None)
         return rows
 
+    @staticmethod
+    def _rename_batch_keys(
+        rows: list[dict[str, Any]], name_map: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Rename dict keys in each row using the raw -> normalized mapping.
+
+        Keys not in the mapping are dropped (they produced empty normalized
+        names, e.g. a header of whitespace only).
+        """
+        return [{name_map[k]: v for k, v in row.items() if k in name_map} for row in rows]
+
     @classmethod
     def _exclude_internal(cls, names: set[str]) -> set[str]:
         """Remove CKAN internal column names from a set of column names."""
         return names - cls.CKAN_INTERNAL_COLUMNS
+
+    @staticmethod
+    def _normalize_column_name(raw: str) -> str:
+        """Normalize a single column name: lowercase, non-alphanumerics -> '_', trim '_'."""
+        return re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+
+    def _normalize_column_names(self, raw_names: list[str]) -> dict[str, str]:
+        """Build an ordered raw -> normalized mapping with collision handling.
+
+        When two raw names normalize to the same value, the later one is
+        suffixed with '_2', '_3', etc. A warning is logged listing the raw
+        names involved.
+
+        Empty normalized names (e.g. from a header of '   ') are skipped.
+        """
+        mapping: dict[str, str] = {}
+        taken: dict[str, list[str]] = {}  # normalized -> [raw names that produced it]
+
+        for raw in raw_names:
+            base = self._normalize_column_name(raw)
+            if not base:
+                continue
+
+            if base not in taken:
+                taken[base] = [raw]
+                mapping[raw] = base
+                continue
+
+            # Collision: suffix _2, _3, ...
+            taken[base].append(raw)
+            suffix = len(taken[base])
+            candidate = f"{base}_{suffix}"
+            # Very unlikely but possible: the suffixed name also clashes.
+            while candidate in taken:
+                suffix += 1
+                candidate = f"{base}_{suffix}"
+            taken[candidate] = [raw]
+            mapping[raw] = candidate
+
+        collisions = {n: rs for n, rs in taken.items() if len(rs) > 1}
+        if collisions:
+            self.logger.warning("Column name collisions after normalization: %s", collisions)
+
+        return mapping
 
     # ------------------------------------------------------------------
     # DDL generation
@@ -283,16 +346,21 @@ class CKANCollector:
         """Return a list of (column_name, pg_type) for the dataset.
 
         Tries DataStore first, falls back to file header scanning.
+        Column names are normalized: lowercased, non-alphanumerics replaced
+        with '_', collisions suffixed with '_2', '_3', etc.
         """
         # Try DataStore on the first resource
         first = resources[0]
         if first.datastore_active or client.metadata.has_datastore(first.id):
             self.logger.info("Using DataStore fields for column discovery on %s", first.id)
-            return self._columns_from_datastore(client, first.id)
+            raw_columns = self._columns_from_datastore(client, first.id)
+        else:
+            self.logger.info("DataStore not available, scanning file for column discovery")
+            raw_columns = self._columns_from_file(client, first)
 
-        # Fall back to file header scanning
-        self.logger.info("DataStore not available, scanning file for column discovery")
-        return self._columns_from_file(client, first)
+        name_map = self._normalize_column_names([name for name, _ in raw_columns])
+        # Preserve order and types; drop any that normalized to empty.
+        return [(name_map[name], pg_type) for name, pg_type in raw_columns if name in name_map]
 
     def _columns_from_datastore(
         self, client: CKANClient, resource_id: str
@@ -360,11 +428,7 @@ class CKANCollector:
         with open(filepath, "rb") as f:
             for feat in ijson.items(f, "features.item"):
                 props = feat.get("properties") or {}
-                columns = [
-                    (k, "text")
-                    for k in props.keys()
-                    if k not in self.CKAN_INTERNAL_COLUMNS
-                ]
+                columns = [(k, "text") for k in props.keys() if k not in self.CKAN_INTERNAL_COLUMNS]
                 columns.append(("geom", "geometry"))
                 return columns
 
@@ -386,7 +450,8 @@ class CKANCollector:
         for resource in resources[1:]:
             if resource.datastore_active or client.metadata.has_datastore(resource.id):
                 fields = client.metadata.get_datastore_fields(resource.id)
-                other_names = self._exclude_internal({f["id"] for f in fields})
+                raw_names = [f["id"] for f in fields if f["id"] not in self.CKAN_INTERNAL_COLUMNS]
+                other_names = set(self._normalize_column_names(raw_names).values())
             else:
                 # For file-based resources, we'd need to download and check headers.
                 # Only do this if the resource format is CSV (cheap to read one line).
@@ -398,9 +463,12 @@ class CKANCollector:
                         with open(filepath, encoding="utf-8", newline="") as f:
                             reader = csv.reader(f)
                             headers = next(reader)
-                        other_names = self._exclude_internal(
-                            {h.strip() for h in headers if h.strip()}
-                        )
+                        raw_names = [
+                            h.strip()
+                            for h in headers
+                            if h.strip() and h.strip() not in self.CKAN_INTERNAL_COLUMNS
+                        ]
+                        other_names = set(self._normalize_column_names(raw_names).values())
                     finally:
                         filepath.unlink(missing_ok=True)
                 else:

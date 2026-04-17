@@ -797,3 +797,13 @@ TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_SPEC = CKANDatasetSpec(
     entity_key=["collision_id", "per_no"],
     resource_ids=["f8faf384-a96d-4dff-af59-db40f777c7d3"],
 )
+
+TORONTO_BICYCLE_PARKING_RACKS_SPEC = CKANDatasetSpec(
+    name="toronto_bicycle_parking_racks",
+    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
+    dataset_id="bicycle-parking-racks",
+    target_table="toronto_bicycle_parking_racks",
+    target_schema="raw_data",
+    entity_key=["objectid"],
+    resource_ids=["4d105465-6e64-4a69-957b-6e0eee5bca8b"],
+)

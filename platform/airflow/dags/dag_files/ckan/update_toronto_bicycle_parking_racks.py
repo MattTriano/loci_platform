@@ -2,7 +2,7 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
-from loci.sources.update_configs import TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_UC as UPDATE_CONFIG
+from loci.sources.update_configs import TORONTO_BICYCLE_PARKING_RACKS_UC as UPDATE_CONFIG
 from loci.tasks.ckan_tasks import update_ckan_table
 
 task_logger = getLogger("airflow.task")
@@ -17,7 +17,7 @@ CONN_ID = "gis_dwh_db"
     catchup=False,
     tags=["ckan", "traffic", "crashes", "toronto"],
 )
-def update_toronto_serious_motor_vehicle_collisions():
+def update_toronto_bicycle_parking_racks():
     update_ckan_table(
         conn_id=CONN_ID,
         update_config=UPDATE_CONFIG,
@@ -25,4 +25,4 @@ def update_toronto_serious_motor_vehicle_collisions():
     )
 
 
-update_toronto_serious_motor_vehicle_collisions()
+update_toronto_bicycle_parking_racks()
