@@ -4,28 +4,21 @@
 --
 -- Cost formula:
 --   stress_cost = length_m
+--               * road_infra_factor      (matrix: road_class × infra_type)
 --               * speed_factor
---               * road_type_factor
---               * infrastructure_factor
+--               * tunnel_factor
 --               * surface_factor
 --               * lighting_factor
 --               + crash_penalty
+--               + traffic_control_penalty
 --
--- crash_penalty = crash_score_per_meter * length_m * crash_weight
--- crash_score uses severity^2 * time-decay, summed per edge.
---
--- road_type_factor captures the inherent stress of the road environment
--- (traffic volume, road design, turning movements) based on highway class.
---
--- infrastructure_factor captures how much bike infrastructure mitigates
--- that stress. Uses OSM-derived infra_type (from classified cycleway tags).
--- Edges with no bike infra get a neutral 1.0.
---
--- The two factors multiply: a sharrow on a residential (1.1 * 0.95 = 1.05)
--- costs far less than a sharrow on a primary (2.7 * 0.95 = 2.57).
---
--- All tunable weights are jinja variables at the top of this file.
--- Intermediate factors are preserved as columns for inspection and tuning.
+-- road_infra_factor replaces the old separate road_type_factor and
+-- infrastructure_factor. Those two were multiplied as if independent,
+-- which under-rewarded good infrastructure on bad roads. The matrix
+-- captures the fact that e.g. "bike lane on primary" is a different
+-- experience than "bike lane on residential", not just the product of
+-- generic road and generic bike-lane factors. See the macro for the
+-- full matrix and calibration rationale.
 --
 -- Grain: one row per directed edge (u, v, key).
 
@@ -39,9 +32,12 @@
     ]
 ) }}
 
-{% set crash_weight = 24.0 %}
+{% set crash_weight = 10.0 %}
 {% set crash_decay_lambda = 0.4 %}
-{% set crash_buffer_degrees = 0.0002 %}
+{% set edge_crash_buffer_degrees = 0.0002 %}
+{% set node_crash_radius_degrees = 0.00025 %}
+{% set cycleway_crash_attenuation = 0.3 %}
+{% set node_crash_weight = 10.0 %}
 
 with edges as (
     select *
@@ -50,58 +46,124 @@ with edges as (
 crashes as (
     select * from {{ ref('chicago_bike_crash_hotspots') }}
 ),
+-- -- =====================================================================
+-- -- Crash deduplication: assign each crash to exactly one edge.
+-- -- Priority: most dangerous highway class, then nearest by distance.
+-- -- (Known issue: tracks drawn as separate geometries can win over the
+-- -- adjacent arterial if they're closer to the crash point. Tracked in
+-- -- findings doc as a follow-up.)
+-- -- =====================================================================
+-- crash_nearest as (
+--     select distinct on (c.crash_record_id)
+--         c.crash_record_id,
+--         c.severity_score,
+--         c.crash_date,
+--         e.u, e.v, e.key
+--     from crashes c
+--     inner join edges e
+--         on e.geom && ST_Expand(c.geom, {* {{ crash_buffer_degrees }}) *}
+--         and ST_DWithin(c.geom, e.geom, {* {{ crash_buffer_degrees }}) *}
+--     order by c.crash_record_id,
+--         ST_Distance(c.geom, e.geom),
+--         case
+--             when e.highway in ('primary', 'primary_link')       then 1
+--             when e.highway like '%primary%'                     then 1
+--             when e.highway in ('secondary', 'secondary_link')   then 2
+--             when e.highway like '%secondary%'                   then 2
+--             when e.highway in ('tertiary', 'tertiary_link')     then 3
+--             when e.highway like '%tertiary%'                    then 3
+--             when e.highway in ('unclassified')                  then 4
+--             when e.highway in ('residential')                   then 5
+--             when e.highway like '%residential%'                 then 5
+--             when e.highway in ('service')                       then 6
+--             else 7
+--         end
+-- ),
+-- crash_scores as (
+--     select
+--         cn.u,
+--         cn.v,
+--         cn.key,
+--         count(*)                                        as crash_count,
+--         sum(
+--             power(cn.severity_score, 2) * exp(
+--                 {* -{{ crash_decay_lambda }} *}
+--                 * extract(epoch from (current_date - cn.crash_date))
+--                 / (365.25 * 86400)
+--             )
+--         )                                               as crash_score
+--     from crash_nearest cn
+--     group by cn.u, cn.v, cn.key
+-- ),
+
 -- =====================================================================
--- Crash deduplication: assign each crash to exactly one edge.
--- Priority: most dangerous highway class, then nearest by distance.
--- This prevents a single crash near an intersection from being counted
--- on multiple short segments.
+-- Mid-block crash attribution.
+--
+-- A crash is "mid-block" if it isn't claimed by any intersection node
+-- (i.e., it's further than 25m from any degree>=3 node). For those
+-- crashes, attribute to the nearest edge with priority:
+--   1. road class (most dangerous wins)
+--   2. distance (nearest wins within same class)
+--
+-- Priority ordering is inverted from v1: road class comes BEFORE
+-- distance. A cycleway drawn alongside a primary road will no longer
+-- steal the primary's crashes just by being closer to the crash point.
+--
+-- The "walls" problem from the old road-class-first attribution was
+-- mitigated by the intersection/mid-block split above: most crashes
+-- happen at intersections and now attach to the node, so the mid-block
+-- set is sparse and won't concentrate on short edges.
 -- =====================================================================
-crash_nearest as (
+mid_block_crashes as (
+    select c.*
+    from {{ ref('chicago_bike_crash_hotspots') }} c
+    where not exists (
+        select 1
+        from {{ ref('stg__chicago_crash_node_penalties') }} ncp
+        join {{ source('raw_data', 'osmnx_chicago_bike_network_nodes') }} n
+            on n.osmid = ncp.osmid
+           and n.valid_to is null
+        where ST_DWithin(c.geom, n.geom, {{ node_crash_radius_degrees }})
+    )
+),
+crash_edge_attribution as (
     select distinct on (c.crash_record_id)
         c.crash_record_id,
         c.severity_score,
         c.crash_date,
-        e.u, e.v, e.key
-    from crashes c
+        e.u, e.v, e.key, e.highway
+    from mid_block_crashes c
     inner join edges e
-        on e.geom && ST_Expand(c.geom, {{ crash_buffer_degrees }})
-        and ST_DWithin(c.geom, e.geom, {{ crash_buffer_degrees }})
+        on e.geom && ST_Expand(c.geom, {{ edge_crash_buffer_degrees }})
+        and ST_DWithin(c.geom, e.geom, {{ edge_crash_buffer_degrees }})
     order by c.crash_record_id,
-        ST_Distance(c.geom, e.geom),
         case
-            when e.highway in ('primary', 'primary_link')       then 1
-            when e.highway like '%primary%'                     then 1
-            when e.highway in ('secondary', 'secondary_link')   then 2
-            when e.highway like '%secondary%'                   then 2
-            when e.highway in ('tertiary', 'tertiary_link')     then 3
-            when e.highway like '%tertiary%'                    then 3
-            when e.highway in ('unclassified')                  then 4
-            when e.highway in ('residential')                   then 5
-            when e.highway like '%residential%'                 then 5
-            when e.highway in ('service')                       then 6
-            else 7
-        end
+            when e.highway like '%primary%'     then 1
+            when e.highway like '%secondary%'   then 2
+            when e.highway like '%tertiary%'    then 3
+            when e.highway = 'unclassified'     then 4
+            when e.highway = 'residential'      then 5
+            when e.highway = 'living_street'    then 5
+            when e.highway = 'service'          then 6
+            when e.highway = 'cycleway'         then 7
+            when e.highway in ('path', 'footway', 'pedestrian', 'bridleway') then 8
+            else 9
+        end,
+        ST_Distance(c.geom, e.geom)
 ),
--- =====================================================================
--- Crash scores: aggregate deduplicated crashes per edge.
--- Severity is squared per crash before summing to amplify the difference
--- between fatal and minor crashes.
--- =====================================================================
-crash_scores as (
+edge_crash_scores as (
     select
-        cn.u,
-        cn.v,
-        cn.key,
-        count(*)                                        as crash_count,
+        u, v, key,
+        count(*) as crash_count,
         sum(
-            power(cn.severity_score, 2) * exp(
+            power(severity_score, 2) * exp(
                 -{{ crash_decay_lambda }}
-                * extract(epoch from (current_date - cn.crash_date))
+                * extract(epoch from (current_date - crash_date))
                 / (365.25 * 86400)
             )
-        )                                               as crash_score
-    from crash_nearest cn
-    group by cn.u, cn.v, cn.key
+        ) as crash_score
+    from crash_edge_attribution
+    group by u, v, key
 ),
 
 -- =====================================================================
@@ -111,19 +173,27 @@ factors as (
     select
         e.*,
 
-        coalesce(cs.crash_count, 0)     as crash_count,
-        coalesce(cs.crash_score, 0)     as crash_score,
+        coalesce(ecs.crash_count, 0)     as edge_crash_count,
+        coalesce(ecs.crash_score, 0)     as edge_crash_score,
         case
             when e.length_m > 0
-            then coalesce(cs.crash_score, 0) / e.length_m
+            then coalesce(ecs.crash_score, 0) / e.length_m
             else 0
-        end                             as crash_score_per_meter,
+        end                              as crash_score_per_meter,
+        coalesce(ncp.node_crash_count, 0)  as node_crash_count,
+        coalesce(ncp.node_crash_score, 0)  as node_crash_score,
+
+        -- Road × infrastructure matrix factor (replaces the old
+        -- road_type_factor × infrastructure_factor multiplication).
+        {{ road_infra_stress_factor('e.highway', 'e.service', 'e.osm_infra_type') }}
+                                        as road_infra_factor,
 
         -- Speed factor: proxy for injury severity if a collision occurs.
         -- maxspeed values can be "30 mph", "48", "30 mph;50 mph" etc.
         -- We extract the first numeric value and treat unknown as arterial.
         case
-            when e.maxspeed is null                                         then 1.4
+            when e.highway like '%cycleway%'                               then 1.0
+            when e.maxspeed is null                                        then 1.4
             when regexp_replace(e.maxspeed, '[^0-9].*', '') ~ '^\d+$'
                 and regexp_replace(e.maxspeed, '[^0-9].*', '')::int <= 20  then 1.0
             when regexp_replace(e.maxspeed, '[^0-9].*', '') ~ '^\d+$'
@@ -135,48 +205,6 @@ factors as (
             else 1.4
         end                             as speed_factor,
 
-        -- Road type factor: inherent stress of the road environment
-        -- independent of bike infrastructure. Based on highway class as
-        -- a proxy for traffic volume, road design, and turning conflicts.
-        case
-            when e.highway in ('cycleway')                      then 0.3
-            when e.highway like '%cycleway%'                    then 0.3
-            when e.highway in ('path', 'footway', 'bridleway')  then 0.4
-            when e.highway like '%path%'                        then 0.4
-            when e.highway in ('pedestrian')                    then 0.5
-            when e.highway in ('living_street')                 then 0.9
-            when e.highway = 'service'
-                and e.service in ('alley', 'parking_aisle')     then 1.5
-            when e.highway in ('service')                       then 1.0
-            when e.highway in ('residential')                   then 1.1
-            when e.highway like '%residential%'                 then 1.1
-            when e.highway in ('unclassified')                  then 1.4
-            when e.highway in ('busway')                        then 1.4
-            when e.highway in ('tertiary', 'tertiary_link')     then 1.7
-            when e.highway like '%tertiary%'                    then 1.7
-            when e.highway in ('secondary', 'secondary_link')   then 2.2
-            when e.highway like '%secondary%'                   then 2.2
-            when e.highway in ('primary', 'primary_link')       then 2.7
-            when e.highway like '%primary%'                     then 2.7
-            else 1.3
-        end                             as road_type_factor,
-
-        -- Infrastructure factor: how much bike infrastructure mitigates
-        -- the road's inherent stress. Edges with no bike infra get 1.0
-        -- (neutral — road_type_factor alone determines their cost).
-        case
-            when e.osm_infra_type = 'protected_lane'    then 0.4
-            when e.osm_infra_type = 'track'             then 0.5
-            when e.osm_infra_type = 'shared_path'       then 0.6
-            when e.osm_infra_type = 'buffered_lane'     then 0.7
-            when e.osm_infra_type = 'designated_path'   then 0.7
-            when e.osm_infra_type = 'bicycle_road'      then 0.8
-            when e.osm_infra_type = 'bike_lane'         then 0.85
-            when e.osm_infra_type = 'share_busway'      then 0.9
-            when e.osm_infra_type = 'sharrow'           then 0.95
-            else 1.0
-        end                             as infrastructure_factor,
-
         -- Tunnel factor: penalizes tunnels without protective bike infrastructure.
         case
             when e.tunnel = 'yes'
@@ -185,7 +213,7 @@ factors as (
                 )
             then 2.5
             else 1.0
-        end as tunnel_factor,
+        end                             as tunnel_factor,
 
         -- Surface factor: affects control and comfort.
         case
@@ -206,12 +234,15 @@ factors as (
             when e.lit = 'no'           then 1.2
             else                             1.1  -- unknown
         end                             as lighting_factor,
+
         coalesce(ntc.traffic_control_penalty, 0) as traffic_control_penalty
 
     from edges e
-    left join crash_scores cs using (u, v, key)
+    left join edge_crash_scores ecs using (u, v, key)
     left join {{ ref('stg__chicago_traffic_control_nodes') }} as ntc
         on ntc.osmid = e.v
+    left join {{ ref('stg__chicago_crash_node_penalties') }} as ncp
+        on ncp.osmid = e.v  -- pay node crash penalty when arriving at v
 ),
 
 -- =====================================================================
@@ -220,82 +251,71 @@ factors as (
 final as (
     select
         -- Graph topology
-        u,
-        v,
-        key,
-        osmid,
+        u, v, key, osmid,
 
         -- Road attributes
-        name,
-        highway,
-        oneway,
-        reversed,
-        lanes,
-        ref,
-        service,
-        width,
-        maxspeed,
-        access,
+        name, highway, oneway, reversed, lanes, ref, service, width,
+        maxspeed, access,
 
         -- Bike infrastructure: OSM classification
-        osm_infra_category,
-        osm_infra_type,
-        osm_has_buffer,
+        osm_infra_category, osm_infra_type, osm_has_buffer,
 
         -- Bike infrastructure: OSM raw tags
-        cycleway,
-        cycleway_right,
-        cycleway_left,
-        cycleway_both,
-        cycleway_separation,
-        cycleway_right_separation,
-        cycleway_left_separation,
-        cycleway_both_separation,
-        bicycle,
-        class_bicycle,
-        bicycle_road,
-        cyclestreet,
+        cycleway, cycleway_right, cycleway_left, cycleway_both,
+        cycleway_separation, cycleway_right_separation,
+        cycleway_left_separation, cycleway_both_separation,
+        bicycle, class_bicycle, bicycle_road, cyclestreet,
 
         -- Physical conditions
-        surface,
-        cycleway_surface,
-        cycleway_smoothness,
-        lit,
-        bridge,
-        tunnel,
+        surface, cycleway_surface, cycleway_smoothness, lit, bridge, tunnel,
 
         -- Geometry and distance
-        length_m,
-        geom,
+        length_m, geom,
 
         -- Crash features
-        crash_count,
-        crash_score,
-        crash_score_per_meter,
+        edge_crash_count, edge_crash_score, crash_score_per_meter,
+        node_crash_count, node_crash_score,
 
-        -- Intermediate stress factors (preserved for tuning)
+        -- Intermediate stress factors (preserved for inspection/tuning)
+        road_infra_factor,
         speed_factor,
-        road_type_factor,
-        infrastructure_factor,
         tunnel_factor,
         surface_factor,
         lighting_factor,
         traffic_control_penalty,
 
-        -- Crash penalty (additive, scaled by length and weight)
-        crash_score_per_meter * length_m * {{ crash_weight }}
-                                as crash_penalty,
+        -- Edge crash penalty (additive, scaled by length, attenuated on
+        -- highway=cycleway since crashes near a cycletrack usually reflect
+        -- intersection risk rather than on-track risk).
+        case
+            when highway = 'cycleway'
+                then crash_score_per_meter * length_m * {{ crash_weight }}
+                     * {{ cycleway_crash_attenuation }}
+            else     crash_score_per_meter * length_m * {{ crash_weight }}
+        end as edge_crash_penalty,
+
+        -- Node crash penalty (additive, paid once per transit into node).
+        -- Not attenuated — a dangerous intersection is dangerous regardless
+        -- of which approach you take.
+        node_crash_score * {{ node_crash_weight }} as node_crash_penalty,
 
         -- Final stress cost
         greatest(
             length_m
+                * road_infra_factor
                 * speed_factor
-                * road_type_factor
-                * infrastructure_factor
                 * tunnel_factor
                 * surface_factor
                 * lighting_factor
-                + (crash_score_per_meter * length_m * {{ crash_weight }})
+                + (
+                    case
+                        when highway = 'cycleway'
+                            then crash_score_per_meter * length_m * {{ crash_weight }}
+                                 * {{ cycleway_crash_attenuation }}
+                        else     crash_score_per_meter * length_m * {{ crash_weight }}
+                    end
+                  )
+                + (node_crash_score * {{ node_crash_weight }})
                 + traffic_control_penalty,
             0
         ) as stress_cost

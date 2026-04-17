@@ -33,15 +33,24 @@ models:
             expression: "traffic_control_penalty <= 7.0"
           config:
             name: signals_are_cheapest_intersection
-            where: "traffic_control = 'traffic_signals'"
+            where: "traffic_control = 'traffic_signals' and is_primary"
 
-      # Mid-segment nodes (not intersections, no device) get zero
+      # # Mid-segment nodes (not intersections, no device) get zero
+      # - dbt_utils.expression_is_true:
+      #     arguments:
+      #       expression: "traffic_control_penalty = 0"
+      #     config:
+      #       name: mid_segment_nodes_neutral
+      #       where: "traffic_control is null and not is_intersection"
+
+      # Non-primary nodes in a signal cluster carry no penalty
+      # (the cluster's penalty lives on the primary node).
       - dbt_utils.expression_is_true:
           arguments:
             expression: "traffic_control_penalty = 0"
           config:
-            name: mid_segment_nodes_neutral
-            where: "traffic_control is null and not is_intersection"
+            name: non_primary_nodes_zero_penalty
+            where: "not is_primary"
 
       # Penalty should scale with road class: for uncontrolled
       # intersections, primary > secondary > tertiary > minor
@@ -87,5 +96,8 @@ models:
               arguments:
                 values: ['minor', 'tertiary', 'secondary', 'primary']
       - name: traffic_control_penalty
+        data_tests:
+          - not_null
+      - name: is_primary
         data_tests:
           - not_null

@@ -20,6 +20,11 @@
 --     than a mid-block segment.
 --   - Uncontrolled intersections receive the largest penalties, scaled
 --     by the road classification of the most dangerous leg.
+--
+-- Signal nodes in the same physical intersection are clustered together
+-- (e.g., separate signals for each cycleway crossing at one intersection).
+-- Only the "primary" node in each cluster carries the penalty; others are
+-- zeroed to avoid double-counting.
 
 {{ config(materialized='table') }}
 
@@ -39,7 +44,6 @@ with node_degree as (
 ),
 -- =====================================================================
 -- Max road classification at each node
--- Rank highways by traffic intensity; take the worst per node.
 -- =====================================================================
 edge_road_ranks as (
     select
@@ -55,7 +59,43 @@ edge_road_ranks as (
     group by node_id
 ),
 -- =====================================================================
--- Node classification and penalty assignment
+-- Cluster nearby traffic control nodes into logical intersections.
+-- Nodes within 30m of each other are treated as the same intersection.
+-- =====================================================================
+control_clusters as (
+    select
+        osmid,
+        highway as traffic_control,
+        st_clusterdbscan(geom, eps := 30, minpoints := 1) over () as cluster_id
+    from {{ source('raw_data', 'osmnx_chicago_bike_network_nodes') }}
+    where valid_to is null
+      and highway in ('traffic_signals', 'crossing', 'stop', 'give_way', 'mini_roundabout')
+),
+-- =====================================================================
+-- Pick one primary node per cluster. The node with the strongest control
+-- type wins; osmid is a deterministic tiebreaker.
+-- =====================================================================
+control_primary as (
+    select
+        osmid,
+        cluster_id,
+        row_number() over (
+            partition by cluster_id
+            order by
+                case traffic_control
+                    when 'traffic_signals'  then 1
+                    when 'mini_roundabout'  then 2
+                    when 'stop'             then 3
+                    when 'give_way'         then 4
+                    when 'crossing'         then 5
+                    else                         6
+                end,
+                osmid
+        ) = 1 as is_primary
+    from control_clusters
+),
+-- =====================================================================
+-- Node classification
 -- =====================================================================
 nodes as (
     select
@@ -69,12 +109,15 @@ nodes as (
             when 3 then 'secondary'
             when 2 then 'tertiary'
             else        'minor'
-        end                                     as max_road_class
+        end                                     as max_road_class,
+        coalesce(cp.is_primary, true)           as is_primary
     from {{ source('raw_data', 'osmnx_chicago_bike_network_nodes') }} as n
     inner join node_degree nd
         on nd.node_id = n.osmid
     inner join edge_road_ranks err
         on err.node_id = n.osmid
+    left join control_primary cp
+        on cp.osmid = n.osmid
     where n.valid_to is null
 ),
 weighting as (
@@ -85,10 +128,11 @@ weighting as (
         is_intersection,
         max_road_rank,
         max_road_class,
+        is_primary,
         case
+            -- Non-primary nodes in a cluster: penalty already applied at primary
+            when not is_primary then 0.0
             -- ── Signalized intersections: safest intersection type ──
-            -- A signal on a primary road is the best case (0); on smaller
-            -- roads the signal helps less because the baseline risk is lower.
             when traffic_control = 'traffic_signals' then
                 case max_road_class
                     when 'primary'   then  0.0

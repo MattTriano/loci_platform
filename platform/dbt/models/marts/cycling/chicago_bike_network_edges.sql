@@ -45,6 +45,7 @@ final as (
         width,
         maxspeed,
         access,
+        highway_raw,
 
         -- Bike infrastructure: OSM-derived classification
         osm_infra_category,
