@@ -434,7 +434,8 @@
     height: 14px;
   }
 
-  .about-overlay {
+  /* ── Overlay (shared by about, terms, privacy) ────────── */
+  .overlay {
     position: absolute;
     inset: 0;
     z-index: 100;
@@ -448,40 +449,65 @@
     transition: opacity 0.2s ease;
   }
 
-  .about-overlay.visible {
+  .overlay.visible {
     opacity: 1;
     pointer-events: auto;
   }
 
-  .about-card {
+  .overlay-card {
     background: rgba(18, 18, 20, 0.96);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 14px;
     padding: 28px 28px 24px;
-    max-width: 380px;
+    max-width: 420px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
     width: calc(100% - 32px);
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   }
 
-  .about-card h1 {
+  .overlay-card h1 {
     font-size: 18px;
     font-weight: 700;
     color: #e8e4df;
     margin-bottom: 14px;
   }
 
-  .about-card p {
+  .overlay-card h2 {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 18px;
+    margin-bottom: 8px;
+  }
+
+  .overlay-card h2:first-of-type {
+    margin-top: 4px;
+  }
+
+  .overlay-card p {
     font-size: 14px;
     line-height: 1.65;
     color: rgba(255, 255, 255, 0.55);
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
 
-  .about-card p:last-of-type {
+  .overlay-card p:last-of-type {
     margin-bottom: 0;
   }
 
-  .about-close {
+  .overlay-card a {
+    color: #6366f1;
+    text-decoration: none;
+  }
+
+  .overlay-card a:hover {
+    color: #818cf8;
+  }
+
+  .overlay-close {
     display: block;
     width: 100%;
     margin-top: 20px;
@@ -497,7 +523,25 @@
     transition: background 0.15s, color 0.15s;
   }
 
-  .about-close:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+  .overlay-close:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+
+  .overlay-links {
+    display: flex;
+    gap: 16px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .overlay-links a {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.35);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .overlay-links a:hover { color: rgba(255, 255, 255, 0.7); }
 
   /* ── Mobile layout ───────────────────────────────────── */
   #panel-container {
@@ -512,7 +556,7 @@
       position: absolute;
       top: 8px;
       left: 8px;
-      right: 8px;
+      right: 52px;
       z-index: 10;
       pointer-events: none;
     }
@@ -712,7 +756,7 @@
   <div class="panel-header" data-panel="route-panel">
     <div>
       <h2>Route</h2>
-      <p class="panel-subtitle">Safety-weighted cycling routes</p>
+      <p class="panel-subtitle">Low-stress cycling routes</p>
     </div>
     <svg class="panel-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 6 8 10 12 6"/></svg>
   </div>
@@ -741,7 +785,7 @@
           Why this route?
         </button>
         <div class="route-why-text" id="route-why-text">
-          This route favors streets with a less severe recent crash history, lower max speed limits, better bike lane infrastructure, safer surface material, and lighting, even if that means a slightly longer ride. It may differ from the shortest path to help you avoid higher-risk areas.
+          This route prefers streets with better bike infrastructure, lower speed limits, lighting, and less severe recent crash history, even if that means a slightly longer ride. It may differ from the shortest path based on these preferences. Conditions change — always use your own judgment.
         </div>
       </div>
     </div>
@@ -750,13 +794,85 @@
   </div>
 </div>
 
-<!-- About overlay -->
-<div class="about-overlay" id="about-overlay">
-  <div class="about-card">
+<!-- ── About overlay ──────────────────────────────────── -->
+<div class="overlay" id="about-overlay">
+  <div class="overlay-card">
     <h1>Chicago Bike Map</h1>
-    <p>Chicago Bike Map helps you ride smarter around the city. The map layers show where crashes, thefts, and bike parking are concentrated, so you can see what's happening in the areas you ride.</p>
-    <p>Routes are safety-weighted — they favor streets with less severe recent crash history, lower max speed limits, better bike lane infrastructure, safer surface material, and lighting, even if that means a slightly longer ride.</p>
-    <button class="about-close" id="about-close">Got it</button>
+    <p>Chicago Bike Map helps you explore cycling conditions around the city. The map layers show where crashes, thefts, and bike parking are concentrated based on recent city data, so you can get a sense of patterns in the areas you ride.</p>
+    <p>Routes prefer streets with better bike infrastructure, lower speed limits, and less severe recent crash history, even if that means a slightly longer ride. We recommend always wearing a helmet while riding.</p>
+    <p>Routes are generated using OpenStreetMap and City of Chicago data that may be incomplete or outdated. Route suggestions are informational and are no substitute for your own judgment while riding.</p>
+    <div class="overlay-links">
+      <a href="#" id="about-terms-link">Terms of Service</a>
+      <a href="#" id="about-privacy-link">Privacy Policy</a>
+    </div>
+    <button class="overlay-close" id="about-close">Got it</button>
+  </div>
+</div>
+
+<!-- ── Terms of Service overlay ───────────────────────── -->
+<div class="overlay" id="terms-overlay">
+  <div class="overlay-card">
+    <h1>Terms of Service</h1>
+
+    <h2>What This Project Is</h2>
+    <p>Chicago Bike Map is a personal project that displays cycling-related data for the Chicago area and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.</p>
+
+    <h2>No Safety Guarantee</h2>
+    <p>Route suggestions are informational only. They are generated algorithmically using third-party data sources — including OpenStreetMap and City of Chicago open data — that may be incomplete, outdated, or inaccurate. A route appearing on this map does not mean it is safe, and the absence of crash or theft data in an area does not mean that area is free of risk.</p>
+    <p>You are solely responsible for your own safety while cycling. Always use your own judgment, obey traffic laws, and adapt to real-world conditions regardless of what this app suggests.</p>
+
+    <h2>Data Sources</h2>
+    <p>Map data comes from OpenStreetMap contributors and is subject to the <a href="https://opendatacommons.org/licenses/odbl/" target="_blank" rel="noopener">ODbL license</a>. Crash, theft, and infrastructure data come from the City of Chicago open data portal and other public sources. This project does not independently verify the accuracy or completeness of any of these sources.</p>
+
+    <h2>Limitation of Liability</h2>
+    <p>This project is provided "as is" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of Chicago Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss.</p>
+
+    <h2>Changes</h2>
+    <p>These terms may be updated from time to time. Continued use of the site after changes are posted constitutes acceptance of the revised terms.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about these terms can be directed to the project's <a href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">GitHub repository</a>.</p>
+
+    <div class="overlay-links">
+      <a href="#" id="terms-back-link">← About</a>
+      <a href="#" id="terms-privacy-link">Privacy Policy</a>
+    </div>
+    <button class="overlay-close" id="terms-close">Close</button>
+  </div>
+</div>
+
+<!-- ── Privacy Policy overlay ─────────────────────────── -->
+<div class="overlay" id="privacy-overlay">
+  <div class="overlay-card">
+    <h1>Privacy Policy</h1>
+
+    <h2>What We Collect</h2>
+    <p>When you request a route, the application logs the following information: the start and end points you selected, the route geometry returned, your browser's user agent string, screen and viewport dimensions, and the referring URL if any. The requesting IP address is also recorded server-side as part of normal request handling.</p>
+    <p>No names, email addresses, accounts, or login credentials are collected. The application does not use cookies or browser-based tracking.</p>
+
+    <h2>How We Use It</h2>
+    <p>Logged data is used to understand how routes are being used, identify bugs or routing issues, improve the routing algorithm over time, and detect abuse or unusual traffic patterns. It is not sold, shared with third parties, or used for advertising.</p>
+
+    <h2>Geolocation</h2>
+    <p>If you use the "locate me" button on the map, your browser will ask for permission before sharing your location. This location data is used only to center the map on your position. It is not logged or stored by the application.</p>
+
+    <h2>Third-Party Services</h2>
+    <p>The application loads map tiles from OpenFreeMap and fonts from Google Fonts. These services may collect standard web request information (such as your IP address) according to their own privacy policies. The application itself does not control or have access to that data.</p>
+
+    <h2>Data Retention</h2>
+    <p>Route logs are automatically deleted after 365 days via an S3 lifecycle policy. This retention period may be adjusted in the future.</p>
+
+    <h2>Your Rights</h2>
+    <p>If you would like to request earlier deletion of any logged data, you can open an issue on the project's <a href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">GitHub repository</a> or contact the project maintainer directly.</p>
+
+    <h2>Changes</h2>
+    <p>This policy may be updated from time to time. Continued use of the site after changes are posted constitutes acceptance of the revised policy.</p>
+
+    <div class="overlay-links">
+      <a href="#" id="privacy-back-link">← About</a>
+      <a href="#" id="privacy-terms-link">Terms of Service</a>
+    </div>
+    <button class="overlay-close" id="privacy-close">Close</button>
   </div>
 </div>
 
@@ -780,16 +896,43 @@ fetch('config.json')
   .then(cfg => { Object.assign(CONFIG, cfg); })
   .catch(() => { /* Use defaults */ });
 
-// ── About overlay ────────────────────────────────────────
-const aboutBtn = document.getElementById('about-btn');
-const aboutOverlay = document.getElementById('about-overlay');
-const aboutClose = document.getElementById('about-close');
+// ── Overlay navigation ───────────────────────────────────
+function showOverlay(id) {
+  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+}
 
-aboutBtn.addEventListener('click', (e) => { e.stopPropagation(); aboutOverlay.classList.add('visible'); });
-aboutClose.addEventListener('click', () => { aboutOverlay.classList.remove('visible'); });
-aboutOverlay.addEventListener('click', (e) => {
-  if (e.target === aboutOverlay) aboutOverlay.classList.remove('visible');
+function closeAllOverlays() {
+  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('visible'));
+}
+
+// About overlay
+const aboutBtn = document.getElementById('about-btn');
+aboutBtn.addEventListener('click', (e) => { e.stopPropagation(); showOverlay('about-overlay'); });
+document.getElementById('about-close').addEventListener('click', closeAllOverlays);
+document.getElementById('about-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeAllOverlays();
 });
+
+// About → Terms / Privacy links
+document.getElementById('about-terms-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('terms-overlay'); });
+document.getElementById('about-privacy-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('privacy-overlay'); });
+
+// Terms overlay
+document.getElementById('terms-close').addEventListener('click', closeAllOverlays);
+document.getElementById('terms-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeAllOverlays();
+});
+document.getElementById('terms-back-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('about-overlay'); });
+document.getElementById('terms-privacy-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('privacy-overlay'); });
+
+// Privacy overlay
+document.getElementById('privacy-close').addEventListener('click', closeAllOverlays);
+document.getElementById('privacy-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeAllOverlays();
+});
+document.getElementById('privacy-back-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('about-overlay'); });
+document.getElementById('privacy-terms-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('terms-overlay'); });
 
 // ── "Why this route?" toggle ─────────────────────────────
 const whyToggle = document.getElementById('route-why-toggle');
@@ -801,8 +944,6 @@ whyToggle.addEventListener('click', () => {
 });
 
 // ── Panel accordion ──────────────────────────────────────
-// On mobile, panels live inside #panel-container (flexbox column).
-// On desktop, they stay as absolute-positioned elements on <body>.
 function isMobile() { return window.innerWidth <= 640; }
 
 const panelContainer = document.getElementById('panel-container');
@@ -816,7 +957,6 @@ function arrangePanels() {
     panelContainer.appendChild(routePanel);
     panelsInContainer = true;
   } else if (!isMobile() && panelsInContainer) {
-    // Move panels back to body (before the loading bar)
     const loading = document.getElementById('loading');
     document.body.insertBefore(controlsPanel, loading);
     document.body.insertBefore(routePanel, loading);
@@ -829,7 +969,6 @@ function togglePanel(panelId) {
   const wasCollapsed = panel.classList.contains('collapsed');
 
   if (isMobile() && wasCollapsed) {
-    // Collapse the other panel first
     document.querySelectorAll('.panel').forEach(p => {
       if (p.id !== panelId) p.classList.add('collapsed');
     });
@@ -966,7 +1105,6 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
     toggleLayer(id, e.target.checked);
   });
 
-  // Add date filter slider for layers with a dateField
   if (cfg.dateField) {
     const filterDiv = document.createElement('div');
     filterDiv.className = 'date-filter';
@@ -985,17 +1123,14 @@ for (const [id, cfg] of Object.entries(LAYERS)) {
 }
 
 // ── Date filter state ────────────────────────────────────
-// Stores per-layer: { dates: [sorted unique date strings], minIdx, maxIdx }
 const dateFilterState = {};
 
 function parseDate(val) {
-  // Extract YYYY-MM-DD from "2018-10-20 13:40:00+00:00" or similar
   if (!val) return null;
   return String(val).slice(0, 10);
 }
 
 function formatDateShort(dateStr) {
-  // "2018-10-20" → "Oct 2018"
   const [y, m] = dateStr.split('-');
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${months[parseInt(m, 10) - 1]} ${y}`;
@@ -1008,7 +1143,6 @@ function initDateFilter(id) {
   const features = layerData[id].features || [];
   const dateSet = new Set();
 
-  // Precompute parsed date for each feature (avoids repeated string slicing)
   const featureDates = new Array(features.length);
   for (let i = 0; i < features.length; i++) {
     const d = parseDate(features[i].properties[cfg.dateField]);
@@ -1031,7 +1165,6 @@ function initDateFilter(id) {
 
   updateDateLabel(id);
 
-  // Show the filter
   document.getElementById(`date-filter-${id}`).classList.add('active');
 
   let filterRAF = null;
@@ -1044,7 +1177,6 @@ function initDateFilter(id) {
     let lo = parseInt(minInput.value);
     let hi = parseInt(maxInput.value);
 
-    // Prevent handles from crossing
     if (lo > hi) {
       if (this === minInput) { lo = hi; minInput.value = lo; }
       else { hi = lo; maxInput.value = hi; }
@@ -1061,7 +1193,6 @@ function initDateFilter(id) {
   maxInput.addEventListener('input', onSliderInput);
   updateDateFill(id);
 
-  // Drag the fill bar to shift both handles together
   const fill = document.getElementById(`date-fill-${id}`);
   let dragStartX = null;
   let dragStartMin = null;
@@ -1094,7 +1225,6 @@ function initDateFilter(id) {
     let newMin = dragStartMin + deltaSteps;
     let newMax = dragStartMax + deltaSteps;
 
-    // Clamp to bounds
     if (newMin < 0) { newMin = 0; newMax = span; }
     if (newMax > last) { newMax = last; newMin = last - span; }
 
@@ -1171,7 +1301,6 @@ function applyDateFilter(id) {
 
   map.getSource(sourceId).setData({ type: 'FeatureCollection', features: out });
 
-  // Update the count display
   const countEl = document.getElementById(`count-${id}`);
   if (countEl) countEl.textContent = out.length.toLocaleString();
 }
@@ -1235,7 +1364,6 @@ map.on('click', (e) => {
 function setOrigin(lngLat) {
   routeOrigin = lngLat;
 
-  // Auto-expand route panel when user starts placing points
   const routePanel = document.getElementById('route-panel');
   if (routePanel.classList.contains('collapsed')) {
     togglePanel('route-panel');
@@ -1310,8 +1438,8 @@ async function fetchRoute() {
         'X-Api-Key': CONFIG.routing_api_key,
       },
       body: JSON.stringify({
-        origin: [routeOrigin[1], routeOrigin[0]],           // [lat, lon]
-        destination: [routeDestination[1], routeDestination[0]], // [lat, lon]
+        origin: [routeOrigin[1], routeOrigin[0]],
+        destination: [routeDestination[1], routeDestination[0]],
       }),
     });
 
@@ -1323,7 +1451,6 @@ async function fetchRoute() {
     const data = await resp.json();
     routeData = data;
 
-    // Draw route on map — coordinates are already [lon, lat]
     map.getSource('route').setData({
       type: 'Feature',
       geometry: {
@@ -1332,17 +1459,14 @@ async function fetchRoute() {
       },
     });
 
-    // Fit map to route bounds
     const bounds = data.coordinates.reduce(
       (b, c) => b.extend(c),
       new maplibregl.LngLatBounds(data.coordinates[0], data.coordinates[0])
     );
     map.fitBounds(bounds, { padding: 80 });
 
-    // Show route info
     const distKm = data.total_length_m / 1000;
     const distMi = distKm * 0.621371;
-    // Rough estimate: ~15 km/h average city cycling speed
     const durMin = Math.round((data.total_length_m / 1000) / 15 * 60);
 
     document.getElementById('route-distance').textContent = `${distMi.toFixed(1)} mi (${distKm.toFixed(1)} km)`;
@@ -1387,7 +1511,6 @@ function clearRoute() {
   document.getElementById('route-hint').style.display = '';
   document.getElementById('route-hint').textContent = 'Click anywhere on the map to place start and end points';
 
-  // Collapse the "Why this route?" if it was open
   whyToggle.classList.remove('expanded');
   whyText.classList.remove('visible');
 
@@ -1502,7 +1625,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Invisible hit-area layer (larger radius for easier tapping)
   map.addLayer({
     id: `${id}-points-hitarea`,
     type: 'circle',
@@ -1514,7 +1636,6 @@ function addLayerToMap(id) {
     },
   });
 
-  // Visible points (drawn on top of hit area)
   map.addLayer({
     id: `${id}-points`,
     type: 'circle',

@@ -1,5 +1,6 @@
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
+from loci.collectors.ckan.spec import CKANDatasetSpec
 from loci.collectors.osm.spec import OsmDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
@@ -780,4 +781,29 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_SPEC = SocrataDatasetSpec
     target_schema="raw_data",
     entity_key=["unique_id"],
     full_update_mode="api",
+)
+
+
+#######################################################################################
+#    CKAN                                                                             #
+#######################################################################################
+
+TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_SPEC = CKANDatasetSpec(
+    name="toronto_serious_motor_vehicle_collisions",
+    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
+    dataset_id="motor-vehicle-collisions-involving-killed-or-seriously-injured-persons",
+    target_table="toronto_serious_motor_vehicle_collisions",
+    target_schema="raw_data",
+    entity_key=["collision_id", "per_no"],
+    resource_ids=["f8faf384-a96d-4dff-af59-db40f777c7d3"],
+)
+
+TORONTO_BICYCLE_PARKING_RACKS_SPEC = CKANDatasetSpec(
+    name="toronto_bicycle_parking_racks",
+    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
+    dataset_id="bicycle-parking-racks",
+    target_table="toronto_bicycle_parking_racks",
+    target_schema="raw_data",
+    entity_key=["objectid"],
+    resource_ids=["4d105465-6e64-4a69-957b-6e0eee5bca8b"],
 )

@@ -1,0 +1,2 @@
+alter table raw_data.osmnx_bike_network_nodes rename to osmnx_chicago_bike_network_nodes;
+alter table raw_data.osmnx_bike_network_edges rename to osmnx_chicago_bike_network_edges;

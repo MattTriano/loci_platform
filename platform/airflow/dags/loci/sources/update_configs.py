@@ -613,3 +613,23 @@ OSMNX_CHICAGO_BIKE_NETWORK_UC = DatasetUpdateConfig(
     full_update_day_of_week=4,
     full_update_mode="api",
 )
+
+#######################################################################################
+#    CKAN                                                                             #
+#######################################################################################
+
+TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_SPEC,
+    update_cron="0 6 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+TORONTO_BICYCLE_PARKING_RACKS_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_BICYCLE_PARKING_RACKS_SPEC,
+    update_cron="3 6 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)

@@ -270,7 +270,7 @@ class SocrataTableMetadata:
     ) -> None:
         """Generate and print DDL for easy copy-paste into a migration script."""
         ddl = self.generate_ddl(
-            schema=schema,
+            # schema=schema,
             table_name=table_name,
             include_ingested_at=include_ingested_at,
             include_comments=include_comments,
