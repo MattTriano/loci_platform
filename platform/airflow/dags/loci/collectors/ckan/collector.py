@@ -73,10 +73,11 @@ class CKANCollector:
         self,
         engine: Any,
         tracker: IngestionTracker | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.engine = engine
         self.tracker = tracker or IngestionTracker(engine=self.engine)
-        self.logger = logging.getLogger("ckan_collector")
+        self.logger = logger or logging.getLogger("ckan_collector")
 
         self._client_cache: dict[str, CKANClient] = {}
 
@@ -159,7 +160,7 @@ class CKANCollector:
                 target_table=spec.target_table,
                 target_schema=spec.target_schema,
                 metadata_columns=self.PIPELINE_COLUMNS,
-                hash_exclude_columns=self.PIPELINE_COLUMNS,
+                hash_exclude_columns=self.PIPELINE_COLUMNS | self.CKAN_INTERNAL_COLUMNS,
                 **staged_ingest_kwargs,
             ) as stager:
                 for resource in resources:
@@ -243,6 +244,11 @@ class CKANCollector:
                 row.pop(col, None)
         return rows
 
+    @classmethod
+    def _exclude_internal(cls, names: set[str]) -> set[str]:
+        """Remove CKAN internal column names from a set of column names."""
+        return names - cls.CKAN_INTERNAL_COLUMNS
+
     # ------------------------------------------------------------------
     # DDL generation
     # ------------------------------------------------------------------
@@ -291,11 +297,17 @@ class CKANCollector:
     def _columns_from_datastore(
         self, client: CKANClient, resource_id: str
     ) -> list[tuple[str, str]]:
-        """Get columns from DataStore field metadata."""
+        """Get columns from DataStore field metadata.
+
+        CKAN internal columns (_id, _full_text) are excluded — they are
+        DataStore implementation details, not part of the dataset.
+        """
         fields = client.metadata.get_datastore_fields(resource_id)
         columns = []
         for field in fields:
             name = field["id"]
+            if name in self.CKAN_INTERNAL_COLUMNS:
+                continue
             ckan_type = field.get("type", "text")
             pg_type = self.DATASTORE_TYPE_MAP.get(ckan_type, "text")
             columns.append((name, pg_type))
@@ -323,20 +335,36 @@ class CKANCollector:
             filepath.unlink(missing_ok=True)
 
     def _columns_from_csv_file(self, filepath: Path) -> list[tuple[str, str]]:
-        """Read CSV headers and return (name, 'text') pairs."""
+        """Read CSV headers and return (name, 'text') pairs.
+
+        CKAN internal columns (_id, _full_text) are excluded — they can
+        appear in CSV exports from CKAN's DataStore.
+        """
         with open(filepath, encoding="utf-8", newline="") as f:
             reader = csv.reader(f)
             headers = next(reader)
-        return [(h.strip(), "text") for h in headers if h.strip()]
+        return [
+            (h.strip(), "text")
+            for h in headers
+            if h.strip() and h.strip() not in self.CKAN_INTERNAL_COLUMNS
+        ]
 
     def _columns_from_geojson_file(self, filepath: Path) -> list[tuple[str, str]]:
-        """Read the first GeoJSON feature's properties for column names."""
+        """Read the first GeoJSON feature's properties for column names.
+
+        CKAN internal columns (_id, _full_text) are excluded — they can
+        appear in GeoJSON exports from CKAN's DataStore.
+        """
         import ijson
 
         with open(filepath, "rb") as f:
             for feat in ijson.items(f, "features.item"):
                 props = feat.get("properties") or {}
-                columns = [(k, "text") for k in props.keys()]
+                columns = [
+                    (k, "text")
+                    for k in props.keys()
+                    if k not in self.CKAN_INTERNAL_COLUMNS
+                ]
                 columns.append(("geom", "geometry"))
                 return columns
 
@@ -358,7 +386,7 @@ class CKANCollector:
         for resource in resources[1:]:
             if resource.datastore_active or client.metadata.has_datastore(resource.id):
                 fields = client.metadata.get_datastore_fields(resource.id)
-                other_names = {f["id"] for f in fields}
+                other_names = self._exclude_internal({f["id"] for f in fields})
             else:
                 # For file-based resources, we'd need to download and check headers.
                 # Only do this if the resource format is CSV (cheap to read one line).
@@ -370,7 +398,9 @@ class CKANCollector:
                         with open(filepath, encoding="utf-8", newline="") as f:
                             reader = csv.reader(f)
                             headers = next(reader)
-                        other_names = {h.strip() for h in headers if h.strip()}
+                        other_names = self._exclude_internal(
+                            {h.strip() for h in headers if h.strip()}
+                        )
                     finally:
                         filepath.unlink(missing_ok=True)
                 else:

@@ -788,7 +788,7 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_SPEC = SocrataDatasetSpec
 #    CKAN                                                                             #
 #######################################################################################
 
-crash_spec = CKANDatasetSpec(
+TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_SPEC = CKANDatasetSpec(
     name="toronto_serious_motor_vehicle_collisions",
     base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
     dataset_id="motor-vehicle-collisions-involving-killed-or-seriously-injured-persons",
