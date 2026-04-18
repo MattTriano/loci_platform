@@ -1,3 +1,4 @@
+from loci.collectors.arcgishub.spec import ArcGISHubDatasetSpec
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.ckan.spec import CKANDatasetSpec
@@ -806,4 +807,16 @@ TORONTO_BICYCLE_PARKING_RACKS_SPEC = CKANDatasetSpec(
     target_schema="raw_data",
     entity_key=["objectid"],
     resource_ids=["4d105465-6e64-4a69-957b-6e0eee5bca8b"],
+)
+
+
+#######################################################################################
+#    ArcGIS Hub                                                                       #
+#######################################################################################
+
+TORONTO_TRAFFIC_COLLISIONS_SPEC = ArcGISHubDatasetSpec(
+    name="toronto_traffic_collisions",
+    item_id="bc4c72a793014a55a674984ef175a6f3",
+    target_table="toronto_traffic_collisions",
+    entity_key=["event_unique_id"],
 )

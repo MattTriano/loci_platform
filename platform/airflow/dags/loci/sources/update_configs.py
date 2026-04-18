@@ -633,3 +633,16 @@ TORONTO_BICYCLE_PARKING_RACKS_UC = DatasetUpdateConfig(
     full_update_day_of_week=4,
     full_update_mode="api",
 )
+
+
+#######################################################################################
+#    ArcGIS Hub                                                                       #
+#######################################################################################
+
+TORONTO_TRAFFIC_COLLISIONS_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_TRAFFIC_COLLISIONS_SPEC,
+    update_cron="0 3 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
