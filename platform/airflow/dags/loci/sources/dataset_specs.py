@@ -358,6 +358,18 @@ OSMNX_CHICAGO_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
     source="osmnx",
 )
 
+OSMNX_DETROIT_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
+    name="detroit_bike_network",
+    target_table_nodes="osmnx_detroit_bike_network_nodes",
+    target_table_edges="osmnx_detroit_bike_network_edges",
+    target_schema="raw_data",
+    bbox=(-83.29, 42.24, -82.89, 42.46),
+    network_type="bike",
+    entity_key_nodes=["osmid"],
+    entity_key_edges=["u", "v", "key"],
+    source="osmnx",
+)
+
 #######################################################################################
 #    Socrata                                                                          #
 #######################################################################################
@@ -816,7 +828,35 @@ TORONTO_BICYCLE_PARKING_RACKS_SPEC = CKANDatasetSpec(
 
 TORONTO_TRAFFIC_COLLISIONS_SPEC = ArcGISHubDatasetSpec(
     name="toronto_traffic_collisions",
+    base_url="https://data.tps.ca",
     item_id="bc4c72a793014a55a674984ef175a6f3",
     target_table="toronto_traffic_collisions",
     entity_key=["event_unique_id"],
+)
+
+DETROIT_BIKE_LANES_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_bike_lanes",
+    base_url="https://data.detroitmi.gov",
+    item_id="1a461925a1a242b9b4512380e32516c1",
+    target_table="detroit_bike_lanes",
+    entity_key=["bike_route_id"],
+)
+
+DETROIT_BIKE_PARKING_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_bike_parking",
+    base_url="https://data.detroitmi.gov",
+    item_id="88f5f270fbf64e818dc391e143cd96ab",
+    target_table="detroit_bike_parking",
+    entity_key=["geom"],
+    layer_index=1,
+)
+
+DETROIT_TRAFFIC_CRASHES_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_traffic_crashes",
+    base_url="https://data.detroitmi.gov",
+    item_id="d837b05bdd9643698be30dfedbab0272",
+    target_table="detroit_traffic_crashes",
+    layer_index="all",
+    layer_column="source_layer",
+    entity_key=["crash_id"],
 )

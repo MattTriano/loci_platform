@@ -46,9 +46,15 @@ sources:
       - name: cook_county_residential_condominium_unit_characteristics
       - name: cook_county_single_and_multi_family_improvement_characteristics
       - name: cta_ridership_daily_boarding_totals
+      - name: detroit_bike_lanes
+      - name: detroit_bike_parking
+      - name: detroit_traffic_crashes
       - name: open_air_chicago_individual_measurements
       - name: osm_nodes
       - name: osm_relations
       - name: osm_ways
       - name: osmnx_bike_network_edges
       - name: osmnx_bike_network_nodes
+      - name: osmnx_detroit_bike_network_edges
+      - name: osmnx_detroit_bike_network_nodes
+      - name: toronto_traffic_collisions

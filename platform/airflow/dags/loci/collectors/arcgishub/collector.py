@@ -59,6 +59,10 @@ ARCGIS_TO_PG_GEOMETRY = {
     "esriGeometryPolygon": "MultiPolygon",
 }
 
+# Source field names that collide with the collector's geometry column.
+# These are renamed to _orig_{name} in both DDL and row flattening.
+GEOMETRY_COLLISION_NAMES = {"geom", "geog"}
+
 
 class ArcGISHubCollector:
     """
@@ -103,9 +107,12 @@ class ArcGISHubCollector:
         self.tracker = tracker or IngestionTracker(engine=self.engine)
         self.logger = logger or logging.getLogger("arcgis_hub_collector")
 
-        # Cache of layer info keyed by spec.dataset_id; populated on first
-        # access so we don't re-hit the server for every helper call.
+        # Cache of layer info keyed by "item_id:layer_index"; populated on
+        # first access so we don't re-hit the server for every helper call.
         self._layer_info_cache: dict[str, dict[str, Any]] = {}
+
+        # Cache of /layers response keyed by service_url.
+        self._layers_cache: dict[str, list[dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -140,34 +147,52 @@ class ArcGISHubCollector:
             return summary
 
         try:
-            layer_info = self._get_layer_info(spec)
-            where = self._build_where(spec, force)
-            source_fields = self._source_field_names(layer_info)
-            self._preflight_column_check(source_fields, spec)
+            layers = self._resolve_layers(spec)
 
-            dataset_id = spec.dataset_id
-            fqn = f"{spec.target_schema}.{spec.target_table}"
+            total_staged = 0
+            total_merged = 0
+            latest_hwm: str | None = None
 
-            with self.tracker.track(
-                source=self.SOURCE_NAME,
-                dataset_id=dataset_id,
-                target_table=fqn,
-                metadata={
-                    "item_id": spec.item_id,
-                    "layer_index": spec.layer_index,
-                    "where": where,
-                    "force": force,
-                    "incremental_column": spec.incremental_column,
-                },
-            ) as run:
-                staged, merged, new_hwm = self._ingest(spec, layer_info, where)
-                run.rows_staged = staged
-                run.rows_merged = merged
-                if new_hwm is not None:
-                    run.high_water_mark = new_hwm
+            for layer_index, layer_name in layers:
+                layer_info = self._get_layer_info(spec, layer_index)
+                where = self._build_where(spec, force)
+                source_fields = self._source_field_names(layer_info, spec)
+                self._preflight_column_check(source_fields, spec)
 
-            summary["rows_staged"] = staged
-            summary["rows_merged"] = merged
+                dataset_id = f"{spec.item_id}:{layer_index}"
+                fqn = f"{spec.target_schema}.{spec.target_table}"
+
+                with self.tracker.track(
+                    source=self.SOURCE_NAME,
+                    dataset_id=dataset_id,
+                    target_table=fqn,
+                    metadata={
+                        "item_id": spec.item_id,
+                        "layer_index": layer_index,
+                        "layer_name": layer_name,
+                        "where": where,
+                        "force": force,
+                        "incremental_column": spec.incremental_column,
+                    },
+                ) as run:
+                    staged, merged, new_hwm = self._ingest(
+                        spec,
+                        layer_info,
+                        where,
+                        layer_name,
+                    )
+                    run.rows_staged = staged
+                    run.rows_merged = merged
+                    if new_hwm is not None:
+                        run.high_water_mark = new_hwm
+
+                total_staged += staged
+                total_merged += merged
+                if new_hwm and (latest_hwm is None or new_hwm > latest_hwm):
+                    latest_hwm = new_hwm
+
+            summary["rows_staged"] = total_staged
+            summary["rows_merged"] = total_merged
 
         except Exception as e:
             self.logger.error("Collection failed for %s: %s", spec.name, e)
@@ -179,12 +204,219 @@ class ArcGISHubCollector:
 
     def generate_ddl(self, spec: ArcGISHubDatasetSpec) -> str:
         """Generate a CREATE TABLE + constraint + index script for `spec`."""
-        layer_info = self._get_layer_info(spec)
-        return _build_ddl(spec, layer_info)
+        layers = self._resolve_layers(spec)
+        layer_infos = [self._get_layer_info(spec, idx) for idx, _name in layers]
+
+        if len(layer_infos) > 1:
+            self._check_field_overlap(layer_infos, spec)
+
+        return _build_ddl(spec, layer_infos)
 
     def print_ddl(self, spec: ArcGISHubDatasetSpec) -> None:
         """Print DDL for easy copy-paste into a migration."""
         print(self.generate_ddl(spec))
+
+    # ------------------------------------------------------------------
+    # Layer discovery
+    # ------------------------------------------------------------------
+
+    def _resolve_layers(self, spec: ArcGISHubDatasetSpec) -> list[tuple[int, str]]:
+        """Return a list of (layer_index, layer_name) to collect.
+
+        Handles int, list[int], and "all".
+        """
+        if isinstance(spec.layer_index, int):
+            layer_info = self._get_layer_info(spec, spec.layer_index)
+            name = layer_info.get("name", str(spec.layer_index))
+            return [(spec.layer_index, name)]
+
+        available = self._list_layers(spec)
+
+        if spec.layer_index == "all":
+            return available
+
+        # list[int]
+        available_by_id = {idx: name for idx, name in available}
+        result = []
+        for idx in spec.layer_index:
+            if idx not in available_by_id:
+                raise ValueError(
+                    f"Layer {idx} not found in service. Available: {[i for i, _ in available]}"
+                )
+            result.append((idx, available_by_id[idx]))
+        return result
+
+    def _list_layers(self, spec: ArcGISHubDatasetSpec) -> list[tuple[int, str]]:
+        """Fetch available layers from the /layers endpoint."""
+        service_url = self._resolve_service_url(spec)
+
+        if service_url in self._layers_cache:
+            raw_layers = self._layers_cache[service_url]
+        else:
+            payload = self.client.get_json(f"{service_url}/layers", params={"f": "json"})
+            if "error" in payload:
+                err = payload["error"]
+                raise RuntimeError(
+                    f"ArcGIS /layers error: {err.get('code')} - {err.get('message')}"
+                )
+            raw_layers = payload.get("layers") or []
+            self._layers_cache[service_url] = raw_layers
+
+        return [(layer["id"], layer.get("name", str(layer["id"]))) for layer in raw_layers]
+
+    def _check_field_overlap(
+        self,
+        layer_infos: list[dict[str, Any]],
+        spec: ArcGISHubDatasetSpec,
+    ) -> None:
+        """Raise ValueError if field overlap across layers is too low."""
+        field_sets = []
+        for info in layer_infos:
+            names = {f["name"].lower() for f in info["fields"]}
+            field_sets.append(names)
+
+        all_fields = set().union(*field_sets)
+        shared_fields = set.intersection(*field_sets)
+
+        if not all_fields:
+            return
+
+        overlap = len(shared_fields) / len(all_fields)
+        if overlap < spec.min_field_overlap:
+            raise ValueError(
+                f"Field overlap across layers is {overlap:.0%} "
+                f"({len(shared_fields)}/{len(all_fields)}), "
+                f"below threshold of {spec.min_field_overlap:.0%}. "
+                f"Only in some layers: {all_fields - shared_fields}"
+            )
+
+        self.logger.info(
+            "Field overlap: %d/%d (%.0f%%) — %d fields only in some layers: %s",
+            len(shared_fields),
+            len(all_fields),
+            overlap * 100,
+            len(all_fields - shared_fields),
+            all_fields - shared_fields or "none",
+        )
+
+    # ------------------------------------------------------------------
+    # Layer info
+    # ------------------------------------------------------------------
+
+    def _get_layer_info(self, spec: ArcGISHubDatasetSpec, layer_index: int) -> dict[str, Any]:
+        """Fetch and cache layer metadata (fields, geometry type, SRID, max record count).
+
+        Tries the direct /{layer_index} endpoint first. If that returns
+        an error, falls back to finding the layer in the /layers response.
+        """
+        cache_key = f"{spec.item_id}:{layer_index}"
+        if cache_key in self._layer_info_cache:
+            return self._layer_info_cache[cache_key]
+
+        service_url = self._resolve_service_url(spec)
+        layer_url = f"{service_url}/{layer_index}"
+
+        layer = self.client.get_json(layer_url, params={"f": "json"})
+
+        # ArcGIS returns errors as HTTP 200 with {"error": {...}}.
+        if "error" in layer:
+            self.logger.warning(
+                "Direct layer endpoint %s returned error, falling back to /layers",
+                layer_url,
+            )
+            layer = self._get_layer_from_layers_endpoint(spec, layer_index)
+
+        fields = layer.get("fields") or []
+        if not fields:
+            raise RuntimeError(f"No fields found for layer {layer_index} at {service_url}")
+
+        max_record_count = layer.get("maxRecordCount", 1000)
+        geometry_type = layer.get("geometryType")
+        spatial_ref = layer.get("spatialReference") or {}
+        srid = spatial_ref.get("latestWkid") or spatial_ref.get("wkid") or 4326
+
+        info = {
+            "service_url": service_url,
+            "layer_url": layer_url,
+            "name": layer.get("name", str(layer_index)),
+            "fields": fields,
+            "max_record_count": max_record_count,
+            "geometry_type": geometry_type,
+            "srid": srid,
+            "oid_field": _find_oid_field(fields),
+            "date_fields": {f["name"] for f in fields if f.get("type") == "esriFieldTypeDate"},
+        }
+
+        self.logger.info(
+            "Layer %s: %d fields, maxRecordCount=%d, geometry=%s, srid=%d",
+            layer_url,
+            len(fields),
+            max_record_count,
+            geometry_type,
+            srid,
+        )
+
+        self._layer_info_cache[cache_key] = info
+        return info
+
+    def _get_layer_from_layers_endpoint(
+        self, spec: ArcGISHubDatasetSpec, layer_index: int
+    ) -> dict[str, Any]:
+        """Find a specific layer in the /layers response."""
+        available = self._list_layers(spec)
+        service_url = self._resolve_service_url(spec)
+        raw_layers = self._layers_cache[service_url]
+
+        for layer in raw_layers:
+            if layer["id"] == layer_index:
+                return layer
+
+        raise ValueError(
+            f"Layer {layer_index} not found in /layers response. "
+            f"Available: {[idx for idx, _ in available]}"
+        )
+
+    def _resolve_service_url(self, spec: ArcGISHubDatasetSpec) -> str:
+        """Extract the feature service URL from the Hub item metadata."""
+        item = self.metadata.get_dataset(spec.item_id)
+        props = item.get("properties") or {}
+        url = props.get("url")
+        if not url:
+            # Fall back to top-level url (different Hub versions organize
+            # this field differently).
+            url = item.get("url")
+        if not url:
+            raise ValueError(
+                f"Could not find feature service URL in metadata for item {spec.item_id!r}"
+            )
+        return url.rstrip("/")
+
+    @staticmethod
+    def _source_field_names(
+        layer_info: dict[str, Any],
+        spec: ArcGISHubDatasetSpec,
+    ) -> set[str]:
+        """Names of fields the collector will produce in row dicts.
+
+        Starts from the layer's field list, lowercased so downstream code
+        (and Postgres) sees consistent casing. Renames geometry-colliding
+        fields. Adds `geom` if the layer has geometry, and the layer column
+        if configured.
+        """
+        has_geometry = bool(layer_info.get("geometry_type"))
+        names: set[str] = set()
+
+        for f in layer_info["fields"]:
+            name = f["name"].lower()
+            if has_geometry and name in GEOMETRY_COLLISION_NAMES:
+                name = _rename_collision(name, names)
+            names.add(name)
+
+        if has_geometry:
+            names.add("geom")
+        if spec.layer_column:
+            names.add(spec.layer_column.lower())
+        return names
 
     # ------------------------------------------------------------------
     # Idempotency
@@ -207,78 +439,6 @@ class ArcGISHubCollector:
         except Exception:
             # Table doesn't exist yet
             return False
-
-    # ------------------------------------------------------------------
-    # Layer discovery
-    # ------------------------------------------------------------------
-
-    def _get_layer_info(self, spec: ArcGISHubDatasetSpec) -> dict[str, Any]:
-        """Fetch and cache layer metadata (fields, geometry type, SRID, max record count)."""
-        if spec.dataset_id in self._layer_info_cache:
-            return self._layer_info_cache[spec.dataset_id]
-
-        service_url = self._resolve_service_url(spec)
-        layer_url = f"{service_url}/{spec.layer_index}"
-
-        layer = self.client.get_json(layer_url, params={"f": "json"})
-
-        fields = layer.get("fields", []) or []
-        max_record_count = layer.get("maxRecordCount", 1000)
-        geometry_type = layer.get("geometryType")
-        spatial_ref = layer.get("spatialReference") or {}
-        # ArcGIS returns SRID in `latestWkid` (preferred, current) or `wkid`.
-        srid = spatial_ref.get("latestWkid") or spatial_ref.get("wkid") or 4326
-
-        info = {
-            "service_url": service_url,
-            "layer_url": layer_url,
-            "fields": fields,
-            "max_record_count": max_record_count,
-            "geometry_type": geometry_type,
-            "srid": srid,
-            "oid_field": _find_oid_field(fields),
-            "date_fields": {f["name"] for f in fields if f.get("type") == "esriFieldTypeDate"},
-        }
-
-        self.logger.info(
-            "Layer %s: %d fields, maxRecordCount=%d, geometry=%s, srid=%d",
-            layer_url,
-            len(fields),
-            max_record_count,
-            geometry_type,
-            srid,
-        )
-
-        self._layer_info_cache[spec.dataset_id] = info
-        return info
-
-    def _resolve_service_url(self, spec: ArcGISHubDatasetSpec) -> str:
-        """Extract the feature service URL from the Hub item metadata."""
-        item = self.metadata.get_dataset(spec.item_id)
-        props = item.get("properties") or {}
-        url = props.get("url")
-        if not url:
-            # Fall back to top-level url (different Hub versions organize
-            # this field differently).
-            url = item.get("url")
-        if not url:
-            raise ValueError(
-                f"Could not find feature service URL in metadata for item {spec.item_id!r}"
-            )
-        return url.rstrip("/")
-
-    @staticmethod
-    def _source_field_names(layer_info: dict[str, Any]) -> set[str]:
-        """Names of fields the collector will produce in row dicts.
-
-        Starts from the layer's field list, lowercased so downstream code
-        (and Postgres) sees consistent casing. Adds `geom` if the layer
-        has geometry.
-        """
-        names = {f["name"].lower() for f in layer_info["fields"]}
-        if layer_info.get("geometry_type"):
-            names.add("geom")
-        return names
 
     # ------------------------------------------------------------------
     # Schema drift
@@ -381,6 +541,7 @@ class ArcGISHubCollector:
         spec: ArcGISHubDatasetSpec,
         layer_info: dict[str, Any],
         where: str,
+        layer_name: str,
     ) -> tuple[int, int, str | None]:
         """Paginate the feature service, flatten rows, and stage them.
 
@@ -406,7 +567,7 @@ class ArcGISHubCollector:
                 if not batch:
                     continue
 
-                rows = [self._flatten_feature(feat, layer_info) for feat in batch]
+                rows = [self._flatten_feature(feat, layer_info, spec, layer_name) for feat in batch]
                 stager.write_batch(rows)
 
                 # Track high-water mark progress across pages
@@ -477,20 +638,32 @@ class ArcGISHubCollector:
                 return
             offset += len(features)
 
-    def _flatten_feature(self, feat: dict[str, Any], layer_info: dict[str, Any]) -> dict[str, Any]:
+    def _flatten_feature(
+        self,
+        feat: dict[str, Any],
+        layer_info: dict[str, Any],
+        spec: ArcGISHubDatasetSpec,
+        layer_name: str,
+    ) -> dict[str, Any]:
         """Convert one ArcGIS feature into a row dict.
 
         - Attribute names are lowercased.
+        - Source fields that collide with the geometry column name are
+          renamed (e.g. "geom" -> "_orig_geom").
         - Date fields (epoch ms) are converted to ISO UTC strings.
         - Geometry is converted to EWKT with the layer's SRID.
+        - Layer name is added if layer_column is configured.
         """
         attrs = feat.get("attributes") or {}
         srid = layer_info["srid"]
         date_fields_lower = {f.lower() for f in layer_info["date_fields"]}
+        has_geometry = bool(layer_info.get("geometry_type"))
 
         row: dict[str, Any] = {}
         for k, v in attrs.items():
             key = k.lower()
+            if has_geometry and key in GEOMETRY_COLLISION_NAMES:
+                key = _rename_collision(key, set(row.keys()))
             if key in date_fields_lower and v is not None:
                 row[key] = _epoch_ms_to_iso(v)
             else:
@@ -499,6 +672,9 @@ class ArcGISHubCollector:
         geometry_type = layer_info.get("geometry_type")
         if geometry_type:
             row["geom"] = _geometry_to_ewkt(feat.get("geometry"), geometry_type, srid)
+
+        if spec.layer_column:
+            row[spec.layer_column.lower()] = layer_name
 
         return row
 
@@ -513,6 +689,20 @@ def _find_oid_field(fields: list[dict[str, Any]]) -> str | None:
         if f.get("type") == "esriFieldTypeOID":
             return f["name"]
     return None
+
+
+def _rename_collision(name: str, existing: set[str]) -> str:
+    """Rename a field that collides with the geometry column.
+
+    Tries _orig_{name}, then _orig_{name}_2, etc.
+    """
+    candidate = f"_orig_{name}"
+    if candidate not in existing:
+        return candidate
+    n = 2
+    while f"{candidate}_{n}" in existing:
+        n += 1
+    return f"{candidate}_{n}"
 
 
 def _epoch_ms_to_iso(val: Any) -> str | None:
@@ -559,7 +749,6 @@ def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int
         paths = geom.get("paths") or []
         if not paths:
             return None
-        # ArcGIS polylines are multi-path by definition; emit MULTILINESTRING.
         parts = []
         for path in paths:
             coords = ", ".join(f"{p[0]} {p[1]}" for p in path)
@@ -570,11 +759,6 @@ def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int
         rings = geom.get("rings") or []
         if not rings:
             return None
-        # ArcGIS encodes outer rings (clockwise) and holes (counter-clockwise)
-        # in a flat list. PostGIS can ingest this as a MULTIPOLYGON with each
-        # outer ring as its own polygon; we don't attempt to associate holes
-        # with their outer rings here. ST_MakeValid or equivalent should be
-        # used downstream if strict polygon topology is required.
         parts = []
         for ring in rings:
             coords = ", ".join(f"{p[0]} {p[1]}" for p in ring)
@@ -588,26 +772,65 @@ def _pg_type_for(field: dict[str, Any]) -> str:
     return ARCGIS_TO_PG_TYPE.get(field.get("type"), "text")
 
 
-def _build_ddl(spec: ArcGISHubDatasetSpec, layer_info: dict[str, Any]) -> str:
-    """Produce CREATE TABLE + unique constraint + partial index for spec."""
+def _build_ddl(
+    spec: ArcGISHubDatasetSpec,
+    layer_infos: list[dict[str, Any]],
+) -> str:
+    """Produce CREATE TABLE + unique constraint + partial index for spec.
+
+    When multiple layer_infos are provided, produces the union of all
+    fields. Fields only present in some layers will be nullable.
+    """
     fqn = f"{spec.target_schema}.{spec.target_table}"
+
+    # Collect fields across all layers. For type conflicts, the first
+    # layer's type wins (they should be consistent given the overlap check).
+    # Track which fields appear in all layers vs. only some.
+    all_field_sets = []
+    merged_fields: dict[str, dict[str, Any]] = {}  # lowered name -> field dict
+    has_geometry = False
+    geometry_type = None
+    srid = 4326
+
+    for info in layer_infos:
+        layer_names: set[str] = set()
+        for f in info["fields"]:
+            name = f["name"].lower()
+            layer_names.add(name)
+            if name not in merged_fields:
+                merged_fields[name] = f
+        all_field_sets.append(layer_names)
+
+        if info.get("geometry_type"):
+            has_geometry = True
+            geometry_type = info["geometry_type"]
+            srid = info["srid"]
+
+    shared_fields = set.intersection(*all_field_sets) if all_field_sets else set()
 
     columns: list[str] = []
     seen: set[str] = set()
-    for f in layer_info["fields"]:
-        name = f["name"].lower()
+    for name, f in merged_fields.items():
         if name in seen:
             continue
-        seen.add(name)
-        columns.append(f'"{name}" {_pg_type_for(f)}')
+        # Rename fields that collide with the geometry column
+        col_name = name
+        if has_geometry and name in GEOMETRY_COLLISION_NAMES:
+            col_name = _rename_collision(name, seen)
+        seen.add(col_name)
+        columns.append(f'"{col_name}" {_pg_type_for(f)}')
 
     # Geometry column
-    geometry_type = layer_info.get("geometry_type")
-    if geometry_type:
+    if has_geometry:
         pg_geom = ARCGIS_TO_PG_GEOMETRY.get(geometry_type, "Geometry")
-        srid = layer_info["srid"]
         if "geom" not in seen:
             columns.append(f'"geom" geometry({pg_geom}, {srid})')
+
+    # Layer column
+    if spec.layer_column:
+        col = spec.layer_column.lower()
+        if col not in seen:
+            columns.append(f'"{col}" text')
 
     # Provenance column — always included regardless of mode
     columns.append("\"ingested_at\" timestamptz not null default (now() at time zone 'UTC')")
@@ -626,8 +849,7 @@ def _build_ddl(spec: ArcGISHubDatasetSpec, layer_info: dict[str, Any]) -> str:
     lines.append("    " + ",\n    ".join(columns))
     lines.append(");")
 
-    # Unique constraint on (entity_key, record_hash) — only meaningful
-    # when an entity_key is defined.
+    # Unique constraint on (entity_key, record_hash)
     if spec.entity_key:
         ek_cols = ", ".join(f'"{c.lower()}"' for c in spec.entity_key)
         constraint_name = f"uq_{spec.target_table}_entity_hash"
@@ -643,7 +865,7 @@ def _build_ddl(spec: ArcGISHubDatasetSpec, layer_info: dict[str, Any]) -> str:
         lines.append('    where "valid_to" is null;')
 
     # GIST index on geometry
-    if geometry_type:
+    if has_geometry:
         lines.append("")
         lines.append(f"create index ix_{spec.target_table}_geom")
         lines.append(f'    on {fqn} using gist ("geom");')
