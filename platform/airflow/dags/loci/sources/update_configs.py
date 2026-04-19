@@ -671,6 +671,14 @@ DETROIT_BIKE_PARKING_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+DETROIT_BOUNDARY_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_BOUNDARY_SPEC,
+    update_cron="6 3 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
 DETROIT_TRAFFIC_CRASHES_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_TRAFFIC_CRASHES_SPEC,
     update_cron="10 3 * * 2",

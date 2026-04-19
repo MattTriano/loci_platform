@@ -851,6 +851,14 @@ DETROIT_BIKE_PARKING_SPEC = ArcGISHubDatasetSpec(
     layer_index=1,
 )
 
+DETROIT_BOUNDARY_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_boundary",
+    base_url="https://data.detroitmi.gov",
+    item_id="86b221bb68ca4364afe81d156e54f95c",
+    target_table="detroit_boundary",
+    entity_key=["fid"],
+)
+
 DETROIT_TRAFFIC_CRASHES_SPEC = ArcGISHubDatasetSpec(
     name="detroit_traffic_crashes",
     base_url="https://data.detroitmi.gov",

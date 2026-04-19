@@ -342,13 +342,14 @@ class ArcGISHubCollector:
             "fields": fields,
             "max_record_count": max_record_count,
             "geometry_type": geometry_type,
-            "srid": srid,
+            "srid": 4326,
+            "native_srid": srid,  # keep for reference/logging
             "oid_field": _find_oid_field(fields),
             "date_fields": {f["name"] for f in fields if f.get("type") == "esriFieldTypeDate"},
         }
 
         self.logger.info(
-            "Layer %s: %d fields, maxRecordCount=%d, geometry=%s, srid=%d",
+            "Layer %s: %d fields, maxRecordCount=%d, geometry=%s, native_srid=%d (requesting 4326)",
             layer_url,
             len(fields),
             max_record_count,
@@ -434,7 +435,7 @@ class ArcGISHubCollector:
 
         fqn = f"{spec.target_schema}.{spec.target_table}"
         try:
-            df = self.engine.query(f'select 1 from {fqn} where "valid_to" is null limit 1')
+            df = self.engine.query(f"select 1 from {fqn} limit 1")
             return not df.empty
         except Exception:
             # Table doesn't exist yet
@@ -518,12 +519,14 @@ class ArcGISHubCollector:
         fqn = f"{spec.target_schema}.{spec.target_table}"
         col = spec.incremental_column
         try:
+            where_clause = ""
+            if spec.entity_key:
+                where_clause = 'where "valid_to" is null and'
+            else:
+                where_clause = "where"
             df = self.engine.query(
-                f"""
-                select extract(epoch from max("{col}")) * 1000 as hwm_ms
-                from {fqn}
-                where "valid_to" is null and "{col}" is not null
-                """
+                f'select extract(epoch from max("{col}")) * 1000 as hwm_ms '
+                f'from {fqn} {where_clause} "{col}" is not null'
             )
             if df.empty:
                 return None
@@ -721,12 +724,54 @@ def _max_iso(rows: list[dict[str, Any]], column: str) -> str | None:
     return max(values) if values else None
 
 
-def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int) -> str | None:
-    """Convert an ArcGIS geometry object to an EWKT string.
+# def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int) -> str | None:
+#     """Convert an ArcGIS geometry object to an EWKT string.
 
-    Handles Point, Multipoint, Polyline, and Polygon. Unknown types
-    return None and are logged by the caller if needed.
-    """
+#     Handles Point, Multipoint, Polyline, and Polygon. Unknown types
+#     return None and are logged by the caller if needed.
+#     """
+#     if not geom:
+#         return None
+
+#     prefix = f"SRID={srid};"
+
+#     if geometry_type == "esriGeometryPoint":
+#         x, y = geom.get("x"), geom.get("y")
+#         if x is None or y is None:
+#             return None
+#         return f"{prefix}POINT({x} {y})"
+
+#     if geometry_type == "esriGeometryMultipoint":
+#         pts = geom.get("points") or []
+#         if not pts:
+#             return None
+#         inner = ", ".join(f"({p[0]} {p[1]})" for p in pts)
+#         return f"{prefix}MULTIPOINT({inner})"
+
+#     if geometry_type == "esriGeometryPolyline":
+#         paths = geom.get("paths") or []
+#         if not paths:
+#             return None
+#         parts = []
+#         for path in paths:
+#             coords = ", ".join(f"{p[0]} {p[1]}" for p in path)
+#             parts.append(f"({coords})")
+#         return f"{prefix}MULTILINESTRING({', '.join(parts)})"
+
+#     if geometry_type == "esriGeometryPolygon":
+#         rings = geom.get("rings") or []
+#         if not rings:
+#             return None
+#         parts = []
+#         for ring in rings:
+#             coords = ", ".join(f"{p[0]} {p[1]}" for p in ring)
+#             parts.append(f"(({coords}))")
+#         return f"{prefix}MULTIPOLYGON({', '.join(parts)})"
+
+#     return None
+
+
+def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int) -> str | None:
     if not geom:
         return None
 
@@ -759,13 +804,41 @@ def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int
         rings = geom.get("rings") or []
         if not rings:
             return None
-        parts = []
+
+        # ArcGIS convention: outer rings are clockwise, holes are
+        # counter-clockwise. Group each hole with the preceding
+        # outer ring.
+        polygons: list[list[str]] = []
         for ring in rings:
             coords = ", ".join(f"{p[0]} {p[1]}" for p in ring)
-            parts.append(f"(({coords}))")
+            if _ring_is_clockwise(ring):
+                # New outer ring starts a new polygon
+                polygons.append([f"({coords})"])
+            else:
+                # Hole — attach to the current polygon
+                if polygons:
+                    polygons[-1].append(f"({coords})")
+                else:
+                    # Hole before any outer ring; treat as outer
+                    polygons.append([f"({coords})"])
+
+        parts = [f"({', '.join(ring_list)})" for ring_list in polygons]
         return f"{prefix}MULTIPOLYGON({', '.join(parts)})"
 
     return None
+
+
+def _ring_is_clockwise(ring: list[list[float]]) -> bool:
+    """Check if a ring is clockwise using the shoelace formula sign.
+
+    ArcGIS convention: clockwise = outer ring, counter-clockwise = hole.
+    """
+    total = 0.0
+    for i in range(len(ring) - 1):
+        x1, y1 = ring[i][0], ring[i][1]
+        x2, y2 = ring[i + 1][0], ring[i + 1][1]
+        total += (x2 - x1) * (y2 + y1)
+    return total > 0
 
 
 def _pg_type_for(field: dict[str, Any]) -> str:
