@@ -614,6 +614,14 @@ OSMNX_CHICAGO_BIKE_NETWORK_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+OSMNX_DETROIT_BIKE_NETWORK_UC = DatasetUpdateConfig(
+    spec=specs.OSMNX_DETROIT_BIKE_NETWORK_SPEC,
+    update_cron="55 6 * * 4",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
 #######################################################################################
 #    CKAN                                                                             #
 #######################################################################################
@@ -629,6 +637,51 @@ TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_UC = DatasetUpdateConfig(
 TORONTO_BICYCLE_PARKING_RACKS_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_BICYCLE_PARKING_RACKS_SPEC,
     update_cron="3 6 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+
+#######################################################################################
+#    ArcGIS Hub                                                                       #
+#######################################################################################
+
+TORONTO_TRAFFIC_COLLISIONS_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_TRAFFIC_COLLISIONS_SPEC,
+    update_cron="0 3 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_BIKE_LANES_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_BIKE_LANES_SPEC,
+    update_cron="4 3 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_BIKE_PARKING_SPEC,
+    update_cron="7 3 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_BOUNDARY_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_BOUNDARY_SPEC,
+    update_cron="6 3 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_TRAFFIC_CRASHES_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_TRAFFIC_CRASHES_SPEC,
+    update_cron="10 3 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
     full_update_mode="api",
