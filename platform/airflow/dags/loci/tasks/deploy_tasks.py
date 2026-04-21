@@ -34,7 +34,7 @@ from loci.deploy import upload_file_to_s3
 from loci.exports.graph_export import RoutingGraphExporter
 
 BIKE_MAP_APP_DIR = "/opt/airflow/app-files/bike-map"
-BIKE_MAP_EXPORT_DIR = "/opt/airflow/exports/bike-map"
+BIKE_MAP_EXPORT_DIR_BASE = "/opt/airflow/exports/bike-map"
 _LAMBDA_DIR = Path("/opt/airflow/app-infra/bike-map/lambda")
 _LOCI_DIR = Path("/opt/airflow/dags/loci")
 
@@ -63,7 +63,7 @@ def _sync_to_s3(local_dirs: list[str], bucket: str, logger: Logger) -> int:
 
     For example, given:
         /opt/airflow/app-files/bike-map/index.html         → index.html
-        /opt/airflow/exports/bike-map/data/crashes.geojson  → data/crashes.geojson
+        /opt/airflow/exports/bike-map/dev/data/crashes.geojson  → data/crashes.geojson
 
     Returns the number of files uploaded.
     """
@@ -152,8 +152,11 @@ def deploy_bike_map(task_logger: Logger) -> dict:
     bucket = os.environ["BIKE_MAP_APP_FILE_BUCKET"]
     distribution_id = os.environ["BIKE_MAP_CLOUDFRONT_DIST_ID"]
 
+    env = os.environ.get("BIKE_MAP_ENVIRONMENT", "dev")
+    export_dir = str(Path(BIKE_MAP_EXPORT_DIR_BASE) / env)
+
     file_count = _sync_to_s3(
-        [BIKE_MAP_APP_DIR, BIKE_MAP_EXPORT_DIR],
+        [BIKE_MAP_APP_DIR, export_dir],
         bucket,
         task_logger,
     )
@@ -228,8 +231,9 @@ def export_routing_graph(conn_id: str, task_logger: Logger) -> dict:
     """Build the safety-weighted routing graph and upload it to S3."""
     bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
     key = os.environ.get("BIKE_MAP_ROUTING_GRAPH_KEY", "graph/routing_graph.pkl.gz")
+    marts_schema = os.environ["MARTS_SCHEMA_NAME"]
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
-    exporter = RoutingGraphExporter(engine)
+    exporter = RoutingGraphExporter(engine, marts_schema=marts_schema)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir) / "routing_graph.pkl.gz"
