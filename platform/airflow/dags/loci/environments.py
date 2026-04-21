@@ -65,7 +65,7 @@ def get_env(env: str) -> EnvConfig:
     return EnvConfig(
         name=env,
         aws_profile=os.environ.get(f"AWS_PROFILE_{suffix}"),
-        aws_region=os.environ.get("AWS_REGION", "us-east-1"),
+        aws_region=_require("BIKE_MAP_AWS_REGION", suffix),
         app_file_bucket=_require("BIKE_MAP_APP_FILE_BUCKET", suffix),
         cloudfront_dist_id=_require("BIKE_MAP_CLOUDFRONT_DIST_ID", suffix),
         routing_graph_bucket=_require("BIKE_MAP_ROUTING_GRAPH_BUCKET", suffix),
