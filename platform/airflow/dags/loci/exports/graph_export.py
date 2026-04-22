@@ -14,11 +14,8 @@ Usage from an Airflow task:
 
     from loci.exports.graph_export import RoutingGraphExporter
 
-    exporter = RoutingGraphExporter(engine)
+    exporter = RoutingGraphExporter(engine, marts_schema="dbt_loci_marts")
     output_path = exporter.export(output_path=Path("/tmp/routing_graph.pkl.gz"))
-
-Configuration via environment variables:
-    MARTS_SCHEMA_NAME  — dbt marts schema (e.g. dbt_loci_marts)
 """
 
 from __future__ import annotations
@@ -26,7 +23,6 @@ from __future__ import annotations
 import gzip
 import json
 import logging
-import os
 import pickle
 from pathlib import Path
 
@@ -42,10 +38,11 @@ class RoutingGraphExporter:
     Parameters
     ----------
     engine : PostgresEngine
+    marts_schema : str
+        dbt marts schema name. Caller is responsible for determining this
+        from the target environment.
     batch_size : int
         Rows per batch when streaming edges from the database.
-    marts_schema : str, optional
-        dbt marts schema name. Falls back to the MARTS_SCHEMA_NAME env var.
     min_component_size : int
         Weakly connected components smaller than this are dropped before
         serialization. This removes isolated subgraphs (parking lots,
@@ -88,15 +85,13 @@ class RoutingGraphExporter:
     def __init__(
         self,
         engine: PostgresEngine,
+        marts_schema: str,
         batch_size: int = 50_000,
-        marts_schema: str | None = None,
         min_component_size: int = 75,
     ):
         self.engine = engine
+        self.marts_schema = marts_schema
         self.batch_size = batch_size
-        self.marts_schema = (
-            marts_schema if marts_schema is not None else os.environ["MARTS_SCHEMA_NAME"]
-        )
         self.min_component_size = min_component_size
 
     def export(self, output_path: Path) -> Path:

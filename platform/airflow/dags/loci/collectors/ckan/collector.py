@@ -74,10 +74,11 @@ class CKANCollector:
         self,
         engine: Any,
         tracker: IngestionTracker | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.engine = engine
         self.tracker = tracker or IngestionTracker(engine=self.engine)
-        self.logger = logging.getLogger("ckan_collector")
+        self.logger = logger or logging.getLogger("ckan_collector")
 
         self._client_cache: dict[str, CKANClient] = {}
 

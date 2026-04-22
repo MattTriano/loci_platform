@@ -8,13 +8,11 @@ and writes it to disk.
 
 Usage from an Airflow task:
 
-    from loci.exports.geojson_export import export_all, BIKE_MAP_EXPORTS
+    from loci.exports.geojson_export import GeoJsonExporter, build_bike_map_exports
 
-    export_all(engine, BIKE_MAP_EXPORTS, output_dir="/opt/airflow/exports/bike-map")
-
-Usage standalone:
-
-    python -m loci.exports.geojson_export
+    configs = build_bike_map_exports(marts_schema="dbt_loci_marts")
+    exporter = GeoJsonExporter(engine, output_dir="/opt/airflow/exports/bike-map")
+    exporter.export_all(configs)
 """
 
 from __future__ import annotations
@@ -22,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -69,74 +66,74 @@ class GeoJSONExportConfig:
     """Optional row limit."""
 
 
-# ── Export configs for the bike map app ───────────────────
-
-BIKE_MAP_EXPORTS: list[GeoJSONExportConfig] = [
-    GeoJSONExportConfig(
-        name="crashes",
-        schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
-        table="bike_crash_hotspots",
-        geometry_column="geom",
-        properties=[
-            "crash_record_id",
-            "crash_date",
-            "local_crash_time",
-            "local_crash_day_of_week",
-            "first_crash_type",
-            "most_severe_injury",
-            "hit_and_run_i",
-            "dooring_i",
-            "weather_condition",
-            "lighting_condition",
-            "street_name",
-            "street_direction",
-            "prim_contributory_cause",
-            "injuries_total",
-            "injuries_fatal",
-            "injuries_incapacitating",
-            "severity_score",
-            "crash_year",
-        ],
-    ),
-    GeoJSONExportConfig(
-        name="thefts",
-        schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
-        table="chicago_bike_theft_hotspots",
-        latitude_column="latitude",
-        longitude_column="longitude",
-        properties=[
-            "source",
-            "source_id",
-            "theft_date",
-            "theft_year",
-            "theft_hour",
-            "location_description",
-            "bike_description",
-            "theft_description",
-            "locking_description",
-        ],
-    ),
-    GeoJSONExportConfig(
-        name="parking",
-        schema=os.environ.get("MARTS_SCHEMA_NAME", "marts"),
-        table="chicago_bike_parking",
-        geometry_column="geom",
-        properties=[
-            "source",
-            "id",
-            "location",
-            "name",
-            "type",
-            "capacity",
-            "covered",
-            "indoor",
-            "fee",
-            "lit",
-            "operator",
-            "access",
-        ],
-    ),
-]
+def build_bike_map_exports(marts_schema: str) -> list[GeoJSONExportConfig]:
+    """Build the list of bike map export configs for the given marts schema."""
+    return [
+        GeoJSONExportConfig(
+            name="crashes",
+            schema=marts_schema,
+            table="bike_crash_hotspots",
+            geometry_column="geom",
+            properties=[
+                "crash_record_id",
+                "crash_date",
+                "local_crash_time",
+                "local_crash_day_of_week",
+                "first_crash_type",
+                "most_severe_injury",
+                "hit_and_run_i",
+                "dooring_i",
+                "weather_condition",
+                "lighting_condition",
+                "street_name",
+                "street_direction",
+                "prim_contributory_cause",
+                "injuries_total",
+                "injuries_fatal",
+                "injuries_incapacitating",
+                "severity_score",
+                "crash_year",
+            ],
+        ),
+        GeoJSONExportConfig(
+            name="thefts",
+            schema=marts_schema,
+            table="chicago_bike_theft_hotspots",
+            latitude_column="latitude",
+            longitude_column="longitude",
+            properties=[
+                "source",
+                "source_id",
+                "theft_date",
+                "theft_year",
+                "theft_hour",
+                "location_description",
+                "bike_description",
+                "theft_description",
+                "locking_description",
+            ],
+        ),
+        GeoJSONExportConfig(
+            name="parking",
+            schema=marts_schema,
+            table="chicago_bike_parking",
+            geometry_column="geom",
+            properties=[
+                "source",
+                "id",
+                "location",
+                "name",
+                "type",
+                "capacity",
+                "covered",
+                "indoor",
+                "fee",
+                "lit",
+                "operator",
+                "access",
+            ],
+        ),
+    ]
 
 
 class GeoJsonExporter:
@@ -229,7 +226,6 @@ class GeoJsonExporter:
 
         Args:
             cfg:        Export configuration.
-            output_dir: Directory to write the .geojson file into.
 
         Returns:
             Path to the written file.
@@ -272,9 +268,7 @@ class GeoJsonExporter:
         """Export all configured mart tables to GeoJSON files.
 
         Args:
-            engine:     A PostgresEngine instance.
-            configs:    List of export configurations.
-            output_dir: Directory to write files into.
+            configs: List of export configurations.
 
         Returns:
             List of paths to written files.

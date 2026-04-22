@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import boto3
 
@@ -10,7 +11,7 @@ def upload_file_to_s3(
     bucket: str,
     key: str,
     logger: logging.Logger | None = None,
-    s3_client: str | None = None,
+    s3_client: Any | None = None,
 ) -> str:
     """Upload a local file to S3.
 
@@ -20,6 +21,8 @@ def upload_file_to_s3(
         key: S3 object key (e.g. "routing_graph/costs.parquet").
         logger: Optional logger instance. Falls back to module logger.
         s3_client: Optional boto3 S3 client. Created if not provided.
+            Pass a client built from an env-specific boto3.Session to
+            ensure uploads go to the right AWS account.
 
     Returns:
         The s3:// URI of the uploaded file.

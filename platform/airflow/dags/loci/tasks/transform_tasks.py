@@ -3,18 +3,23 @@ from logging import Logger
 
 from airflow.sdk import task, task_group
 from airflow.sdk.bases.operator import chain
+from loci.environments import get_env
 
 DBT_CMD = "/home/airflow/dbt_venv/bin/dbt"
 DBT_PROJECT_DIR = "/opt/airflow/dbt"
 
 
-def run_dbt(*args: str) -> str:
-    """Run a dbt command and return stdout. Raises on failure."""
-    result = subprocess.run(
-        [DBT_CMD, *args, "--project-dir", DBT_PROJECT_DIR],
-        capture_output=True,
-        text=True,
-    )
+def run_dbt(*args: str, target: str | None = None) -> str:
+    """Run a dbt command and return stdout. Raises on failure.
+
+    If target is provided, passes --target to dbt so the right
+    profiles.yml output is used.
+    """
+    cmd = [DBT_CMD, *args, "--project-dir", DBT_PROJECT_DIR]
+    if target:
+        cmd += ["--target", target]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
     print("=== STDOUT ===")
     print(result.stdout)
     print("=== STDERR ===")
@@ -27,8 +32,9 @@ def run_dbt(*args: str) -> str:
 
 
 @task
-def build_pre_geocode() -> str:
-    return run_dbt("build", "--select", "+geocoded_address_cache")
+def build_pre_geocode(env: str) -> str:
+    target = get_env(env).dbt_target
+    return run_dbt("build", "--select", "+geocoded_address_cache", target=target)
 
 
 @task
@@ -46,16 +52,17 @@ def geocode(conn_id: str, task_logger: Logger, restrict_region: str | None) -> d
 
 
 @task
-def build_post_geocode() -> str:
-    return run_dbt("build", "--select", "geocoded_address_cache+")
+def build_post_geocode(env: str) -> str:
+    target = get_env(env).dbt_target
+    return run_dbt("build", "--select", "geocoded_address_cache+", target=target)
 
 
 @task_group
 def dbt_build_with_geocoding(
-    conn_id: str, task_logger: Logger, restrict_region: str | None
+    env: str, conn_id: str, task_logger: Logger, restrict_region: str | None
 ) -> None:
-    _pre_build = build_pre_geocode()
+    _pre_build = build_pre_geocode(env=env)
     _geocode = geocode(conn_id=conn_id, task_logger=task_logger, restrict_region=restrict_region)
-    _post_build = build_post_geocode()
+    _post_build = build_post_geocode(env=env)
 
     chain(_pre_build, _geocode, _post_build)

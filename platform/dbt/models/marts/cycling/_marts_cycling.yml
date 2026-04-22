@@ -139,8 +139,9 @@ models:
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 1
-              max_value: 5
+              arguments:
+                min_value: 1
+                max_value: 5
       - name: geom
         tests:
           - not_null

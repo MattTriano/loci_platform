@@ -4,10 +4,8 @@ Airflow tasks for deploying the bike map to S3 + CloudFront.
 Syncs all files from the local export directory to an S3 bucket and
 creates a CloudFront cache invalidation.
 
-Configuration via environment variables:
-    BIKE_MAP_APP_FILE_BUCKET    — S3 bucket name
-    BIKE_MAP_CLOUDFRONT_DIST_ID — CloudFront distribution ID
-    BIKE_MAP_ENVIRONMENT        — Environment name (dev, staging, prod)
+Per-env configuration (buckets, CloudFront distribution, Lambda ARN,
+AWS profile) comes from loci.environments.get_env.
 
 Usage in a DAG:
 
@@ -16,10 +14,9 @@ Usage in a DAG:
     @dag(...)
     def my_dag():
         ...
-        export_bike_map_geojson(conn_id="gis_dwh_db") >> deploy_bike_map()
+        export_bike_map_geojson(env="dev", conn_id="gis_dwh_db") >> deploy_bike_map(env="dev")
 """
 
-import os
 import subprocess
 import tempfile
 import time
@@ -27,14 +24,15 @@ import zipfile
 from logging import Logger
 from pathlib import Path
 
-import boto3
 from airflow.sdk import task
+from loci.aws import get_boto_session
 from loci.db.af_utils import get_postgres_engine
 from loci.deploy import upload_file_to_s3
+from loci.environments import EnvConfig, get_env
 from loci.exports.graph_export import RoutingGraphExporter
 
 BIKE_MAP_APP_DIR = "/opt/airflow/app-files/bike-map"
-BIKE_MAP_EXPORT_DIR = "/opt/airflow/exports/bike-map"
+BIKE_MAP_EXPORT_DIR_BASE = "/opt/airflow/exports/bike-map"
 _LAMBDA_DIR = Path("/opt/airflow/app-infra/bike-map/lambda")
 _LOCI_DIR = Path("/opt/airflow/dags/loci")
 
@@ -54,7 +52,7 @@ def _get_content_type(path: Path) -> str:
     return CONTENT_TYPES.get(path.suffix, "application/octet-stream")
 
 
-def _sync_to_s3(local_dirs: list[str], bucket: str, logger: Logger) -> int:
+def _sync_to_s3(local_dirs: list[str], cfg: EnvConfig, logger: Logger) -> int:
     """Upload files from multiple local directories to the S3 bucket.
 
     Each directory is synced relative to itself, preserving structure.
@@ -62,12 +60,12 @@ def _sync_to_s3(local_dirs: list[str], bucket: str, logger: Logger) -> int:
     Subdirectories listed in SKIP_DIRS are excluded.
 
     For example, given:
-        /opt/airflow/app-files/bike-map/index.html         → index.html
-        /opt/airflow/exports/bike-map/data/crashes.geojson  → data/crashes.geojson
+        /opt/airflow/app-files/bike-map/index.html              → index.html
+        /opt/airflow/exports/bike-map/dev/data/crashes.geojson  → data/crashes.geojson
 
     Returns the number of files uploaded.
     """
-    s3 = boto3.client("s3")
+    s3 = get_boto_session(cfg).client("s3")
     count = 0
 
     for local_dir in local_dirs:
@@ -89,10 +87,16 @@ def _sync_to_s3(local_dirs: list[str], bucket: str, logger: Logger) -> int:
             key = str(rel)
             content_type = _get_content_type(file_path)
 
-            logger.info("Uploading %s → s3://%s/%s (%s)", file_path, bucket, key, content_type)
+            logger.info(
+                "Uploading %s → s3://%s/%s (%s)",
+                file_path,
+                cfg.app_file_bucket,
+                key,
+                content_type,
+            )
             s3.upload_file(
                 str(file_path),
-                bucket,
+                cfg.app_file_bucket,
                 key,
                 ExtraArgs={"ContentType": content_type},
             )
@@ -101,14 +105,14 @@ def _sync_to_s3(local_dirs: list[str], bucket: str, logger: Logger) -> int:
     return count
 
 
-def _invalidate_cloudfront(distribution_id: str, logger: Logger) -> str:
+def _invalidate_cloudfront(cfg: EnvConfig, logger: Logger) -> str:
     """Create a CloudFront invalidation for all paths.
 
     Returns the invalidation ID.
     """
-    cf = boto3.client("cloudfront")
+    cf = get_boto_session(cfg).client("cloudfront")
     resp = cf.create_invalidation(
-        DistributionId=distribution_id,
+        DistributionId=cfg.cloudfront_dist_id,
         InvalidationBatch={
             "Paths": {"Quantity": 1, "Items": ["/*"]},
             "CallerReference": str(int(time.time())),
@@ -119,57 +123,54 @@ def _invalidate_cloudfront(distribution_id: str, logger: Logger) -> str:
     return invalidation_id
 
 
-def _sync_bike_map_config(logger: Logger) -> dict:
+def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
     """Upload the environment-specific config.json to S3.
 
-    Reads config/{environment}.json from the app directory and uploads
-    it as config.json in the S3 bucket root, where index.html expects it.
+    Reads config/{env}.json from the app directory and uploads it as
+    config.json in the S3 bucket root, where index.html expects it.
     """
-    bucket = os.environ["BIKE_MAP_APP_FILE_BUCKET"]
-    env = os.environ.get("BIKE_MAP_ENVIRONMENT", "dev")
-
-    config_path = Path(BIKE_MAP_APP_DIR) / "config" / f"{env}.json"
+    config_path = Path(BIKE_MAP_APP_DIR) / "config" / f"{cfg.name}.json"
     if not config_path.exists():
         raise FileNotFoundError(
             f"Config file not found: {config_path}. "
             f"Expected one of: dev.json, staging.json, prod.json"
         )
 
-    s3 = boto3.client("s3")
-    logger.info("Uploading %s → s3://%s/config.json", config_path, bucket)
+    s3 = get_boto_session(cfg).client("s3")
+    logger.info("Uploading %s → s3://%s/config.json", config_path, cfg.app_file_bucket)
     s3.upload_file(
         str(config_path),
-        bucket,
+        cfg.app_file_bucket,
         "config.json",
         ExtraArgs={"ContentType": "application/json"},
     )
-    return {"bucket": bucket, "environment": env, "source": str(config_path)}
+    return {"bucket": cfg.app_file_bucket, "environment": cfg.name, "source": str(config_path)}
 
 
 @task
-def deploy_bike_map(task_logger: Logger) -> dict:
+def deploy_bike_map(env: str, task_logger: Logger) -> dict:
     """Sync bike map files to S3 and invalidate the CloudFront cache."""
-    bucket = os.environ["BIKE_MAP_APP_FILE_BUCKET"]
-    distribution_id = os.environ["BIKE_MAP_CLOUDFRONT_DIST_ID"]
+    cfg = get_env(env)
+    export_dir = str(Path(BIKE_MAP_EXPORT_DIR_BASE) / cfg.name)
 
     file_count = _sync_to_s3(
-        [BIKE_MAP_APP_DIR, BIKE_MAP_EXPORT_DIR],
-        bucket,
+        [BIKE_MAP_APP_DIR, export_dir],
+        cfg,
         task_logger,
     )
-    task_logger.info("Uploaded %d files to s3://%s", file_count, bucket)
+    task_logger.info("Uploaded %d files to s3://%s", file_count, cfg.app_file_bucket)
 
-    conf_log = _sync_bike_map_config(task_logger)
+    conf_log = _sync_bike_map_config(cfg, task_logger)
     task_logger.info(
         "Uploaded %s env config to s3://%s",
         conf_log.get("environment", "missing_env"),
         conf_log.get("bucket", "missing_bucket"),
     )
 
-    invalidation_id = _invalidate_cloudfront(distribution_id, task_logger)
+    invalidation_id = _invalidate_cloudfront(cfg, task_logger)
 
     return {
-        "bucket": bucket,
+        "bucket": cfg.app_file_bucket,
         "files_uploaded": file_count,
         "invalidation_id": invalidation_id,
     }
@@ -224,32 +225,33 @@ def build_lambda_zip(output_path: Path) -> Path:
 
 
 @task
-def export_routing_graph(conn_id: str, task_logger: Logger) -> dict:
+def export_routing_graph(env: str, conn_id: str, task_logger: Logger) -> dict:
     """Build the safety-weighted routing graph and upload it to S3."""
-    bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
-    key = os.environ.get("BIKE_MAP_ROUTING_GRAPH_KEY", "graph/routing_graph.pkl.gz")
+    cfg = get_env(env)
+    session = get_boto_session(cfg)
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
-    exporter = RoutingGraphExporter(engine)
+    exporter = RoutingGraphExporter(engine, marts_schema=cfg.marts_schema)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir) / "routing_graph.pkl.gz"
         exporter.export(output_path)
         uri = upload_file_to_s3(
             local_path=output_path,
-            bucket=bucket,
-            key=key,
+            bucket=cfg.routing_graph_bucket,
+            key=cfg.routing_graph_key,
             logger=task_logger,
+            s3_client=session.client("s3"),
         )
 
     task_logger.info("Routing graph uploaded to %s", uri)
-    return {"uri": uri, "bucket": bucket, "key": key}
+    return {"uri": uri, "bucket": cfg.routing_graph_bucket, "key": cfg.routing_graph_key}
 
 
 @task
-def deploy_lambda(task_logger: Logger) -> dict:
+def deploy_lambda(env: str, task_logger: Logger) -> dict:
     """Build the Lambda deployment package and update the function code."""
-    bucket = os.environ["BIKE_MAP_ROUTING_GRAPH_BUCKET"]
-    lambda_arn = os.environ["BIKE_MAP_ROUTING_LAMBDA_ARN"]
+    cfg = get_env(env)
+    session = get_boto_session(cfg)
     zip_key = "lambda/routing_api.zip"
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -262,17 +264,18 @@ def deploy_lambda(task_logger: Logger) -> dict:
 
         uri = upload_file_to_s3(
             local_path=zip_path,
-            bucket=bucket,
+            bucket=cfg.routing_graph_bucket,
             key=zip_key,
             logger=task_logger,
+            s3_client=session.client("s3"),
         )
 
     task_logger.info("Lambda package uploaded to %s", uri)
 
-    lam = boto3.client("lambda", region_name=os.environ.get("BIKE_MAP_AWS_REGION", "us-east-1"))
+    lam = session.client("lambda")
     response = lam.update_function_code(
-        FunctionName=lambda_arn,
-        S3Bucket=bucket,
+        FunctionName=cfg.routing_lambda_arn,
+        S3Bucket=cfg.routing_graph_bucket,
         S3Key=zip_key,
     )
     task_logger.info(
@@ -283,6 +286,6 @@ def deploy_lambda(task_logger: Logger) -> dict:
 
     return {
         "uri": uri,
-        "lambda_arn": lambda_arn,
+        "lambda_arn": cfg.routing_lambda_arn,
         "last_update_status": response.get("LastUpdateStatus"),
     }
