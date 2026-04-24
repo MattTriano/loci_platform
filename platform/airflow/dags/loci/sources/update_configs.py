@@ -523,7 +523,7 @@ COOK_COUNTY_PARCEL_SALES = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-COOK_COUNTY_ASSESSED_PARCEL_VALUES = DatasetUpdateConfig(
+COOK_COUNTY_ASSESSED_PARCEL_VALUES_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_ASSESSED_PARCEL_VALUES_SPEC,
     update_cron="30 1 * * 1,4",
     full_update_week_of_month=1,

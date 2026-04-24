@@ -43,6 +43,10 @@ class SocrataDatasetSpec(DatasetSpec):
     full_update_mode : str
         "api" for paginated SODA API, "file_download" for bulk
         CSV/GeoJSON export. Default "api".
+    max_rows : int | None
+        Optional cap on rows staged per incremental run. Stops at the
+        first page boundary after the cap is reached, so the actual
+        count may slightly exceed this value. None means no cap.
     """
 
     name: str
@@ -52,6 +56,7 @@ class SocrataDatasetSpec(DatasetSpec):
     entity_key: list[str] | None = None
     incremental_column: str = ":updated_at"
     full_update_mode: str = "api"
+    max_rows: int | None = None
     source: str = "socrata"
 
     def __post_init__(self):
@@ -59,3 +64,5 @@ class SocrataDatasetSpec(DatasetSpec):
             raise ValueError(
                 f"full_update_mode must be 'api' or 'file_download', got {self.full_update_mode!r}"
             )
+        if self.max_rows is not None and self.max_rows <= 0:
+            raise ValueError(f"max_rows must be positive, got {self.max_rows}")

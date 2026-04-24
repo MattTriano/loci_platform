@@ -59,12 +59,15 @@ class SocrataCollector:
         tracker: IngestionTracker | None = None,
         app_token: str | None = None,
         page_size: int = 25000,
+        max_rows: int | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.engine = engine
         self.tracker = tracker or IngestionTracker(engine=self.engine)
         self.app_token = app_token
         self.page_size = page_size
-        self.logger = logging.getLogger("socrata_collector")
+        self.max_rows = max_rows
+        self.logger = logger or logging.getLogger("socrata_collector")
 
         self._client: SocrataClient | None = None
         self._metadata_cache: dict[str, SocrataTableMetadata] = {}
@@ -437,6 +440,7 @@ class SocrataCollector:
         config: IncrementalConfig | None = None,
         entity_key: list[str] | None = None,
         high_water_mark_override: str | None = None,
+        max_rows: int | None = None,
     ) -> int:
         """
         Run an incremental paginated ingest using staged_ingest.
@@ -475,6 +479,9 @@ class SocrataCollector:
             "prior_high_water_mark": f"{hwm_value}|{hwm_id}" if hwm_id else hwm_value,
             "domain": domain,
         }
+        effective_max_rows = max_rows if max_rows is not None else self.max_rows
+        if effective_max_rows is not None:
+            run_metadata["max_rows"] = effective_max_rows
 
         # Determine merge strategy
         if entity_key:
@@ -557,6 +564,14 @@ class SocrataCollector:
                         max_hwm,
                         max_hwm_id,
                     )
+                    if effective_max_rows is not None and stager.rows_staged >= effective_max_rows:
+                        self.logger.info(
+                            "Reached max_rows cap (%d staged >= %d); stopping pagination",
+                            stager.rows_staged,
+                            effective_max_rows,
+                        )
+                        run.metadata["max_rows_hit"] = True
+                        break
 
             # stager has now merged — record results on the run
             run.rows_staged = stager.rows_staged
