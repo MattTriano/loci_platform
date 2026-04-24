@@ -21,6 +21,11 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
     tg_id_prefix = get_task_group_id_prefix(task_instance=context["ti"])
     logical_date = context["logical_date"]
 
+    force_full_refresh = context["params"].get("force_full_refresh", False)
+    if force_full_refresh:
+        task_logger.info("force_full_refresh=True in DAG run conf; routing to full update")
+        return f"{tg_id_prefix}run_full_update"
+
     week_number = (logical_date.day - 1) // 7 + 1
     task_logger.info(f"Current week_number: {week_number}")
     task_logger.info(f"Current month:       {logical_date.month}")

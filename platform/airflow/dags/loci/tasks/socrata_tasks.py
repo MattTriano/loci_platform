@@ -59,6 +59,7 @@ def run_incremental_update(
             entity_key=update_config.spec.entity_key or None,
         ),
         entity_key=update_config.spec.entity_key or None,
+        max_rows=update_config.spec.max_rows,
     )
     task_logger.info(
         f"Incremental: ingested {rows} rows into raw_data.{update_config.spec.target_table}"

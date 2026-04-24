@@ -60,6 +60,7 @@ class TestBikeIndexClient:
 
         assert result == {"bikes": []}
 
+    @pytest.mark.network
     @patch.object(requests.Session, "request")
     def test_request_raises_rate_limited_on_429(self, mock_request):
         resp = MagicMock()
@@ -76,6 +77,7 @@ class TestBikeIndexClient:
             assert last_exc.retry_after == 5.0
             assert mock_request.call_count == 4
 
+    @pytest.mark.network
     @patch.object(requests.Session, "request")
     def test_request_raises_server_error_on_500(self, mock_request):
         resp = MagicMock()

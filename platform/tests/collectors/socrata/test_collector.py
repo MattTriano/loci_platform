@@ -402,3 +402,211 @@ class TestMetadataCache:
 
         assert collector._get_metadata("abcd-1234") is meta
         assert collector._get_metadata("abcd-1234") is meta  # same object
+
+
+# ---------------------------------------------------------------------------
+# max_rows cap tests
+# ---------------------------------------------------------------------------
+
+
+class TestMaxRowsCap:
+    """Tests for the optional row cap on incremental runs."""
+
+    CONFIG = IncrementalConfig(
+        incremental_column="updated_on",
+        entity_key=["id"],
+    )
+
+    def _setup_preflight(self, mock_engine):
+        stub_table_columns(mock_engine, _STANDARD_TABLE_COLUMNS)
+
+    def test_stops_at_page_boundary_when_cap_equals_page(self, collector, mock_engine):
+        """Cap exactly at page size: one page stages, no further pages fetched."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        self._setup_preflight(mock_engine)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-01-03", "val": "c"},
+        )
+        attach_mock_client(collector, [page1, page2])
+
+        total = collector.incremental_update(
+            "abcd-1234", "test", "raw_data", self.CONFIG, max_rows=2
+        )
+
+        assert total == 2
+        stager = mock_engine._stagers[0]
+        assert stager.rows_staged == 2
+        assert len(stager.batches) == 1
+
+    def test_overshoots_to_finish_page_when_cap_hit_mid_page(self, collector, mock_engine):
+        """Cap between page boundaries: finishes the current page, then stops."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        self._setup_preflight(mock_engine)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-01-03", "val": "c"},
+            {"id": "4", "updated_on": "2024-01-04", "val": "d"},
+        )
+        page3 = make_batch(
+            {"id": "5", "updated_on": "2024-01-05", "val": "e"},
+        )
+        attach_mock_client(collector, [page1, page2, page3])
+
+        total = collector.incremental_update(
+            "abcd-1234", "test", "raw_data", self.CONFIG, max_rows=3
+        )
+
+        # Cap is 3, but page 2 pushes us to 4; we stop there without fetching page 3.
+        assert total == 4
+        stager = mock_engine._stagers[0]
+        assert stager.rows_staged == 4
+        assert len(stager.batches) == 2
+
+    def test_cap_larger_than_available_rows_ingests_everything(self, collector, mock_engine):
+        """Cap above total row count behaves like no cap."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        self._setup_preflight(mock_engine)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-01-03", "val": "c"},
+        )
+        attach_mock_client(collector, [page1, page2])
+
+        total = collector.incremental_update(
+            "abcd-1234", "test", "raw_data", self.CONFIG, max_rows=1000
+        )
+
+        assert total == 3
+        stager = mock_engine._stagers[0]
+        assert stager.rows_staged == 3
+
+    def test_cap_hit_recorded_in_run_metadata(self, collector, mock_engine):
+        """When the cap fires, run.metadata['max_rows_hit'] is True."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        self._setup_preflight(mock_engine)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-01-03", "val": "c"},
+        )
+        attach_mock_client(collector, [page1, page2])
+
+        collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG, max_rows=2)
+
+        run = collector.tracker.last_run
+        assert run.metadata.get("max_rows_hit") is True
+
+    def test_cap_not_hit_is_not_recorded_in_run_metadata(self, collector, mock_engine):
+        """When the run finishes naturally, max_rows_hit is absent or False."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        self._setup_preflight(mock_engine)
+
+        batch = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+        )
+        attach_mock_client(collector, [batch])
+
+        collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG, max_rows=1000)
+
+        run = collector.tracker.last_run
+        assert not run.metadata.get("max_rows_hit", False)
+
+    def test_hwm_after_capped_run_reflects_last_staged_page(self, collector, mock_engine):
+        """HWM advances through fully-staged pages so a follow-up run resumes correctly."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        self._setup_preflight(mock_engine)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        # Page 2 would advance the HWM further, but we cap before fetching it.
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-06-15", "val": "c"},
+        )
+        attach_mock_client(collector, [page1, page2])
+
+        collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG, max_rows=2)
+
+        run = collector.tracker.last_run
+        assert run.high_water_mark is not None
+        assert "2024-01-02" in run.high_water_mark
+        assert "2024-06-15" not in run.high_water_mark
+
+    def test_explicit_argument_overrides_instance_default(self, mock_engine):
+        """max_rows passed to incremental_update wins over SocrataCollector(max_rows=...)."""
+        collector = SocrataCollector(engine=mock_engine, page_size=100, max_rows=1000)
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        stub_table_columns(mock_engine, _STANDARD_TABLE_COLUMNS)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-01-03", "val": "c"},
+        )
+        attach_mock_client(collector, [page1, page2])
+
+        total = collector.incremental_update(
+            "abcd-1234", "test", "raw_data", self.CONFIG, max_rows=2
+        )
+
+        assert total == 2
+
+    def test_instance_default_applies_when_no_argument_passed(self, mock_engine):
+        """SocrataCollector(max_rows=...) caps a run with no explicit arg."""
+        collector = SocrataCollector(engine=mock_engine, page_size=100, max_rows=2)
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        stub_table_columns(mock_engine, _STANDARD_TABLE_COLUMNS)
+
+        page1 = make_batch(
+            {"id": "1", "updated_on": "2024-01-01", "val": "a"},
+            {"id": "2", "updated_on": "2024-01-02", "val": "b"},
+        )
+        page2 = make_batch(
+            {"id": "3", "updated_on": "2024-01-03", "val": "c"},
+        )
+        attach_mock_client(collector, [page1, page2])
+
+        total = collector.incremental_update("abcd-1234", "test", "raw_data", self.CONFIG)
+
+        assert total == 2
+
+    def test_rejects_max_rows_on_full_refresh_via_api(self, collector, mock_engine):
+        """max_rows with an empty HWM override (full refresh via API) must raise."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+
+        with pytest.raises(ValueError, match="full_refresh_via_api"):
+            collector.incremental_update(
+                "abcd-1234",
+                "test",
+                "raw_data",
+                self.CONFIG,
+                high_water_mark_override="",
+                max_rows=100,
+            )
+
+    def test_full_refresh_via_api_rejects_instance_max_rows(self, mock_engine):
+        """Instance-level max_rows must not silently apply to full_refresh_via_api."""
+        collector = SocrataCollector(engine=mock_engine, page_size=100, max_rows=100)
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+
+        with pytest.raises(ValueError, match="full_refresh_via_api"):
+            collector.full_refresh_via_api("abcd-1234", "test", "raw_data")
