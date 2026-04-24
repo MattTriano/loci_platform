@@ -480,6 +480,17 @@ class SocrataCollector:
             "domain": domain,
         }
         effective_max_rows = max_rows if max_rows is not None else self.max_rows
+
+        # A full refresh via API forces high_water_mark_override="" to restart from
+        # the beginning of the dataset on every run. Combining that with max_rows
+        # would re-ingest the same prefix on each run and never reach the tail.
+        if effective_max_rows is not None and high_water_mark_override == "":
+            raise ValueError(
+                "max_rows cannot be used with full_refresh_via_api: a capped full "
+                "refresh would re-ingest the same prefix on every run. Use "
+                "full_refresh_via_file for large datasets, or drop max_rows."
+            )
+
         if effective_max_rows is not None:
             run_metadata["max_rows"] = effective_max_rows
 
