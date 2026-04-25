@@ -1,0 +1,286 @@
+version: 2
+
+models:
+  - name: stg_ccao__parcel_sales
+    description: |
+      Staged parcel sales. One row per (sale_doc_no, pin). Current SCD
+      records only (valid_to IS NULL filter applied). Column names
+      normalized; PINs zero-padded to 14 digits. No filtering on price,
+      deed type, or multisale status — that happens downstream.
+    columns:
+      - name: pin
+        description: 14-digit Property Index Number, zero-padded.
+        data_tests:
+          - not_null
+      - name: sale_doc_no
+        description: Recorder of Deeds document number.
+        data_tests:
+          - not_null
+      - name: source_row_id
+        description: Primary key from source (row_id). Unique per sale row.
+        data_tests:
+          - not_null
+          - unique
+      - name: sale_date
+        data_tests:
+          - not_null
+      - name: sale_price
+        description: |
+          Sale price in USD. May be zero or implausibly low for non-arms-length transfers;
+          not cleaned here.
+        data_tests:
+          - not_null
+      - name: tax_year
+        description: Assessment tax year associated with the sale record.
+        data_tests:
+          - not_null
+      - name: is_multisale
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+      - name: property_class
+        description: CCAO 3-character property class code (e.g., '203', '299', '593').
+        data_tests:
+          - not_null
+      - name: deed_type_preferred
+        description: |
+          MyDec-reported deed type when available, otherwise fallback deed_type. May be NULL.
+      - name: ccao_flag_duplicate_price_365d
+        description: |
+          CCAO-computed flag — TRUE if the same PIN had a sale at the same price within 365 days.
+      - name: ccao_flag_under_10k
+        description: CCAO-computed flag — TRUE if sale_price < $10,000.
+      - name: ccao_flag_deed_type
+        description: |
+          CCAO-computed flag — TRUE if the deed type is associated with non-arms-length transfers.
+
+  - name: stg_ccao__res_characteristics
+    description: >
+      Staged residential property characteristics for single and multi-family
+      buildings (classes 2xx, <7 units). One row per (pin, tax_year, card),
+      where card identifies a distinct building on the parcel. A small
+      number of duplicate grain keys exist in the source and are resolved
+      by keeping the most recently ingested row per key. Most source column
+      names are preserved — only cryptic abbreviations and ambiguous names
+      were renamed. The char_* prefix signals a categorical code referenced
+      in the CCAO data dictionary.
+    columns:
+      - name: pin
+        description: 14-digit Property Index Number, zero-padded.
+        data_tests:
+          - not_null
+      - name: tax_year
+        data_tests:
+          - not_null
+      - name: card
+        description: |
+          Sequence number identifying a distinct building on the parcel (starts at 1).
+          Nearly all PINs have card=1; multi-card PINs have 2+.
+        data_tests:
+          - not_null
+      - name: property_class
+        data_tests:
+          - not_null
+      - name: pin_is_multicard
+        description: |
+          TRUE when the parcel has more than one building (card). Joining to sales on
+          (pin, tax_year) will duplicate rows for these PINs.
+      - name: tieback_key_pin
+        description: |
+          When one building spans multiple PINs, the "key" PIN (typically the one carrying
+          the building value) is referenced here. NULL for non-tieback PINs.
+      - name: card_proration_rate
+        description: |
+          Source-provided allocation rate for splitting value across cards on a PIN.
+          Not applied in staging.
+      - name: cdu
+        description: |
+          Condition, Desirability, and Utility — a categorical assessor rating.
+          See CCAO data dictionary for code values.
+      - name: year_built
+        description: |
+          Year the primary structure on the card was built. May be NULL or implausibly
+          low for older or data-quality-flagged parcels.
+      - name: building_sqft
+        description: Building square footage for this card.
+      - name: land_sqft
+        description: |
+          Land square footage attributed to this card. For multi-card parcels the source
+          has already allocated land across cards.
+      - name: num_apartments
+        description: |
+          Number of apartments/units for multi-family buildings. Kept as text pending review
+          — values may include non-numeric markers.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - pin
+              - tax_year
+              - card
+
+  - name: stg_ccao__condo_characteristics
+    description: >
+      Staged condominium characteristics. One row per (pin, tax_year)
+      where each PIN represents a single deeded element of a condo
+      building — a residential unit, a parking space, a storage locker,
+      or a common area. Buildings are identified by pin10 (first 10
+      digits of the PIN); tieback_proration_rate gives each PIN's legal
+      ownership share within the building. Boolean type flags
+      (is_parking_space, is_common_area, bldg_is_mixed_use) may not be
+      stable across years for the same PIN. Defensive DISTINCT ON keeps
+      most-recently-ingested row per grain key.
+    columns:
+      - name: pin
+        description: 14-digit Property Index Number, zero-padded.
+        data_tests:
+          - not_null
+      - name: pin10
+        description: |
+          First 10 digits of the PIN. Identifies the condo building; all units, parking, and
+          common areas in the same building share a pin10.
+        data_tests:
+          - not_null
+      - name: tax_year
+        data_tests:
+          - not_null
+      - name: property_class
+        description: |
+          CCAO 3-character class code. Class 299 covers most residential condos including deeded
+          parking and storage. Other condo classes exist (e.g., for non-residential or specialized
+          condo types).
+        data_tests:
+          - not_null
+      - name: tieback_proration_rate
+        description: |
+          This PIN's legal ownership share of the building. Within a single pin10, these
+            rates sum to 1.0. Used in place of "size" for condo value allocation.
+      - name: is_parking_space
+        description: |
+          TRUE when the PIN is a deeded parking space rather than a residential unit.
+          Filter out for "actual condo unit" analyses.
+      - name: is_common_area
+        description: |
+          TRUE when the PIN represents a common area rather than a sellable unit.
+          These rarely transact.
+      - name: bldg_is_mixed_use
+        description: TRUE when the building contains both residential and commercial space.
+      - name: unit_sqft
+        description: |
+          Reported square footage of this individual unit. Frequently NULL for
+          parking/common-area PINs.
+      - name: building_sqft
+        description: |
+          Total square footage of the building this PIN belongs to. Same value across all PINs
+          sharing a pin10.
+      - name: building_num_non_units
+        description: |
+          Count of PINs in the building that are not residential units (parking,
+            storage, common areas).
+      - name: building_num_pins
+        description: Total count of PINs in the building (residential + non-unit).
+      - name: cdu
+        description: |
+          Condition, Desirability, and Utility — categorical assessor rating.
+          See CCAO data dictionary for codes. Often NULL for condos.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - pin
+              - tax_year
+
+  - name: stg_ccao__parcel_addresses
+    description: |
+      Staged parcel addresses. One row per (pin, tax_year) carrying both
+      the situs address (physical location of the parcel) and the mailing
+      address (where the tax bill is sent). Differences between the two
+      are a strong investor / non-owner-occupied signal. Address strings
+      are passed through as recorded — they are not normalized.
+    columns:
+      - name: pin
+        description: 14-digit Property Index Number, zero-padded.
+        data_tests:
+          - not_null
+      - name: pin10
+        description: |
+          First 10 digits of the PIN. Useful for joining to condo characteristics at the
+          building level.
+      - name: tax_year
+        data_tests:
+          - not_null
+      - name: situs_address_full
+        description: |
+          Free-text street address of the parcel itself. May be NULL for vacant land or
+          non-addressable parcels.
+      - name: situs_city
+      - name: situs_state
+      - name: situs_zip5
+        description: 5-digit ZIP code of the situs address. Source has no ZIP+4 extension.
+      - name: mail_address_name
+        description: |
+          Recipient name on the tax bill, as written on the tax roll. Often contains entity
+          keywords (LLC, TRUST, INC) for non-individual owners.
+      - name: mail_address_full
+        description: Free-text street address where the tax bill is sent.
+      - name: mail_city
+      - name: mail_state
+      - name: mail_zip5
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - pin
+              - tax_year
+
+  - name: stg_ccao__assessed_values
+    description: |
+      Staged assessed values. One row per (pin, tax_year). Values are
+      carried at three assessment stages — mailed (CCAO initial),
+      certified (CCAO final), board (BOR post-appeal) — and four
+      components per stage (land, building, total, HIE). NULL values
+      at a stage mean the PIN did not reach that stage in that year
+      and are preserved, not imputed.
+    columns:
+      - name: pin
+        description: 14-digit Property Index Number, zero-padded.
+        data_tests:
+          - not_null
+      - name: tax_year
+        description: Assessment tax year.
+        data_tests:
+          - not_null
+      - name: property_class
+        description: |
+          CCAO 3-character property class code. May change year-over-year as a parcel is
+          reclassified.
+        data_tests:
+          - not_null
+      - name: township_code
+        data_tests:
+          - not_null
+      - name: mailed_total_value
+        description: |
+          Total assessed value (land + building) at the mailed stage. NULL if PIN did not
+          reach this stage.
+      - name: certified_total_value
+        description: |
+          Total assessed value at the certified stage. NULL if PIN did not reach this stage
+          (e.g., non-reassessment year with no CCAO-level appeal).
+      - name: board_total_value
+        description: |
+          Total assessed value at the Board of Review stage. NULL if PIN did not reach this stage
+          (e.g., no BOR appeal). When non-null, this is the final value used for that tax year's
+          tax bill.
+      - name: mailed_hie_value
+        description: |
+          Home Improvement Exemption — a dollar reduction in assessed value for qualifying
+          improvements, at the mailed stage.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - pin
+              - tax_year

@@ -1,0 +1,41 @@
+version: 2
+
+sources:
+  - name: ccao
+    description: >
+      Cook County Assessor's Office (CCAO) open data, ingested from the
+      Cook County Open Data Portal (Socrata). Tables are stored as-is
+      from the source, with ingestion metadata appended
+      (ingested_at, socrata_*, valid_from, valid_to, row_id, record_hash).
+      Staging models filter to current records (valid_to IS NULL).
+    schema: raw_data
+
+    tables:
+      - name: cook_county_assessed_parcel_values
+      - name: cook_county_commercial_valuation_data
+      - name: cook_county_neighborhood_boundaries
+      - name: cook_county_parcel_addresses
+      - name: cook_county_parcel_sales
+        identifier: cook_county_parcel_sales
+        description: >
+          Real estate sales used by the CCAO to estimate fair cash values.
+          Produced by joining Illinois Department of Revenue MyDec data
+          with Cook County Recorder of Deeds data. Grain is one row per
+          (doc_no, pin) — a single deed covering multiple PINs produces
+          one row per PIN with is_multisale = TRUE. As of Oct 2023, the
+          CCAO no longer filters this dataset by deed type, price, or
+          recency; filtering is the consumer's responsibility.
+        columns:
+          - name: pin
+            description: 14-digit Property Index Number (zero-padded).
+          - name: doc_no
+            description: Recorder of Deeds document number. Unique per sale only when is_multisale = FALSE.
+          - name: sale_date
+            description: Sale date. When is_mydec_date = TRUE, sourced from the PTAX-203/MyDec form; otherwise inferred from the recording date.
+          - name: sale_price
+            description: Sale price in US dollars, as recorded on the deed.
+          - name: is_multisale
+            description: TRUE when the deed covers multiple PINs — price cannot be cleanly attributed to one parcel.
+      - name: cook_county_residential_condominium_unit_characteristics
+      - name: cook_county_single_and_multi_family_improvement_characteristics
+

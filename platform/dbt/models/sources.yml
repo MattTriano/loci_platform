@@ -38,13 +38,7 @@ sources:
       - name: chicago_traffic_crashes_crashes
       - name: chicago_traffic_crashes_people
       - name: chicago_traffic_crashes_vehicles
-      - name: cook_county_assessed_parcel_values
-      - name: cook_county_commercial_valuation_data
-      - name: cook_county_neighborhood_boundaries
-      - name: cook_county_parcel_addresses
-      - name: cook_county_parcel_sales
-      - name: cook_county_residential_condominium_unit_characteristics
-      - name: cook_county_single_and_multi_family_improvement_characteristics
+
       - name: cta_ridership_daily_boarding_totals
       - name: detroit_bike_lanes
       - name: detroit_bike_parking
