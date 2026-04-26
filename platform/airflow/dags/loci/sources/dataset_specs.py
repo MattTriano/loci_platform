@@ -757,7 +757,7 @@ COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_SPEC = SocrataDatasetSpec(
     dataset_id="pcdw-pxtg",
     target_table="cook_county_neighborhood_boundaries",
     target_schema="raw_data",
-    entity_key=None,
+    entity_key=["town_nbhd"],
     full_update_mode="api",
 )
 

@@ -258,9 +258,6 @@ models:
           reclassified.
         data_tests:
           - not_null
-      - name: township_code
-        data_tests:
-          - not_null
       - name: mailed_total_value
         description: |
           Total assessed value (land + building) at the mailed stage. NULL if PIN did not
@@ -284,3 +281,46 @@ models:
             combination_of_columns:
               - pin
               - tax_year
+
+  - name: stg_ccao__neighborhoods
+    description: >
+      Cook County Assessor neighborhood boundaries. One row per CCAO
+      neighborhood (~860 across the county). The neighborhood_code
+      column (source town_nbhd) is the join key from sales and assessed
+      values; the bare neighborhood_within_township sequence number is
+      not unique across the county. Triad columns identify the
+      triennial reassessment group. Boundary geometry preserved as-is.
+    columns:
+      - name: neighborhood_code
+        description: |
+          Concatenation of township_code and the within-township sequence number
+          (e.g., '31041' = township 31, neighborhood 041). Joins to the nbhd column on
+          parcel-grained tables.
+        data_tests:
+          - not_null
+          - unique
+      - name: township_code
+        data_tests:
+          - not_null
+      - name: township_name
+        data_tests:
+          - not_null
+      - name: neighborhood_within_township
+        description: |
+          Within-township neighborhood number. Not unique across the county; do not use as a
+          join key on its own.
+      - name: triad_code
+        description: |
+          Triennial reassessment group code. Cook County reassesses one of three triads
+          (1=Chicago, 2=North, 3=South) per year on a three-year cycle.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['1', '2', '3']
+      - name: triad_name
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['City', 'North', 'South']
+      - name: boundary_geom
+        description: PostGIS multipolygon of the neighborhood boundary, EPSG:4326.

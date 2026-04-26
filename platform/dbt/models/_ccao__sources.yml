@@ -7,24 +7,22 @@ sources:
       Cook County Open Data Portal (Socrata). Tables are stored as-is
       from the source, with ingestion metadata appended
       (ingested_at, socrata_*, valid_from, valid_to, row_id, record_hash).
-      Staging models filter to current records (valid_to IS NULL).
+      Staging models filter to current records (valid_to IS NULL) where
+      SCD columns are present.
     schema: raw_data
 
     tables:
-      - name: cook_county_assessed_parcel_values
-      - name: cook_county_commercial_valuation_data
-      - name: cook_county_neighborhood_boundaries
-      - name: cook_county_parcel_addresses
       - name: cook_county_parcel_sales
-        identifier: cook_county_parcel_sales
         description: >
           Real estate sales used by the CCAO to estimate fair cash values.
           Produced by joining Illinois Department of Revenue MyDec data
           with Cook County Recorder of Deeds data. Grain is one row per
           (doc_no, pin) — a single deed covering multiple PINs produces
-          one row per PIN with is_multisale = TRUE. As of Oct 2023, the
-          CCAO no longer filters this dataset by deed type, price, or
-          recency; filtering is the consumer's responsibility.
+          one row per PIN with is_multisale = TRUE. The dataset is not
+          pre-filtered by deed type, price, or recency; filtering is the
+          consumer's responsibility. The table includes three CCAO-computed
+          flag columns (sale_filter_*) which are heuristic indicators of
+          non-arms-length sales, exposed through staging as ccao_flag_*.
         columns:
           - name: pin
             description: 14-digit Property Index Number (zero-padded).
@@ -36,6 +34,112 @@ sources:
             description: Sale price in US dollars, as recorded on the deed.
           - name: is_multisale
             description: TRUE when the deed covers multiple PINs — price cannot be cleanly attributed to one parcel.
-      - name: cook_county_residential_condominium_unit_characteristics
-      - name: cook_county_single_and_multi_family_improvement_characteristics
 
+      - name: cook_county_assessed_parcel_values
+        description: >
+          Historic assessed values for every Cook County parcel by tax year
+          (1999 onward). Grain is (pin, year). Each row carries land,
+          building, total, and HIE (home improvement exemption) values at
+          three assessment stages: mailed (CCAO initial), certified (CCAO
+          final, post-CCAO-appeals), and board (Board of Review,
+          post-BOR-appeals; final for the tax year). NULLs at a stage mean
+          the PIN did not reach that stage in that year and are not
+          imputed. A small number of historic records have NULL township —
+          mostly exempt and divided-interest commercial / condo PINs.
+        columns:
+          - name: pin
+            description: 14-digit Property Index Number (zero-padded).
+          - name: year
+            description: Tax year.
+          - name: class
+            description: CCAO 3-character property class code. May change year-over-year as a parcel is reclassified.
+
+      - name: cook_county_single_and_multi_family_improvement_characteristics
+        description: >
+          Building characteristics for residential parcels (class 2xx —
+          single family and small multi-family, fewer than 7 units). Grain
+          is (pin, year, card) where card identifies a distinct building
+          on the parcel; ~8% of PINs have more than one card. Tieback
+          columns handle the inverse case (one building spanning multiple
+          PINs). Most categorical columns use the char_* prefix and are
+          coded values referenced in the CCAO data dictionary. The source
+          contains a small number of duplicate (pin, year, card) rows
+          that staging deduplicates.
+        columns:
+          - name: pin
+            description: 14-digit Property Index Number (zero-padded).
+          - name: card
+            description: Sequence number for distinct buildings on a single PIN. Most PINs have card=1; multi-card PINs have 2+.
+          - name: pin_is_multicard
+            description: TRUE when the parcel has more than one building. Joining to sales on (pin, year) will duplicate rows for these PINs.
+
+      - name: cook_county_residential_condominium_unit_characteristics
+        description: >
+          Characteristics for individual condominium PINs (typically class
+          299 and similar). Grain is (pin, year). Each PIN represents one
+          deeded element of a condo building — a residential unit, deeded
+          parking, deeded storage, or common area. Buildings are grouped
+          by pin10 (first 10 digits of the PIN); tieback_proration_rate
+          is each PIN's legal ownership share within its building and
+          sums to 1.0 across the building. Boolean type flags
+          (is_parking_space, is_common_area, bldg_is_mixed_use) may not
+          be stable across years for the same PIN.
+        columns:
+          - name: pin
+            description: 14-digit Property Index Number (zero-padded).
+          - name: pin10
+            description: First 10 digits of the PIN, identifying the condo building.
+          - name: tieback_proration_rate
+            description: This PIN's legal ownership share of the building. Within a single pin10, these rates sum to 1.0.
+          - name: is_parking_space
+            description: TRUE when the PIN is a deeded parking space rather than a residential unit. Flag may change across years for the same PIN (~1,894 PINs affected).
+
+      - name: cook_county_parcel_addresses
+        description: >
+          Parcel situs (physical) and mailing addresses by tax year.
+          Grain is (pin, year). Mailing address ≠ situs address is a
+          strong signal of non-owner-occupied parcels (rentals, trusts,
+          businesses); mail_address_name often contains entity keywords
+          (LLC, TRUST, INC) for non-individual owners. Address strings
+          are not normalized at staging — exact-string comparison between
+          situs and mail addresses will not be reliable for owner-occupancy
+          analysis.
+        columns:
+          - name: pin
+            description: 14-digit Property Index Number (zero-padded).
+          - name: prop_address_full
+            description: Free-text street address of the parcel itself.
+          - name: mail_address_full
+            description: Free-text street address where the tax bill is sent.
+          - name: mail_address_name
+            description: Recipient name on the tax bill, as written on the tax roll.
+
+      - name: cook_county_neighborhood_boundaries
+        description: >
+          CCAO neighborhood polygons. ~860 rows. The town_nbhd column
+          (concatenation of township_code and within-township sequence)
+          is the join key from parcel-grained tables; the bare nbhd
+          column is only unique within a township. Triad columns identify
+          the triennial reassessment group. No SCD versioning; current
+          snapshot only. Geometry is provided as PostGIS multipolygon
+          (EPSG:4326).
+        columns:
+          - name: town_nbhd
+            description: Concatenation of township_code and nbhd. Joins to the nbhd field on parcel-grained tables.
+          - name: triad_code
+            description: Triennial reassessment group (1=Chicago/City, 2=North, 3=South).
+          - name: multipolygon
+            description: PostGIS multipolygon geometry of the neighborhood boundary.
+
+      - name: cook_county_commercial_valuation_data
+        description: >
+          CCAO commercial valuation working data — inputs and outputs of
+          how the assessor values commercial parcels using income, cost,
+          and sales-comparison approaches. Differs from other CCAO tables
+          in two structural ways: PINs are stored in dashed format
+          (e.g., 01-02-202-045-0000) rather than 14-digit unbroken;
+          and the grain is one row per commercial valuation, where a
+          single valuation can span multiple PINs (the pins column is a
+          comma-separated list, ~27% of rows are multi-PIN). Not used in
+          v1 of this project; commercial sales are present in fct_sales
+          but not enriched with these features.
