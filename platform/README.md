@@ -20,6 +20,8 @@ and if the images build successfully, you can start the system up via
 podman compose up
 ```
 
+If you want to tune the PostGIS database for your hardware, see the `Local Postgres Overrides` section below.
+
 ### API Keys / App Tokens
 
 #### Census API key
@@ -165,3 +167,58 @@ There are some tests that actually make network calls, and this can be somewhat 
 ```console
 uv run pytest -m "not network"
 ```
+
+# Local Postgres Overrides
+
+To override the default `postgresql.conf` file and tune the database for your hardware, create a `.conf` file in directory `<project_root>/platform/podman/storage/conf.d/` and override the Postgres configs you want to tweak. I'd recommend copying the content in the `.../storage/postgresql.conf` file up until the "LOCAL OVERRIDES" section, pasting that into a `.../storage/conf.d/postgresql.local.conf` file and then adjust values based on the hardware you're running this project on.
+
+## How it works
+
+`postgresql.conf` ends with `include_dir = '/etc/postgresql/conf.d'`, which loads every `*.conf` file in this directory in alphabetical order. Anything set in a local file overrides the corresponding setting in the main config.
+
+Files in this directory (other than the `.gitignore`) are gitignored, so your overrides won't conflict with upstream changes when you pull.
+
+## Quick start
+
+Create a `local.conf` file in `<project_root>/platform/podman/storage/conf.d/` with your overrides. For example, on a decent workstation laptop-sized machine (32 GB RAM, 8 cores):
+
+```conf
+# conf.d/local.conf
+shared_buffers = 8GB
+effective_cache_size = 24GB
+work_mem = 64MB
+maintenance_work_mem = 1GB
+
+max_worker_processes = 8
+max_parallel_workers = 6
+max_parallel_workers_per_gather = 3
+max_parallel_maintenance_workers = 3
+```
+
+Restart the container, then verify your settings are active:
+
+```sql
+show shared_buffers
+```
+
+## Rough sizing guidelines
+
+These are starting points, not rules. Adjust based on your actual workload.
+
+| Setting                            | Formula                          |
+|------------------------------------|----------------------------------|
+| `shared_buffers`                   | ~25% of RAM                      |
+| `effective_cache_size`             | ~75% of RAM                      |
+| `work_mem`                         | RAM / (max_connections * ~4)     |
+| `maintenance_work_mem`             | RAM / 32, capped around 4 GB     |
+| `max_worker_processes`             | physical core count              |
+| `max_parallel_workers_per_gather`  | ~1/3 of physical cores           |
+
+## When to override what
+
+- **Less RAM than 128 GB** → scale down all memory settings
+- **Fewer cores than 16** → scale down parallelism settings
+- **Spinning disks instead of SSD** → set `random_page_cost = 4.0`,
+  `effective_io_concurrency = 1`
+- **Warehouse is a system of record** → set `synchronous_commit = on`
+- **Running many concurrent dbt threads (>8)** → lower `work_mem`

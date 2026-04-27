@@ -120,6 +120,8 @@ services:
 
   postgis:
     image: postgis/postgis:18-3.6
+    env_file:
+    - ${ENV_FILE_PATH:-.env}
     environment:
       POSTGRES_USER: loci
       POSTGRES_PASSWORD: loci
@@ -129,6 +131,10 @@ services:
     volumes:
       - postgis-db-volume:/var/lib/postgresql
       - ./podman/storage/postgis_init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./podman/storage/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./podman/storage/conf.d:/etc/postgresql/conf.d:ro
+    shm_size: ${POSTGIS_SHM_SIZE:-256mb}
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       test:
         [
