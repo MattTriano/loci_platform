@@ -7,6 +7,12 @@ models:
       records only (valid_to IS NULL filter applied). Column names
       normalized; PINs zero-padded to 14 digits. No filtering on price,
       deed type, or multisale status — that happens downstream.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - pin
+              - sale_doc_no
     columns:
       - name: pin
         description: 14-digit Property Index Number, zero-padded.
@@ -66,6 +72,13 @@ models:
       names are preserved — only cryptic abbreviations and ambiguous names
       were renamed. The char_* prefix signals a categorical code referenced
       in the CCAO data dictionary.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - pin
+              - tax_year
+              - card
     columns:
       - name: pin
         description: 14-digit Property Index Number, zero-padded.
@@ -113,13 +126,6 @@ models:
         description: |
           Number of apartments/units for multi-family buildings. Kept as text pending review
           — values may include non-numeric markers.
-    data_tests:
-      - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - pin
-              - tax_year
-              - card
 
   - name: stg_ccao__condo_characteristics
     description: >

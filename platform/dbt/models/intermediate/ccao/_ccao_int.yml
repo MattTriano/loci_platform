@@ -1,0 +1,227 @@
+version: 2
+
+models:
+  - name: int_sales__flag_pre_filters
+    description: >
+      Adds composed eligibility flags to staged sales. One row per staged
+      sale row; no filtering. The headline output is
+      is_eligible_for_market_analysis, which is TRUE when the sale is
+      neither a multisale nor flagged by any of the CCAO's three
+      pre-computed sale filter columns. NULL source flags are treated
+      as non-disqualifying. This eligibility flag is a necessary but not
+      sufficient condition for arms-length classification — subsequent
+      flag models layer on outlier, short-term-resale, and name heuristics.
+    columns:
+      - name: source_row_id
+        description: Carried from staging. Unique per sale row.
+        data_tests:
+          - not_null
+          - unique
+      - name: is_multisale_disqualifying
+        description: |
+          Equal to is_multisale; named for its role in the flag suite. TRUE means the sale
+          is not eligible for market analysis because the deed covers multiple PINs.
+        data_tests:
+          - not_null
+      - name: is_eligible_for_market_analysis
+        description: |
+          TRUE when the sale passes all four disqualifying checks (multisale, deed type,
+          under-10k price, duplicate price within 365 days). NULL flags are treated as
+          non-disqualifying.
+        data_tests:
+          - not_null
+
+  - name: int_sales__flag_short_term_owner
+    description: >
+      For each sale, computes how recently the same PIN was previously
+      sold and how soon it will be resold. Lookback covers all sales,
+      not just eligible ones — a recent recording of any kind is
+      meaningful context. Both day-count and 365-day-window flags are
+      exposed so downstream models can pick the signal they need.
+    columns:
+      - name: source_row_id
+        data_tests:
+          - not_null
+          - unique
+      - name: prior_sale_date
+        description: Date of the most recent prior sale of this PIN. NULL if no prior sale recorded.
+      - name: days_since_prior_sale
+        description: Days between the prior sale and this sale. NULL if no prior sale.
+      - name: has_prior_sale_within_365d
+        description: |
+          TRUE when this PIN was sold within the prior 365 days. FALSE when no prior sale
+          exists or it was more than a year ago.
+        data_tests:
+          - not_null
+      - name: next_sale_date
+        description: Date of the next sale of this PIN. NULL if no subsequent sale recorded.
+      - name: days_until_next_sale
+        description: Days between this sale and the next sale of the PIN. NULL if no next sale.
+      - name: has_next_sale_within_365d
+        description: |
+          TRUE when the PIN was resold within 365 days. FALSE when no next sale exists or it
+          was more than a year later.
+        data_tests:
+          - not_null
+
+  - name: int_parcel__lifecycle
+    description: >
+      Per-PIN lifecycle summary derived from staged assessed values.
+      Surfaces first/last year a PIN was observed in the assessed values
+      record, the number of distinct classes the PIN held over its
+      lifetime, and bookend class values. Used by the ROI mart to flag
+      holding periods that span class changes or candidate split /
+      consolidation events. The "appears_to_be_new" /
+      "appears_to_have_disappeared" flags are heuristic — they signal
+      that something happened to the PIN, not what.
+    columns:
+      - name: pin
+        data_tests:
+          - not_null
+          - unique
+      - name: first_seen_year
+        description: Earliest tax_year in which this PIN appears in assessed values.
+        data_tests:
+          - not_null
+      - name: last_seen_year
+        description: Latest tax_year in which this PIN appears in assessed values.
+        data_tests:
+          - not_null
+      - name: n_distinct_classes_observed
+        description: |
+          Count of distinct property_class values for this PIN over its lifetime.
+          1 means class-stable; >1 means at least one reclassification.
+        data_tests:
+          - not_null
+      - name: class_at_first_seen
+        description: property_class at the PIN's first_seen_year.
+      - name: class_at_last_seen
+        description: |
+          property_class at the PIN's last_seen_year. Equals class_at_first_seen when
+          n_distinct_classes_observed = 1.
+      - name: appears_to_be_new
+        description: |
+          TRUE when first_seen_year is more than one year after the earliest year in the
+          data. Suggests the PIN is the result of a split, consolidation, or new parcel
+          creation. Heuristic — does not identify the predecessor parcel(s).
+      - name: appears_to_have_disappeared
+        description: |
+          TRUE when last_seen_year is more than one year before the latest year in the data.
+          Suggests the PIN was consolidated, split into successors, or removed from assessment.
+          Heuristic — does not identify the successor parcel(s).
+
+  - name: int_sales__paired
+    description: >
+      Consecutive pairs of eligible sales on the same PIN. A PIN with
+      N eligible sales produces N-1 pair rows; PINs with fewer than 2
+      eligible sales are absent. Endpoints are restricted to sales
+      passing is_eligible_for_market_analysis. Sales that failed that
+      filter are surfaced via n_intervening_filtered_sales — a non-zero
+      value means the chain-of-title between purchase and resale
+      included filtered transactions and the resulting ROI should be
+      interpreted skeptically.
+    columns:
+      - name: pair_id
+        description: |
+          Concatenation of purchase and resale sale_doc_no values, joined with ':'.
+          Deterministic across runs.
+        data_tests:
+          - not_null
+          - unique
+      - name: pin
+        data_tests:
+          - not_null
+      - name: purchase_date
+        data_tests:
+          - not_null
+      - name: resale_date
+        data_tests:
+          - not_null
+      - name: holding_period_days
+        description: Days from purchase to resale. Zero for same-day pairs; never negative.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: n_intervening_filtered_sales
+        description: |
+          Count of ineligible sales of this PIN with dates strictly between purchase_date
+          and resale_date. Non-zero means chain-of-title quality is suspect for ROI purposes.
+        data_tests:
+          - not_null
+      - name: purchase_property_class
+        description: |
+          property_class on the purchase sale. Compare to resale_property_class to detect
+          class changes during hold.
+      - name: resale_property_class
+
+  - name: int_sales__flag_price_outliers
+    description: |
+      Sales with peer-group price outlier flags.
+      Statistics computed over eligible sales only; all sales scored against that distribution.
+      Geographic resolution falls back: neighborhood -> township -> thin (flags NULL).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [sale_doc_no, pin]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: |
+              not is_in_thin_group
+              or (is_price_high_outlier is null and is_price_low_outlier is null)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: |
+              peer_group_level != 'thin'
+              or (peer_group_median_log_price is null and peer_group_iqr_log_price is null)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: peer_group_level = 'thin' or peer_group_n_eligible >= 20
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: |
+              not (coalesce(is_price_high_outlier, false)
+              and coalesce(is_price_low_outlier, false))
+    columns:
+      - name: source_row_id
+        data_tests:
+          - not_null
+          - unique
+      - name: pin
+        data_tests:
+          - not_null
+      - name: sale_doc_no
+        data_tests:
+          - not_null
+      - name: sale_price
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1
+                strictly: false
+      - name: log_price
+        data_tests:
+          - not_null
+      - name: sale_year
+        data_tests:
+          - not_null
+      - name: peer_group_level
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['neighborhood', 'township', 'thin']
+      - name: is_in_thin_group
+        data_tests:
+          - not_null
+      - name: price_modified_z_score
+        description: |
+          Robust z-score on log(sale_price) using median and IQR/1.349 as scale.
+          NULL when is_in_thin_group, when IQR=0, or when the group lacks a median.
+      - name: peer_group_iqr_log_price
+        description: |
+          Interquartile range of log(sale_price) over eligible sales in the peer group.
+          May be 0 for degenerate groups where the middle 50% of eligible sales are
+          identically priced; in that case z-score and outlier flags are NULL.

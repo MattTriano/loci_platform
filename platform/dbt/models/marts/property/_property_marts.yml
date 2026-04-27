@@ -1,0 +1,74 @@
+version: 2
+
+models:
+  - name: fct_pin_holding_returns
+    description: >
+      One row per consecutive pair of eligible sales on the same PIN.
+      Each row carries the purchase and resale endpoints, holding-period
+      economics (gross return, annualized CAGR), and quality flags
+      indicating reasons the ROI calculation may be unreliable: class
+      changes during hold, intervening filtered sales (poor chain-of-title),
+      and PIN lifecycle anomalies (splits / consolidations / new
+      parcel emergence). Returns are nominal; real-return analysis
+      requires a CPI/HPI adjustment that is left to downstream.
+    columns:
+      - name: pair_id
+        description: Concatenation of purchase and resale sale_doc_no values.
+        data_tests:
+          - not_null
+          - unique
+      - name: pin
+        data_tests:
+          - not_null
+      - name: purchase_price
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: resale_price
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: holding_period_days
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: gross_return_pct
+        description: |
+          (resale_price / purchase_price) - 1, expressed as a decimal (e.g., 0.25 = 25% return).
+      - name: annualized_cagr_pct
+        description: Compound annual growth rate as a decimal. NULL for 0-day holding periods.
+      - name: is_class_changed
+        description: |
+          TRUE when purchase_property_class != resale_property_class. ROI may reflect class
+          transition (e.g., land developed into improvement) rather than market appreciation.
+      - name: is_short_hold
+        description: |
+          TRUE for holding periods under 90 days. CAGR is mathematically valid but absolute
+          magnitudes can be misleading.
+      - name: is_long_hold
+        description: |
+          TRUE for holding periods of 5 years or longer. Nominal returns increasingly
+          diverge from real returns; CPI adjustment matters here.
+      - name: pair_has_intervening_filtered_sales
+        description: |
+          TRUE when n_intervening_filtered_sales > 0. Suggests chain-of-title between
+          purchase and resale included transactions filtered as non-arms-length.
+      - name: pin_n_distinct_classes_observed
+        description: |
+          From int_parcel__lifecycle. >1 means the PIN was reclassified at some point
+          in its history (not necessarily during this pair's hold).
+      - name: pin_appears_to_be_new
+        description: |
+          From int_parcel__lifecycle. TRUE when the PIN first appeared in the assessed
+          values record after the data window's earliest year, suggesting a possible
+          split/consolidation predecessor.
+      - name: pin_appears_to_have_disappeared
+        description: |
+          From int_parcel__lifecycle. TRUE when the PIN's last appearance is before the current
+          max year, suggesting the PIN was later split, consolidated, or removed from assessment.
