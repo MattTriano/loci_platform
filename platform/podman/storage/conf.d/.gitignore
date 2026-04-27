@@ -1,0 +1,6 @@
+# Ignore all local override files in this directory
+*
+
+# But keep the directory itself and its documentation tracked
+!.gitignore
+
