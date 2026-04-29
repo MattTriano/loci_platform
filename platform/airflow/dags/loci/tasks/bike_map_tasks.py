@@ -1,0 +1,206 @@
+"""
+Shared task-graph builder for per-city bike map refresh DAGs.
+
+Each city has its own DAG (e.g. refresh_bike_map_chicago) but the overall
+shape is the same: build deps, build city-specific marts, export geojson,
+deploy frontend, build routing graph, run tests, deploy graph, deploy
+lambda. This module centralizes that shape; per-city DAGs just supply
+the city name, dbt selectors, and the geocoding bbox.
+"""
+
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from airflow.sdk import Param, task
+from airflow.sdk.bases.operator import chain
+from loci.aws import get_boto_session
+from loci.db.af_utils import get_postgres_engine
+from loci.deploy import upload_file_to_s3
+from loci.environments import VALID_ENVS, get_env
+from loci.exports.graph_export import RoutingGraphExporter
+from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda
+from loci.tasks.export_tasks import export_bike_map_geojson
+from loci.tasks.testing.route_tests import run_route_tests
+from loci.tasks.transform_tasks import run_dbt
+
+CONN_ID = "gis_dwh_db"
+ENV_TEMPLATE = "{{ params.env }}"
+
+task_logger = logging.getLogger("airflow.task")
+
+
+@dataclass(frozen=True)
+class CityBuildSpec:
+    """Per-city configuration for the refresh DAG.
+
+    city
+        City identifier matching VALID_CITIES (e.g. 'chicago').
+    geocode_bbox
+        PostGIS expression for the geocoding bounding box, or None if
+        the city's pipeline doesn't use the geocoder.
+    pre_export_dbt_selects
+        List of dbt --select expressions to run sequentially before the
+        geojson export. Each runs as a separate dbt build invocation
+        because they have ordering constraints (e.g. some need to run
+        with --indirect-selection=cautious to skip cross-model tests).
+    weights_dbt_select
+        dbt --select expression for the safety-weighted edges model that
+        feeds the routing graph.
+    """
+
+    city: str
+    geocode_bbox: str | None
+    pre_export_dbt_selects: list[tuple[str, ...]] = field(default_factory=list)
+    weights_dbt_select: str = "+bike_safety_weighted_edges"
+
+
+@task
+def install_dependencies(env: str) -> str:
+    target = get_env(env, _city_from_context()).dbt_target
+    return run_dbt("deps", target=target)
+
+
+def _city_from_context() -> str:
+    """Helper for tasks that need city without it being a param.
+
+    Reads from a context variable set by the per-city DAG factory.
+    Required because install_dependencies is shared but get_env now
+    requires city. Each per-city DAG sets the city via dag_params.
+    """
+    from airflow.sdk import get_current_context
+
+    return get_current_context()["params"]["city"]
+
+
+@task
+def run_dbt_select(env: str, select_args: tuple[str, ...]) -> str:
+    """Generic dbt build with a list of --select args."""
+    cfg = get_env(env, _city_from_context())
+    return run_dbt("build", *select_args, target=cfg.dbt_target)
+
+
+@task
+def build_routing_graph(
+    env: str, conn_id: str, graph_path: str, task_logger: logging.Logger
+) -> str:
+    """Build the safety-weighted routing graph for testing."""
+    cfg = get_env(env, _city_from_context())
+    engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
+    exporter = RoutingGraphExporter(engine, marts_schema=cfg.marts_schema)
+    output_path = Path(graph_path)
+    if output_path.exists():
+        output_path.unlink()
+        task_logger.info("Removed stale graph file at %s", output_path)
+    exporter.export(output_path)
+    task_logger.info("Built graph at %s", output_path)
+    return str(output_path)
+
+
+@task
+def run_tests(graph_path: str, task_logger: logging.Logger) -> list:
+    results = run_route_tests(graph_path, logger=task_logger)
+    task_logger.info("Test results %s", results)
+    return results
+
+
+@task
+def deploy_graph(env: str, graph_path: str, task_logger: logging.Logger) -> str:
+    cfg = get_env(env, _city_from_context())
+    uri = upload_file_to_s3(
+        local_path=graph_path,
+        bucket=cfg.routing_graph_bucket,
+        key=cfg.routing_graph_key,
+        logger=task_logger,
+        s3_client=get_boto_session(cfg).client("s3"),
+    )
+    task_logger.info("Routing graph uploaded to %s", uri)
+    return uri
+
+
+def build_refresh_task_graph(spec: CityBuildSpec) -> None:
+    """Build the standard refresh task graph for one city.
+
+    Called inside an @dag function. Returns nothing; just wires tasks.
+    """
+    graph_path = f"/tmp/routing_graph_{{{{ params.env }}}}_{spec.city}.pkl.gz"
+
+    _deps = install_dependencies(env=ENV_TEMPLATE)
+
+    # Geocoding fan-in (only if the city uses geocoding)
+    if spec.geocode_bbox is not None:
+        from loci.tasks.transform_tasks import build_pre_geocode, geocode
+
+        _pre_geocode = build_pre_geocode(env=ENV_TEMPLATE, city=spec.city)
+        _geocode = geocode(
+            conn_id=CONN_ID,
+            task_logger=task_logger,
+            restrict_region=spec.geocode_bbox,
+        )
+        chain(_deps, _pre_geocode, _geocode)
+        _pre_export_root = _geocode
+    else:
+        _pre_export_root = _deps
+
+    # Per-city dbt selects (each runs as a separate build to allow flags
+    # like --indirect-selection=cautious to vary)
+    pre_export_tasks = []
+    for i, select_args in enumerate(spec.pre_export_dbt_selects):
+        t = run_dbt_select.override(task_id=f"build_pre_export_{i}")(
+            env=ENV_TEMPLATE, select_args=select_args
+        )
+        chain(_pre_export_root, t)
+        pre_export_tasks.append(t)
+
+    # Geojson export depends on all pre-export builds
+    _export_layers = export_bike_map_geojson(
+        env=ENV_TEMPLATE,
+        city=spec.city,
+        conn_id=CONN_ID,
+        task_logger=task_logger,
+    )
+    chain(pre_export_tasks or [_pre_export_root], _export_layers)
+
+    _deploy_map = deploy_bike_map(env=ENV_TEMPLATE, city=spec.city, task_logger=task_logger)
+    chain(_export_layers, _deploy_map)
+
+    # Routing graph + lambda (parallel branch from deps)
+    _build_weights = run_dbt_select.override(task_id="build_safety_weighted_edges")(
+        env=ENV_TEMPLATE,
+        select_args=("--select", spec.weights_dbt_select),
+    )
+    _build_graph = build_routing_graph(
+        env=ENV_TEMPLATE,
+        conn_id=CONN_ID,
+        task_logger=task_logger,
+        graph_path=graph_path,
+    )
+    _run_tests = run_tests(task_logger=task_logger, graph_path=graph_path)
+    _deploy_graph = deploy_graph(
+        env=ENV_TEMPLATE,
+        graph_path=graph_path,
+        task_logger=task_logger,
+    )
+    _deploy_lambda = deploy_lambda(
+        env=ENV_TEMPLATE,
+        city=spec.city,
+        task_logger=task_logger,
+    )
+
+    chain(_deps, _build_weights, _build_graph, _run_tests, _deploy_graph, _deploy_lambda)
+
+
+def standard_dag_params(city: str) -> dict:
+    """Standard DAG params for a per-city refresh DAG."""
+    return {
+        "env": Param(
+            "dev",
+            type="string",
+            enum=list(VALID_ENVS),
+            title="Target environment",
+            description="Which AWS account + dbt target to build and deploy to.",
+        ),
+        # city is fixed per-DAG but kept as a param so _city_from_context
+        # can read it from the DAG run context. Not user-editable.
+        "city": Param(city, type="string", const=city),
+    }

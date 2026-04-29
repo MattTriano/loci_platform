@@ -1,3 +1,4 @@
+# /loci_platform/infra/modules/bike-map/variables.tf
 variable "basename" {
   description = "Base name for resource naming."
   type        = string
@@ -12,6 +13,11 @@ variable "environment" {
   }
 }
 
+variable "city" {
+  description = "City identifier (e.g. 'chicago'). Used in resource naming and the public URL."
+  type        = string
+}
+
 variable "app_name" {
   description = "Application name for resource naming."
   type        = string
@@ -24,7 +30,7 @@ variable "zone_id" {
 }
 
 variable "zone_name" {
-  description = "Route53 hosted zone domain name (e.g. dev.missinglastmile.net)."
+  description = "Route53 hosted zone domain name (e.g. dev.bikeinfra.com, or bikeinfra.com for prod)."
   type        = string
 }
 

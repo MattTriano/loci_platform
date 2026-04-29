@@ -1,3 +1,4 @@
+# /loci_platform/infra/modules/bike-map/outputs.tf
 output "s3_bucket_name" {
   description = "S3 bucket name for site content."
   value       = aws_s3_bucket.site.bucket

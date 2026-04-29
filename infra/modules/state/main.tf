@@ -1,3 +1,4 @@
+# loci_platform/infra/modules/state/main.tf
 provider "aws" {
   region = var.aws_region
 }

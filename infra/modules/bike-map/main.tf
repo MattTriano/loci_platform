@@ -1,7 +1,8 @@
+# loci_platform/infra/modules/bike-map/main.tf
 locals {
-  resource_name = "${var.basename}-${var.environment}-${var.app_name}"
-  domain        = "${var.app_name}.${var.zone_name}"
-  api_domain    = "routing-api.${var.zone_name}"
+  resource_name = "${var.basename}-${var.environment}-${var.city}-${var.app_name}"
+  domain        = "${var.city}.${var.zone_name}"
+  api_domain    = "routing-api.${var.city}.${var.zone_name}"
 }
 
 # -----------------------------------------------------------------------------
@@ -125,6 +126,7 @@ resource "aws_acm_certificate" "site" {
 }
 
 resource "aws_route53_record" "cert_validation" {
+  provider = aws.dns
   for_each = {
     for dvo in aws_acm_certificate.site.domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
@@ -161,6 +163,7 @@ resource "aws_acm_certificate" "api" {
 }
 
 resource "aws_route53_record" "api_cert_validation" {
+  provider = aws.dns
   for_each = {
     for dvo in aws_acm_certificate.api.domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
@@ -187,6 +190,7 @@ resource "aws_acm_certificate_validation" "api" {
 # -----------------------------------------------------------------------------
 
 resource "aws_route53_record" "site" {
+  provider = aws.dns
   zone_id = var.zone_id
   name    = local.domain
   type    = "A"
@@ -199,6 +203,7 @@ resource "aws_route53_record" "site" {
 }
 
 resource "aws_route53_record" "api" {
+  provider = aws.dns
   zone_id = var.zone_id
   name    = local.api_domain
   type    = "A"
@@ -272,7 +277,7 @@ resource "aws_iam_user_policy" "deploy" {
 # -----------------------------------------------------------------------------
 
 resource "aws_ssm_parameter" "routing_api_key" {
-  name  = "/${var.basename}/${var.environment}/bike-map/routing-api-key"
+  name  = "/${var.basename}/${var.environment}/${var.city}/bike-map/routing-api-key"
   type  = "SecureString"
   value = var.bike_map_routing_api_key
 

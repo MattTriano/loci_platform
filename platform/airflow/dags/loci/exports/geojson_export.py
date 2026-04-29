@@ -6,12 +6,17 @@ PostGIS geometry column or lat/lng columns), and which properties to
 include. The exporter queries PostGIS, builds a GeoJSON FeatureCollection,
 and writes it to disk.
 
+Per-city export configs are defined as builder functions
+(`build_<city>_bike_map_exports`) and registered in CITY_EXPORT_BUILDERS.
+The DAG looks up the right builder by city name at task-run time.
+
 Usage from an Airflow task:
 
-    from loci.exports.geojson_export import GeoJsonExporter, build_bike_map_exports
+    from loci.exports.geojson_export import GeoJsonExporter, CITY_EXPORT_BUILDERS
 
-    configs = build_bike_map_exports(marts_schema="dbt_loci_marts")
-    exporter = GeoJsonExporter(engine, output_dir="/opt/airflow/exports/bike-map")
+    builder = CITY_EXPORT_BUILDERS[city]
+    configs = builder(marts_schema=cfg.marts_schema)
+    exporter = GeoJsonExporter(engine, output_dir=...)
     exporter.export_all(configs)
 """
 
@@ -66,8 +71,8 @@ class GeoJSONExportConfig:
     """Optional row limit."""
 
 
-def build_bike_map_exports(marts_schema: str) -> list[GeoJSONExportConfig]:
-    """Build the list of bike map export configs for the given marts schema."""
+def build_chicago_bike_map_exports(marts_schema: str) -> list[GeoJSONExportConfig]:
+    """Build the export configs for the Chicago bike map."""
     return [
         GeoJSONExportConfig(
             name="crashes",
@@ -134,6 +139,13 @@ def build_bike_map_exports(marts_schema: str) -> list[GeoJSONExportConfig]:
             ],
         ),
     ]
+
+
+# Registry of per-city export builders. When onboarding a new city, write
+# a build_<city>_bike_map_exports function above and add an entry here.
+CITY_EXPORT_BUILDERS = {
+    "chicago": build_chicago_bike_map_exports,
+}
 
 
 class GeoJsonExporter:
