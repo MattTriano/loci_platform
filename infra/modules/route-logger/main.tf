@@ -9,6 +9,10 @@
 # ── S3 bucket for logs ────────────────────────────────────
 resource "aws_s3_bucket" "route_logs" {
   bucket = "${var.basename}-${var.environment}-route-logs"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "route_logs" {
