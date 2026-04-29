@@ -1,3 +1,4 @@
+# loci_platform/infra/modules/state/variables.tf
 variable "basename" {
   description = "The base name for created resources."
   type        = string

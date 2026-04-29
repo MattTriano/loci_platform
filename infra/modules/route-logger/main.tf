@@ -1,3 +1,4 @@
+# /loci_platform/infra/modules/route-logger/main.tf
 # Route Logger — API Gateway → S3
 #
 # A single POST endpoint that writes route request logs directly to S3
@@ -6,9 +7,14 @@
 # Each request is stored as a JSON object in S3 keyed by timestamp + request ID.
 # The IP address is injected server-side via the mapping template.
 
+locals {
+  log_bucket_name = coalesce(var.log_bucket_name, "${var.basename}-${var.environment}-${var.city}-route-logs")
+  resource_prefix = "${var.basename}-${var.environment}-${var.city}-route-logger"
+}
+
 # ── S3 bucket for logs ────────────────────────────────────
 resource "aws_s3_bucket" "route_logs" {
-  bucket = "${var.basename}-${var.environment}-route-logs"
+  bucket = local.log_bucket_name
 
   lifecycle {
     prevent_destroy = true
@@ -30,7 +36,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "route_logs" {
 
 # ── IAM role for API Gateway to write to S3 ───────────────
 resource "aws_iam_role" "apigw_s3" {
-  name = "${var.basename}-${var.environment}-route-logger-apigw"
+  name = "${local.resource_prefix}-apigw"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -58,7 +64,7 @@ resource "aws_iam_role_policy" "apigw_s3_put" {
 
 # ── API Gateway REST API ──────────────────────────────────
 resource "aws_api_gateway_rest_api" "route_logger" {
-  name        = "${var.basename}-${var.environment}-route-logger"
+  name        = local.resource_prefix
   description = "Logs bike route requests to S3"
 
   endpoint_configuration {
@@ -193,7 +199,6 @@ resource "aws_api_gateway_integration_response" "options_ok" {
 resource "aws_api_gateway_deployment" "route_logger" {
   rest_api_id = aws_api_gateway_rest_api.route_logger.id
 
-  # Redeploy when any of these resources change
   triggers = {
     redeployment = sha1(jsonencode([
       aws_api_gateway_resource.log,
@@ -221,8 +226,8 @@ resource "aws_api_gateway_method_settings" "throttle" {
   method_path = "*/*"
 
   settings {
-    throttling_rate_limit  = 10 # sustained requests per second
-    throttling_burst_limit = 50 # burst allowance
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 50
   }
 }
 

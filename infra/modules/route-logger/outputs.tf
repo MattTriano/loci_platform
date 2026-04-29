@@ -1,3 +1,4 @@
+# /loci_platform/infra/modules/route-logger/outputs.tf
 output "log_endpoint" {
   description = "POST endpoint URL for route logging (set this as LOG_ENDPOINT in index.html)"
   value       = "${aws_api_gateway_stage.v1.invoke_url}/log"

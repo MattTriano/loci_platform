@@ -1,3 +1,4 @@
+# /loci_platform/infra/main.tf
 provider "aws" {
   region = "us-east-2"
 }
@@ -7,39 +8,61 @@ provider "aws" {
   region = "us-east-1"
 }
 
+provider "aws" {
+  alias  = "admin_mgmt"
+  region = "us-east-2"
+
+  dynamic "assume_role" {
+    for_each = var.environment == "prod" ? [1] : []
+    content {
+      role_arn     = var.admin_mgmt_dns_role_arn
+      external_id  = "bikeinfra-dns-writer-v1"
+      session_name = "tofu-bikeinfra-dns"
+    }
+  }
+}
+
+# DNS zone — only for dev and staging.
+# Prod uses the admin-mgmt apex zone passed in via variable.
 module "dns_zone" {
   source = "./modules/dns-zone"
+  count  = var.environment == "prod" ? 0 : 1
 
   environment = var.environment
   base_domain = var.base_domain
 }
 
+locals {
+  zone_id   = var.environment == "prod" ? var.admin_mgmt_zone_id : module.dns_zone[0].zone_id
+  zone_name = var.environment == "prod" ? var.base_domain      : module.dns_zone[0].zone_name
+}
+
 module "bike_map" {
-  source = "./modules/bike-map"
+  source   = "./modules/bike-map"
+  for_each = var.cities
 
   providers = {
     aws           = aws
     aws.us_east_1 = aws.us_east_1
+    aws.dns       = aws.admin_mgmt
   }
 
   basename                 = var.basename
   environment              = var.environment
-  zone_id                  = module.dns_zone.zone_id
-  zone_name                = module.dns_zone.zone_name
-  bike_map_routing_api_key = var.bike_map_routing_api_key
+  city                     = each.key
+  zone_id                  = local.zone_id
+  zone_name                = local.zone_name
+  bike_map_routing_api_key = each.value.routing_api_key
   extra_cors_origins       = var.extra_cors_origins
 }
 
 module "route_logger" {
-  source = "./modules/route-logger"
+  source   = "./modules/route-logger"
+  for_each = var.cities
 
   basename           = var.basename
   environment        = var.environment
-  allowed_origin     = "bike-map.${var.environment}.${var.base_domain}"
-  log_retention_days = 730 # default; adjust as needed
-}
-
-output "route_log_endpoint" {
-  description = "Set this as LOG_ENDPOINT in index.html"
-  value       = module.route_logger.log_endpoint
+  city               = each.key
+  allowed_origin     = "${each.key}.${local.zone_name}"
+  log_retention_days = 730
 }

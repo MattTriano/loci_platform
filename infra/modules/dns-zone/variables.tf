@@ -1,3 +1,4 @@
+# /loci_platform/infra/modules/dns-zone/variables.tf
 variable "environment" {
   description = "Deployment environment (dev, staging, prod)."
   type        = string

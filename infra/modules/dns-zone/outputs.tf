@@ -1,3 +1,4 @@
+# /loci_platform/infra/modules/dns-zone/outputs.tf
 output "zone_id" {
   description = "Route53 hosted zone ID."
   value       = aws_route53_zone.env.zone_id
