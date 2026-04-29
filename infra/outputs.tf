@@ -28,3 +28,8 @@ output "route_log_endpoints" {
   description = "Per-city POST endpoint URLs for route logging."
   value       = { for c, m in module.route_logger : c => m.log_endpoint }
 }
+
+output "cloudfront_dist_ids" {
+  description = "CloudFront distribution IDs, per city."
+  value       = { for c, m in module.bike_map : c => m.cloudfront_distribution_id }
+}

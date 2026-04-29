@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Chicago Bike Map</title>
+<title>Bike Map</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.20.0/dist/maplibre-gl.css" />
 <script src="https://unpkg.com/maplibre-gl@5.20.0/dist/maplibre-gl.js"></script>
 <style>
@@ -797,10 +797,12 @@
 <!-- ── About overlay ──────────────────────────────────── -->
 <div class="overlay" id="about-overlay">
   <div class="overlay-card">
-    <h1>Chicago Bike Map</h1>
-    <p>Chicago Bike Map helps you explore cycling conditions around the city. The map layers show where crashes, thefts, and bike parking are concentrated based on recent city data, so you can get a sense of patterns in the areas you ride.</p>
-    <p>Routes prefer streets with better bike infrastructure, lower speed limits, and less severe recent crash history, even if that means a slightly longer ride. We recommend always wearing a helmet while riding.</p>
-    <p>Routes are generated using OpenStreetMap and City of Chicago data that may be incomplete or outdated. Route suggestions are informational and are no substitute for your own judgment while riding.</p>
+    <h1 id="about-title">Bike Map</h1>
+    <div id="about-body">
+      <p>Bike Map helps you explore cycling conditions in your city. The map layers show patterns based on recent local data, so you can get a sense of how cycling varies across the area.</p>
+      <p>Routes prefer streets with better bike infrastructure, lower speed limits, and less severe recent crash history, even if that means a slightly longer ride. We recommend always wearing a helmet while riding.</p>
+      <p>Routes are generated using OpenStreetMap and other public data sources that may be incomplete or outdated. Route suggestions are informational and are no substitute for your own judgment while riding.</p>
+    </div>
     <div class="overlay-links">
       <a href="#" id="about-terms-link">Terms of Service</a>
       <a href="#" id="about-privacy-link">Privacy Policy</a>
@@ -815,17 +817,17 @@
     <h1>Terms of Service</h1>
 
     <h2>What This Project Is</h2>
-    <p>Chicago Bike Map is a personal project that displays cycling-related data for the Chicago area and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.</p>
+    <p id="terms-what">Bike Map is a personal project that displays cycling-related data and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.</p>
 
     <h2>No Safety Guarantee</h2>
-    <p>Route suggestions are informational only. They are generated algorithmically using third-party data sources — including OpenStreetMap and City of Chicago open data — that may be incomplete, outdated, or inaccurate. A route appearing on this map does not mean it is safe, and the absence of crash or theft data in an area does not mean that area is free of risk.</p>
+    <p>Route suggestions are informational only. They are generated algorithmically using third-party data sources — including OpenStreetMap and local public data — that may be incomplete, outdated, or inaccurate. A route appearing on this map does not mean it is safe, and the absence of crash or theft data in an area does not mean that area is free of risk.</p>
     <p>You are solely responsible for your own safety while cycling. Always use your own judgment, obey traffic laws, and adapt to real-world conditions regardless of what this app suggests.</p>
 
     <h2>Data Sources</h2>
-    <p>Map data comes from OpenStreetMap contributors and is subject to the <a href="https://opendatacommons.org/licenses/odbl/" target="_blank" rel="noopener">ODbL license</a>. Crash, theft, and infrastructure data come from the City of Chicago open data portal and other public sources. This project does not independently verify the accuracy or completeness of any of these sources.</p>
+    <p id="terms-data-sources">Map data comes from OpenStreetMap contributors and is subject to the <a href="https://opendatacommons.org/licenses/odbl/" target="_blank" rel="noopener">ODbL license</a>. Crash, theft, and infrastructure data come from public sources. This project does not independently verify the accuracy or completeness of any of these sources.</p>
 
     <h2>Limitation of Liability</h2>
-    <p>This project is provided "as is" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of Chicago Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss.</p>
+    <p id="terms-liability">This project is provided "as is" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss.</p>
 
     <h2>Changes</h2>
     <p>These terms may be updated from time to time. Continued use of the site after changes are posted constitutes acceptance of the revised terms.</p>
@@ -885,108 +887,28 @@
 
 <script>
 // ── Configuration ────────────────────────────────────────
+// Defaults are placeholders; real values come from config.json which is
+// uploaded by the deploy task per (env, city). When config.json is missing
+// or malformed, the page still renders with these generic defaults.
 const CONFIG = {
+  city_name: 'Bike Map',
   log_endpoint: '',
   routing_api_url: '',
   routing_api_key: '',
+  map_center: [-87.6298, 41.8781],
+  map_zoom: 11,
+  layers: ['crashes', 'thefts', 'parking'],
+  about_paragraphs: null,         // optional: array of HTML strings to replace #about-body content
+  terms_what_is: null,            // optional: HTML to replace #terms-what
+  terms_data_sources: null,       // optional: HTML to replace #terms-data-sources
+  terms_liability: null,          // optional: HTML to replace #terms-liability
 };
 
-fetch('config.json')
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(cfg => { Object.assign(CONFIG, cfg); })
-  .catch(() => { /* Use defaults */ });
-
-// ── Overlay navigation ───────────────────────────────────
-function showOverlay(id) {
-  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('visible'));
-  document.getElementById(id).classList.add('visible');
-}
-
-function closeAllOverlays() {
-  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('visible'));
-}
-
-// About overlay
-const aboutBtn = document.getElementById('about-btn');
-aboutBtn.addEventListener('click', (e) => { e.stopPropagation(); showOverlay('about-overlay'); });
-document.getElementById('about-close').addEventListener('click', closeAllOverlays);
-document.getElementById('about-overlay').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeAllOverlays();
-});
-
-// About → Terms / Privacy links
-document.getElementById('about-terms-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('terms-overlay'); });
-document.getElementById('about-privacy-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('privacy-overlay'); });
-
-// Terms overlay
-document.getElementById('terms-close').addEventListener('click', closeAllOverlays);
-document.getElementById('terms-overlay').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeAllOverlays();
-});
-document.getElementById('terms-back-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('about-overlay'); });
-document.getElementById('terms-privacy-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('privacy-overlay'); });
-
-// Privacy overlay
-document.getElementById('privacy-close').addEventListener('click', closeAllOverlays);
-document.getElementById('privacy-overlay').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeAllOverlays();
-});
-document.getElementById('privacy-back-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('about-overlay'); });
-document.getElementById('privacy-terms-link').addEventListener('click', (e) => { e.preventDefault(); showOverlay('terms-overlay'); });
-
-// ── "Why this route?" toggle ─────────────────────────────
-const whyToggle = document.getElementById('route-why-toggle');
-const whyText = document.getElementById('route-why-text');
-
-whyToggle.addEventListener('click', () => {
-  const expanded = whyToggle.classList.toggle('expanded');
-  whyText.classList.toggle('visible', expanded);
-});
-
-// ── Panel accordion ──────────────────────────────────────
-function isMobile() { return window.innerWidth <= 640; }
-
-const panelContainer = document.getElementById('panel-container');
-const controlsPanel = document.getElementById('controls');
-const routePanel = document.getElementById('route-panel');
-let panelsInContainer = false;
-
-function arrangePanels() {
-  if (isMobile() && !panelsInContainer) {
-    panelContainer.appendChild(controlsPanel);
-    panelContainer.appendChild(routePanel);
-    panelsInContainer = true;
-  } else if (!isMobile() && panelsInContainer) {
-    const loading = document.getElementById('loading');
-    document.body.insertBefore(controlsPanel, loading);
-    document.body.insertBefore(routePanel, loading);
-    panelsInContainer = false;
-  }
-}
-
-function togglePanel(panelId) {
-  const panel = document.getElementById(panelId);
-  const wasCollapsed = panel.classList.contains('collapsed');
-
-  if (isMobile() && wasCollapsed) {
-    document.querySelectorAll('.panel').forEach(p => {
-      if (p.id !== panelId) p.classList.add('collapsed');
-    });
-  }
-
-  panel.classList.toggle('collapsed');
-}
-
-document.querySelectorAll('.panel-header').forEach(header => {
-  header.addEventListener('click', () => {
-    togglePanel(header.dataset.panel);
-  });
-});
-
-window.addEventListener('resize', arrangePanels);
-arrangePanels();
-
-// ── Layer configuration ──────────────────────────────────
+// ── Layer master list ────────────────────────────────────
+// All layers the codebase knows how to render. CONFIG.layers controls
+// which subset is actually shown for the current city. Layer ids must
+// match the export config name in geojson_export.py and the .geojson
+// file under /data.
 const LAYERS = {
   crashes: {
     label: 'Bike Crashes',
@@ -1056,75 +978,279 @@ const LAYERS = {
   },
 };
 
-// ── State ────────────────────────────────────────────────
+// ── Runtime state ────────────────────────────────────────
 const layerData = {};
 const layerCounts = {};
+const dateFilterState = {};
 let currentPopup = null;
 let popupFeatures = [];
 let popupIndex = 0;
 
+let map = null;
 let routeOrigin = null;
 let routeDestination = null;
 let routeData = null;
 let originMarker = null;
 let destMarker = null;
 
-// ── Map ──────────────────────────────────────────────────
-const map = new maplibregl.Map({
-  container: 'map',
-  style: 'https://tiles.openfreemap.org/styles/liberty',
-  center: [-87.6298, 41.8781],
-  zoom: 11,
-  minZoom: 9,
-  maxZoom: 19,
-  attributionControl: true,
-});
+const whyToggle = document.getElementById('route-why-toggle');
+const whyText = document.getElementById('route-why-text');
 
-map.addControl(new maplibregl.NavigationControl(), 'top-right');
-map.addControl(new maplibregl.GeolocateControl({
-  positionOptions: { enableHighAccuracy: true },
-  trackUserLocation: true,
-}), 'top-right');
+// ── Panel DOM ────────────────────────────────────────────
+const panelContainer = document.getElementById('panel-container');
+const controlsPanel = document.getElementById('controls');
+const routePanelEl = document.getElementById('route-panel');
+let panelsInContainer = false;
 
-// ── Build layer control panel ────────────────────────────
-const controlsBody = document.getElementById('controls-body');
+// ── Bootstrap ────────────────────────────────────────────
+// Wire up event handlers that don't depend on CONFIG, then load CONFIG,
+// then init the map and layers. The overlay/panel listeners are attached
+// up front because they only manipulate the DOM and don't read CONFIG.
+wireOverlays();
+wirePanels();
+wireRouteWhy();
 
-for (const [id, cfg] of Object.entries(LAYERS)) {
-  const label = document.createElement('label');
-  label.className = 'layer-toggle';
-  label.style.setProperty('--layer-color', cfg.color);
-  label.innerHTML = `
-    <input type="checkbox" ${cfg.defaultVisible ? 'checked' : ''} data-layer="${id}" />
-    <span class="layer-swatch" style="background:${cfg.color}"></span>
-    <span class="layer-label">${cfg.label}</span>
-    <span class="layer-count" id="count-${id}"></span>
-  `;
-  controlsBody.appendChild(label);
+loadConfig().then(initApp);
 
-  label.querySelector('input').addEventListener('change', (e) => {
-    toggleLayer(id, e.target.checked);
-  });
-
-  if (cfg.dateField) {
-    const filterDiv = document.createElement('div');
-    filterDiv.className = 'date-filter';
-    filterDiv.id = `date-filter-${id}`;
-    filterDiv.style.setProperty('--layer-color', cfg.color);
-    filterDiv.innerHTML = `
-      <div class="date-filter-label" id="date-label-${id}">Loading dates…</div>
-      <div class="dual-range">
-        <div class="dual-range-track"><div class="dual-range-fill" id="date-fill-${id}"></div></div>
-        <input type="range" id="date-min-${id}" min="0" max="1" value="0" />
-        <input type="range" id="date-max-${id}" min="0" max="1" value="1" />
-      </div>
-    `;
-    controlsBody.appendChild(filterDiv);
+async function loadConfig() {
+  try {
+    const r = await fetch('config.json');
+    if (r.ok) Object.assign(CONFIG, await r.json());
+  } catch {
+    // Use defaults
   }
 }
 
-// ── Date filter state ────────────────────────────────────
-const dateFilterState = {};
+function initApp() {
+  applyCityText();
+  filterLayers();
+  initMap();
+  buildLayerControls();
+  wireRouting();
+}
 
+// ── City-specific text from CONFIG ───────────────────────
+function applyCityText() {
+  const fullTitle = `${CONFIG.city_name} Bike Map`;
+  document.title = fullTitle;
+  document.getElementById('about-title').textContent = fullTitle;
+
+  // Optional overrides: each is an HTML string (or array for about_paragraphs).
+  // If a city wants different copy, populate these in config.json. Otherwise
+  // the generic defaults baked into the HTML are used.
+  if (Array.isArray(CONFIG.about_paragraphs) && CONFIG.about_paragraphs.length) {
+    document.getElementById('about-body').innerHTML =
+      CONFIG.about_paragraphs.map(p => `<p>${p}</p>`).join('');
+  }
+  setHTMLIfPresent('terms-what', CONFIG.terms_what_is);
+  setHTMLIfPresent('terms-data-sources', CONFIG.terms_data_sources);
+  setHTMLIfPresent('terms-liability', CONFIG.terms_liability);
+}
+
+function setHTMLIfPresent(elId, html) {
+  if (!html) return;
+  const el = document.getElementById(elId);
+  if (el) el.innerHTML = html;
+}
+
+// ── Filter LAYERS to those listed in CONFIG.layers ───────
+function filterLayers() {
+  const allowed = new Set(CONFIG.layers || Object.keys(LAYERS));
+  for (const id of Object.keys(LAYERS)) {
+    if (!allowed.has(id)) delete LAYERS[id];
+  }
+}
+
+// ── Overlay navigation ───────────────────────────────────
+function wireOverlays() {
+  document.getElementById('about-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showOverlay('about-overlay');
+  });
+  document.getElementById('about-close').addEventListener('click', closeAllOverlays);
+  document.getElementById('about-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeAllOverlays();
+  });
+
+  document.getElementById('about-terms-link').addEventListener('click', (e) => {
+    e.preventDefault(); showOverlay('terms-overlay');
+  });
+  document.getElementById('about-privacy-link').addEventListener('click', (e) => {
+    e.preventDefault(); showOverlay('privacy-overlay');
+  });
+
+  document.getElementById('terms-close').addEventListener('click', closeAllOverlays);
+  document.getElementById('terms-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeAllOverlays();
+  });
+  document.getElementById('terms-back-link').addEventListener('click', (e) => {
+    e.preventDefault(); showOverlay('about-overlay');
+  });
+  document.getElementById('terms-privacy-link').addEventListener('click', (e) => {
+    e.preventDefault(); showOverlay('privacy-overlay');
+  });
+
+  document.getElementById('privacy-close').addEventListener('click', closeAllOverlays);
+  document.getElementById('privacy-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeAllOverlays();
+  });
+  document.getElementById('privacy-back-link').addEventListener('click', (e) => {
+    e.preventDefault(); showOverlay('about-overlay');
+  });
+  document.getElementById('privacy-terms-link').addEventListener('click', (e) => {
+    e.preventDefault(); showOverlay('terms-overlay');
+  });
+}
+
+function showOverlay(id) {
+  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+}
+
+function closeAllOverlays() {
+  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('visible'));
+}
+
+// ── "Why this route?" toggle ─────────────────────────────
+function wireRouteWhy() {
+  whyToggle.addEventListener('click', () => {
+    const expanded = whyToggle.classList.toggle('expanded');
+    whyText.classList.toggle('visible', expanded);
+  });
+}
+
+// ── Panel accordion ──────────────────────────────────────
+function isMobile() { return window.innerWidth <= 640; }
+
+function arrangePanels() {
+  if (isMobile() && !panelsInContainer) {
+    panelContainer.appendChild(controlsPanel);
+    panelContainer.appendChild(routePanelEl);
+    panelsInContainer = true;
+  } else if (!isMobile() && panelsInContainer) {
+    const loading = document.getElementById('loading');
+    document.body.insertBefore(controlsPanel, loading);
+    document.body.insertBefore(routePanelEl, loading);
+    panelsInContainer = false;
+  }
+}
+
+function togglePanel(panelId) {
+  const panel = document.getElementById(panelId);
+  const wasCollapsed = panel.classList.contains('collapsed');
+
+  if (isMobile() && wasCollapsed) {
+    document.querySelectorAll('.panel').forEach(p => {
+      if (p.id !== panelId) p.classList.add('collapsed');
+    });
+  }
+
+  panel.classList.toggle('collapsed');
+}
+
+function wirePanels() {
+  document.querySelectorAll('.panel-header').forEach(header => {
+    header.addEventListener('click', () => {
+      togglePanel(header.dataset.panel);
+    });
+  });
+  window.addEventListener('resize', arrangePanels);
+  arrangePanels();
+}
+
+// ── Map init ─────────────────────────────────────────────
+function initMap() {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: CONFIG.map_center,
+    zoom: CONFIG.map_zoom,
+    minZoom: 9,
+    maxZoom: 19,
+    attributionControl: true,
+  });
+
+  map.addControl(new maplibregl.NavigationControl(), 'top-right');
+  map.addControl(new maplibregl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+  }), 'top-right');
+
+  map.on('load', () => {
+    map.addSource('route', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+
+    map.addLayer({
+      id: 'route-casing',
+      type: 'line',
+      source: 'route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': 'rgba(0, 0, 0, 0.4)',
+        'line-width': 8,
+      },
+    });
+
+    map.addLayer({
+      id: 'route-line',
+      type: 'line',
+      source: 'route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#6366f1',
+        'line-width': 5,
+      },
+    });
+
+    for (const [id, cfg] of Object.entries(LAYERS)) {
+      if (cfg.defaultVisible) loadLayer(id);
+    }
+
+    map.getContainer().classList.add('crosshair-cursor');
+  });
+}
+
+// ── Build layer control panel ────────────────────────────
+function buildLayerControls() {
+  const controlsBody = document.getElementById('controls-body');
+
+  for (const [id, cfg] of Object.entries(LAYERS)) {
+    const label = document.createElement('label');
+    label.className = 'layer-toggle';
+    label.style.setProperty('--layer-color', cfg.color);
+    label.innerHTML = `
+      <input type="checkbox" ${cfg.defaultVisible ? 'checked' : ''} data-layer="${id}" />
+      <span class="layer-swatch" style="background:${cfg.color}"></span>
+      <span class="layer-label">${cfg.label}</span>
+      <span class="layer-count" id="count-${id}"></span>
+    `;
+    controlsBody.appendChild(label);
+
+    label.querySelector('input').addEventListener('change', (e) => {
+      toggleLayer(id, e.target.checked);
+    });
+
+    if (cfg.dateField) {
+      const filterDiv = document.createElement('div');
+      filterDiv.className = 'date-filter';
+      filterDiv.id = `date-filter-${id}`;
+      filterDiv.style.setProperty('--layer-color', cfg.color);
+      filterDiv.innerHTML = `
+        <div class="date-filter-label" id="date-label-${id}">Loading dates…</div>
+        <div class="dual-range">
+          <div class="dual-range-track"><div class="dual-range-fill" id="date-fill-${id}"></div></div>
+          <input type="range" id="date-min-${id}" min="0" max="1" value="0" />
+          <input type="range" id="date-max-${id}" min="0" max="1" value="1" />
+        </div>
+      `;
+      controlsBody.appendChild(filterDiv);
+    }
+  }
+}
+
+// ── Date filter helpers ──────────────────────────────────
 function parseDate(val) {
   if (!val) return null;
   return String(val).slice(0, 10);
@@ -1252,7 +1378,6 @@ function updateDateLabel(id) {
   if (!state) return;
   const fromStr = formatDateShort(state.dates[state.minIdx]);
   const toStr = formatDateShort(state.dates[state.maxIdx]);
-  const total = layerData[id].features.length;
   const filtered = countFilteredFeatures(id);
   document.getElementById(`date-label-${id}`).innerHTML =
     `<span>${fromStr}</span> — <span>${toStr}</span> <span class="date-filter-count">(${filtered.toLocaleString()})</span>`;
@@ -1305,46 +1430,13 @@ function applyDateFilter(id) {
   if (countEl) countEl.textContent = out.length.toLocaleString();
 }
 
-// ── Map load ─────────────────────────────────────────────
-map.on('load', () => {
-  map.addSource('route', {
-    type: 'geojson',
-    data: { type: 'FeatureCollection', features: [] },
-  });
+// ── Routing: click handler + clear button ────────────────
+function wireRouting() {
+  map.on('click', handleMapClick);
+  document.getElementById('route-clear-btn').addEventListener('click', clearRoute);
+}
 
-  map.addLayer({
-    id: 'route-casing',
-    type: 'line',
-    source: 'route',
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: {
-      'line-color': 'rgba(0, 0, 0, 0.4)',
-      'line-width': 8,
-    },
-  });
-
-  map.addLayer({
-    id: 'route-line',
-    type: 'line',
-    source: 'route',
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: {
-      'line-color': '#6366f1',
-      'line-width': 5,
-    },
-  });
-
-  for (const [id, cfg] of Object.entries(LAYERS)) {
-    if (cfg.defaultVisible) {
-      loadLayer(id);
-    }
-  }
-
-  map.getContainer().classList.add('crosshair-cursor');
-});
-
-// ── Route: click-to-place ────────────────────────────────
-map.on('click', (e) => {
+function handleMapClick(e) {
   const pointLayers = Object.keys(LAYERS)
     .flatMap(id => [`${id}-clusters`, `${id}-points-hitarea`])
     .filter(lid => map.getLayer(lid));
@@ -1359,7 +1451,7 @@ map.on('click', (e) => {
     setDestination(lngLat);
     fetchRoute();
   }
-});
+}
 
 function setOrigin(lngLat) {
   routeOrigin = lngLat;
@@ -1484,9 +1576,6 @@ async function fetchRoute() {
 
   loadingEl.classList.add('hidden');
 }
-
-// ── Route: clear ─────────────────────────────────────────
-document.getElementById('route-clear-btn').addEventListener('click', clearRoute);
 
 function clearRoute() {
   routeOrigin = null;

@@ -123,18 +123,39 @@ def _invalidate_cloudfront(cfg: EnvConfig, logger: Logger) -> str:
     return invalidation_id
 
 
+# def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
+#     """Upload the environment-specific config.json to S3.
+
+#     Reads config/{env}.json from the app directory and uploads it as
+#     config.json in the S3 bucket root, where index.html expects it.
+#     """
+#     config_path = Path(BIKE_MAP_APP_DIR) / "config" / f"{cfg.name}.json"
+#     if not config_path.exists():
+#         raise FileNotFoundError(
+#             f"Config file not found: {config_path}. "
+#             f"Expected one of: dev.json, staging.json, prod.json"
+#         )
+
+#     s3 = get_boto_session(cfg).client("s3")
+#     logger.info("Uploading %s → s3://%s/config.json", config_path, cfg.app_file_bucket)
+#     s3.upload_file(
+#         str(config_path),
+#         cfg.app_file_bucket,
+#         "config.json",
+#         ExtraArgs={"ContentType": "application/json"},
+#     )
+#     return {"bucket": cfg.app_file_bucket, "environment": cfg.name, "source": str(config_path)}
+
+
 def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
     """Upload the environment-specific config.json to S3.
 
-    Reads config/{env}.json from the app directory and uploads it as
+    Reads config/{env}/{city}.json from the app directory and uploads it as
     config.json in the S3 bucket root, where index.html expects it.
     """
-    config_path = Path(BIKE_MAP_APP_DIR) / "config" / f"{cfg.name}.json"
+    config_path = Path(BIKE_MAP_APP_DIR) / "config" / cfg.name / f"{cfg.city}.json"
     if not config_path.exists():
-        raise FileNotFoundError(
-            f"Config file not found: {config_path}. "
-            f"Expected one of: dev.json, staging.json, prod.json"
-        )
+        raise FileNotFoundError(f"Config file not found: {config_path}")
 
     s3 = get_boto_session(cfg).client("s3")
     logger.info("Uploading %s → s3://%s/config.json", config_path, cfg.app_file_bucket)
@@ -144,14 +165,19 @@ def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
         "config.json",
         ExtraArgs={"ContentType": "application/json"},
     )
-    return {"bucket": cfg.app_file_bucket, "environment": cfg.name, "source": str(config_path)}
+    return {
+        "bucket": cfg.app_file_bucket,
+        "environment": cfg.name,
+        "city": cfg.city,
+        "source": str(config_path),
+    }
 
 
 @task
-def deploy_bike_map(env: str, task_logger: Logger) -> dict:
+def deploy_bike_map(env: str, city: str, task_logger: Logger) -> dict:
     """Sync bike map files to S3 and invalidate the CloudFront cache."""
-    cfg = get_env(env)
-    export_dir = str(Path(BIKE_MAP_EXPORT_DIR_BASE) / cfg.name)
+    cfg = get_env(env, city)
+    export_dir = str(Path(BIKE_MAP_EXPORT_DIR_BASE) / cfg.name / cfg.city)
 
     file_count = _sync_to_s3(
         [BIKE_MAP_APP_DIR, export_dir],
@@ -225,9 +251,10 @@ def build_lambda_zip(output_path: Path) -> Path:
 
 
 @task
-def export_routing_graph(env: str, conn_id: str, task_logger: Logger) -> dict:
+def export_routing_graph(env: str, city: str, conn_id: str, task_logger: Logger) -> dict:
+    cfg = get_env(env, city)
     """Build the safety-weighted routing graph and upload it to S3."""
-    cfg = get_env(env)
+    cfg = get_env(env, city)
     session = get_boto_session(cfg)
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
     exporter = RoutingGraphExporter(engine, marts_schema=cfg.marts_schema)
@@ -248,9 +275,9 @@ def export_routing_graph(env: str, conn_id: str, task_logger: Logger) -> dict:
 
 
 @task
-def deploy_lambda(env: str, task_logger: Logger) -> dict:
+def deploy_lambda(env: str, city: str, task_logger: Logger) -> dict:
     """Build the Lambda deployment package and update the function code."""
-    cfg = get_env(env)
+    cfg = get_env(env, city)
     session = get_boto_session(cfg)
     zip_key = "lambda/routing_api.zip"
 

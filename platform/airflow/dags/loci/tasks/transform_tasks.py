@@ -32,8 +32,8 @@ def run_dbt(*args: str, target: str | None = None) -> str:
 
 
 @task
-def build_pre_geocode(env: str) -> str:
-    target = get_env(env).dbt_target
+def build_pre_geocode(env: str, city: str) -> str:
+    target = get_env(env, city).dbt_target
     return run_dbt("build", "--select", "+geocoded_address_cache", target=target)
 
 
@@ -52,8 +52,8 @@ def geocode(conn_id: str, task_logger: Logger, restrict_region: str | None) -> d
 
 
 @task
-def build_post_geocode(env: str) -> str:
-    target = get_env(env).dbt_target
+def build_post_geocode(env: str, city: str) -> str:
+    target = get_env(env, city).dbt_target
     return run_dbt("build", "--select", "geocoded_address_cache+", target=target)
 
 
