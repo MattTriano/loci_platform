@@ -2,7 +2,8 @@ from loci.collectors.arcgishub.spec import ArcGISHubDatasetSpec
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.ckan.spec import CKANDatasetSpec
-from loci.collectors.osm.spec import OsmDatasetSpec
+from loci.collectors.osm.query import OverpassAPIQuery
+from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
@@ -318,29 +319,41 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT = CensusDatasetSpec(
 #    OpenStreetMaps                                                                   #
 #######################################################################################
 
-OSM_NODES_SPEC = OsmDatasetSpec(
-    name="osm_nodes",
-    region_ids=["us/illinois"],
-    element_type="nodes",
-    target_table="osm_nodes",
-    target_schema="raw_data",
+DETROIT_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
+    name="detroit_osm_bike_parking",
+    target_table="detroit_osm_bike_parking",
+    query=OverpassAPIQuery(
+        element_types=["node", "way", "relation"],
+        tag_filters=[{"amenity": "bicycle_parking"}],
+        bbox=(42.187, -83.935, 42.56, -82.848),
+    ),
+    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+    entity_key=["osm_type", "osm_id"],
 )
 
-OSM_WAYS_SPEC = OsmDatasetSpec(
-    name="osm_ways",
-    region_ids=["us/illinois"],
-    element_type="ways",
-    target_table="osm_ways",
-    target_schema="raw_data",
-)
+# OSM_NODES_SPEC = OsmDatasetSpec(
+#     name="osm_nodes",
+#     region_ids=["us/illinois"],
+#     element_type="nodes",
+#     target_table="osm_nodes",
+#     target_schema="raw_data",
+# )
 
-OSM_RELATIONS_SPEC = OsmDatasetSpec(
-    name="osm_relations",
-    region_ids=["us/illinois"],
-    element_type="relations",
-    target_table="osm_relations",
-    target_schema="raw_data",
-)
+# OSM_WAYS_SPEC = OsmDatasetSpec(
+#     name="osm_ways",
+#     region_ids=["us/illinois"],
+#     element_type="ways",
+#     target_table="osm_ways",
+#     target_schema="raw_data",
+# )
+
+# OSM_RELATIONS_SPEC = OsmDatasetSpec(
+#     name="osm_relations",
+#     region_ids=["us/illinois"],
+#     element_type="relations",
+#     target_table="osm_relations",
+#     target_schema="raw_data",
+# )
 
 #######################################################################################
 #    OSMnx                                                                            #

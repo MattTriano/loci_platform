@@ -575,32 +575,31 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
 #    OpenStreetMaps                                                                   #
 #######################################################################################
 
-OSM_NODES_UPDATE_CONFIG = DatasetUpdateConfig(
-    spec=specs.OSM_NODES_SPEC,
-    update_cron="0 3 1-7 2,5,8,11 *",
+DETROIT_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_OSM_BIKE_PARKING_SPEC,
+    update_cron="45 6 * * 3",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_months=(2, 5, 8, 11),
-    full_update_mode="file_download",
+    full_update_mode="api",
 )
 
-OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
-    spec=specs.OSM_WAYS_SPEC,
-    update_cron="0 5 1-7 2,5,8,11 *",
-    full_update_week_of_month=1,
-    full_update_day_of_week=4,
-    full_update_months=(2, 5, 8, 11),
-    full_update_mode="file_download",
-)
+# OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
+#     spec=specs.OSM_WAYS_SPEC,
+#     update_cron="0 5 1-7 2,5,8,11 *",
+#     full_update_week_of_month=1,
+#     full_update_day_of_week=4,
+#     full_update_months=(2, 5, 8, 11),
+#     full_update_mode="file_download",
+# )
 
-OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
-    spec=specs.OSM_RELATIONS_SPEC,
-    update_cron="30 5 1-7 2,5,8,11 *",
-    full_update_week_of_month=1,
-    full_update_day_of_week=4,
-    full_update_months=(2, 5, 8, 11),
-    full_update_mode="file_download",
-)
+# OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
+#     spec=specs.OSM_RELATIONS_SPEC,
+#     update_cron="30 5 1-7 2,5,8,11 *",
+#     full_update_week_of_month=1,
+#     full_update_day_of_week=4,
+#     full_update_months=(2, 5, 8, 11),
+#     full_update_mode="file_download",
+# )
 
 #######################################################################################
 #    OSMnx                                                                            #
