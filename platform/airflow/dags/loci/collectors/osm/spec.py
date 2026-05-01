@@ -76,6 +76,10 @@ class OSMDatasetSpec(DatasetSpec):
     # Populated in __post_init__
     tag_column_map: dict[str, str] = field(default_factory=dict, init=False)
 
+    @property
+    def dataset_id(self) -> str:
+        return self.target_table
+
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("name is required")

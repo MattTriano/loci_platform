@@ -6,26 +6,28 @@ declarative way: which OSM element types, which tag filters, what spatial
 extent, and what output verbosity. The .to_ql() method renders it into a
 valid Overpass QL string.
 
-Example:
-    query = OverpassAPIQuery(
-        element_types=["node", "way"],
-        tag_filters=[{"amenity": "cafe"}],
-        area_name="Chicago",
-    )
-    print(query.to_ql())
+A query may be constructed without a spatial extent (no bbox, no
+area_name) as a reusable *template*. Use .for_bbox() or .for_area() to
+produce a concrete query for a specific place. Calling .to_ql() on a
+template raises.
 
-    [out:json][timeout:180];
-    area["name"="Chicago"]->.searchArea;
-    (
-      node["amenity"="cafe"](area.searchArea);
-      way["amenity"="cafe"](area.searchArea);
-    );
-    out geom meta;
+Example:
+    # Reusable template — no spatial extent
+    food_retail = OverpassAPIQuery(
+        element_types=["node", "way"],
+        tag_filters=[{"shop": ["supermarket", "convenience"]}],
+    )
+
+    # Concrete queries for specific cities
+    chicago_food_retail = food_retail.for_bbox((41.62, -87.97, 42.05, -87.5))
+    detroit_food_retail = food_retail.for_bbox((42.24, -83.29, 42.46, -82.89))
+
+    print(chicago_food_retail.to_ql())
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 VALID_ELEMENT_TYPES = {"node", "way", "relation"}
 VALID_OUT_MODES = {"geom", "center"}
@@ -74,7 +76,9 @@ class OverpassAPIQuery:
         At least one non-empty filter group is required.
     bbox : tuple[float, float, float, float] | None
         Bounding box as (south, west, north, east). Mutually exclusive
-        with area_name; exactly one must be set.
+        with area_name. If neither is set, the query is a *template* —
+        valid to construct, but .to_ql() will raise. Use .for_bbox() or
+        .for_area() to produce a concrete query.
     area_name : str | None
         Named area to search within (matched against the OSM "name"
         tag on a relation). Mutually exclusive with bbox.
@@ -116,9 +120,9 @@ class OverpassAPIQuery:
                     f"tag_filters[{i}] is empty. Each filter group must have at least one key."
                 )
 
-        # spatial extent: exactly one of bbox / area_name
-        if self.bbox is None and self.area_name is None:
-            raise ValueError("Exactly one of bbox or area_name must be set.")
+        # spatial extent: bbox and area_name are mutually exclusive, but
+        # neither being set is allowed (template state). to_ql() enforces
+        # that one is set at render time.
         if self.bbox is not None and self.area_name is not None:
             raise ValueError("bbox and area_name are mutually exclusive.")
 
@@ -141,6 +145,24 @@ class OverpassAPIQuery:
     # Public API
     # ------------------------------------------------------------------
 
+    def for_bbox(self, bbox: tuple[float, float, float, float]) -> OverpassAPIQuery:
+        """
+        Return a copy of this query with the spatial extent set to bbox.
+
+        Useful for reusing a query template across multiple regions.
+        Clears area_name if it was set.
+        """
+        return replace(self, bbox=bbox, area_name=None)
+
+    def for_area(self, area_name: str) -> OverpassAPIQuery:
+        """
+        Return a copy of this query with the spatial extent set to a named area.
+
+        Useful for reusing a query template across multiple regions.
+        Clears bbox if it was set.
+        """
+        return replace(self, bbox=None, area_name=area_name)
+
     def to_ql(self, date_filter: str | None = None) -> str:
         """
         Render this query as an Overpass QL string.
@@ -156,7 +178,18 @@ class OverpassAPIQuery:
         -------
         str
             A complete Overpass QL query, ready to POST to the API.
+
+        Raises
+        ------
+        ValueError
+            If neither bbox nor area_name is set (template state).
         """
+        if self.bbox is None and self.area_name is None:
+            raise ValueError(
+                "Cannot render query: no spatial extent set. "
+                "Call .for_bbox(...) or .for_area(...) first."
+            )
+
         lines = [f"[out:json][timeout:{self.timeout}];"]
 
         if self.area_name is not None:

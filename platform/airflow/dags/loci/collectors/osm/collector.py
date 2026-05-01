@@ -1,11 +1,11 @@
 """
 OSM Overpass API collection orchestrator.
 
-Wires together the OSMSpec, OSMClient, and the engine's staged_ingest
+Wires together the OSMDatasetSpec, OSMClient, and the engine's staged_ingest
 to perform full and incremental collection of OSM data.
 
 Usage:
-    spec = OSMSpec(...)
+    spec = OSMDatasetSpec(...)
     collector = OSMCollector(engine=engine)
 
     # Generate DDL for a new table:
@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from loci.collectors.osm.client import OSMClient
-from loci.collectors.osm.spec import OSMSpec
+from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ class OSMCollector:
     # Public API
     # ------------------------------------------------------------------
 
-    def collect(self, spec: OSMSpec, force: bool = False) -> dict[str, Any]:
+    def collect(self, spec: OSMDatasetSpec, force: bool = False) -> dict[str, Any]:
         """
         Collect data for a spec and merge into the target table.
 
@@ -156,9 +156,9 @@ class OSMCollector:
         self.logger.info("Collection complete for %r: %s", spec.name, summary)
         return summary
 
-    def generate_ddl(self, spec: OSMSpec) -> str:
+    def generate_ddl(self, spec: OSMDatasetSpec) -> str:
         """
-        Build the CREATE TABLE statement for an OSMSpec.
+        Build the CREATE TABLE statement for an OSMDatasetSpec.
 
         Generates the fixed OSM columns (osm_type, osm_id, osm_version,
         osm_timestamp, geom, tags), one text column per promoted tag,
@@ -168,7 +168,7 @@ class OSMCollector:
         """
         return _build_ddl(spec)
 
-    def print_ddl(self, spec: OSMSpec) -> None:
+    def print_ddl(self, spec: OSMDatasetSpec) -> None:
         """Generate and print DDL for easy copy-paste into a migration script."""
         print(self.generate_ddl(spec))
 
@@ -178,7 +178,7 @@ class OSMCollector:
 
     def _run_ingestion(
         self,
-        spec: OSMSpec,
+        spec: OSMDatasetSpec,
         date_filter: str | None,
         ingested_at: datetime,
         invalidate_missing: bool,
@@ -224,7 +224,7 @@ class OSMCollector:
     # Incremental floor lookup
     # ------------------------------------------------------------------
 
-    def _resolve_date_filter(self, spec: OSMSpec, force: bool) -> str | None:
+    def _resolve_date_filter(self, spec: OSMDatasetSpec, force: bool) -> str | None:
         """
         Decide whether this run is full or incremental.
 
@@ -245,7 +245,7 @@ class OSMCollector:
 
         return _format_overpass_timestamp(high_water)
 
-    def _high_water_mark(self, spec: OSMSpec) -> datetime | None:
+    def _high_water_mark(self, spec: OSMDatasetSpec) -> datetime | None:
         """
         Return max(ingested_at) from the target table, or None if the
         table is empty.
@@ -265,7 +265,7 @@ class OSMCollector:
             value = value.replace(tzinfo=UTC)
         return value
 
-    def _table_exists(self, spec: OSMSpec) -> bool:
+    def _table_exists(self, spec: OSMDatasetSpec) -> bool:
         df = self.engine.query(
             """
             select 1 from information_schema.tables
@@ -301,8 +301,8 @@ def _format_overpass_timestamp(dt: datetime) -> str:
 # ----------------------------------------------------------------------
 
 
-def _build_ddl(spec: OSMSpec) -> str:
-    """Render the CREATE TABLE plus index/constraint DDL for an OSMSpec."""
+def _build_ddl(spec: OSMDatasetSpec) -> str:
+    """Render the CREATE TABLE plus index/constraint DDL for an OSMDatasetSpec."""
     fqn = f"{spec.target_schema}.{spec.target_table}"
 
     col_defs = [

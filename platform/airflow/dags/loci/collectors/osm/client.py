@@ -8,7 +8,7 @@ Responsibilities:
 
 Usage:
     client = OSMClient()
-    spec = OSMSpec(...)
+    spec = OSMDatasetSpec(...)
     for row in client.fetch_rows(spec):
         # row is a dict with keys: osm_type, osm_id, osm_version,
         # osm_timestamp, geom (WKT or None), tags (dict), plus one
@@ -26,7 +26,7 @@ from typing import Any
 import requests
 from loci.collectors.osm.geometry import element_to_wkt
 from loci.collectors.osm.query import OverpassAPIQuery
-from loci.collectors.osm.spec import OSMSpec
+from loci.collectors.osm.spec import OSMDatasetSpec
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
@@ -100,7 +100,7 @@ class OSMClient:
 
     def fetch_rows(
         self,
-        spec: OSMSpec,
+        spec: OSMDatasetSpec,
         date_filter: str | None = None,
     ) -> Iterator[dict[str, Any]]:
         """
@@ -203,7 +203,7 @@ def _extract_overpass_error(body: str) -> str:
     return body[:1000].strip()
 
 
-def _element_to_row(element: dict, spec: OSMSpec) -> dict[str, Any]:
+def _element_to_row(element: dict, spec: OSMDatasetSpec) -> dict[str, Any]:
     """
     Turn one Overpass JSON element into a row dict matching the target table.
 
