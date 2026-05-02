@@ -2,7 +2,8 @@ from loci.collectors.arcgishub.spec import ArcGISHubDatasetSpec
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
 from loci.collectors.ckan.spec import CKANDatasetSpec
-from loci.collectors.osm.spec import OsmDatasetSpec
+from loci.collectors.osm.query import OverpassAPIQuery
+from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
@@ -318,29 +319,515 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT = CensusDatasetSpec(
 #    OpenStreetMaps                                                                   #
 #######################################################################################
 
-OSM_NODES_SPEC = OsmDatasetSpec(
-    name="osm_nodes",
-    region_ids=["us/illinois"],
-    element_type="nodes",
-    target_table="osm_nodes",
-    target_schema="raw_data",
+BOSTON_BBOX = (42.20, -71.26, 42.45, -70.96)
+CHICAGO_BBOX = (41.62, -87.97, 42.05, -87.5)
+DENVER_BBOX = (39.55, -105.19, 39.94, -104.56)
+DETROIT_BBOX = (42.18, -83.40, 42.56, -82.84)
+LOS_ANGELES_BBOX = (33.69, -118.72, 34.38, -118.02)
+MADISON_BBOX = (42.96, -89.60, 43.21, -89.21)
+NEW_ORLEANS_BBOX = (29.83, -90.22, 30.19, -89.60)
+NEW_YORK_CITY_BBOX = (40.52, -74.05, 40.93, -73.67)
+PORTLAND_BBOX = (45.41, -122.86, 45.66, -122.46)
+SAN_FRANCISCO_BBOX = (37.61, -122.53, 37.84, -122.35)
+SF_BAY_AREA_BBOX = (37.18, -122.59, 37.88, -121.73)
+SEATTLE_BBOX = (47.47, -122.48, 47.78, -122.04)
+TORONTO_BBOX = (43.48, -79.79, 43.95, -78.84)
+
+
+# ====================================================================================
+#    OSM Overpass Queries
+# ====================================================================================
+
+# ----------------------------------------------------------------------
+# Clothing & accessories
+# ----------------------------------------------------------------------
+# `second_hand` is promoted because thrift/vintage is a strong
+# neighborhood-character signal you specifically mentioned.
+OSM_CLOTHING_QUERY = OverpassAPIQuery(
+    element_types=["node", "way"],
+    tag_filters=[
+        {
+            "shop": [
+                "clothes",
+                "shoes",
+                "jewelry",
+                "bag",
+                "boutique",
+                "fashion_accessories",
+                "tailor",
+                "fabric",
+                "second_hand",
+                "charity",  # often functions as thrift
+                "watches",
+                "leather",
+            ]
+        },
+    ],
 )
 
-OSM_WAYS_SPEC = OsmDatasetSpec(
-    name="osm_ways",
-    region_ids=["us/illinois"],
-    element_type="ways",
-    target_table="osm_ways",
-    target_schema="raw_data",
+
+# ----------------------------------------------------------------------
+# Culture: galleries, museums, performance, libraries, community spaces
+# ----------------------------------------------------------------------
+# Mixes amenity=*, tourism=*, shop=*, and craft=* under a common roof.
+# A synthetic `category` column would be ideal here, but since promoted
+# tags map 1:1 to OSM keys, we promote both `amenity` and `tourism` and
+# `shop` and let the consumer COALESCE them at query time. Document
+# this pattern in the README.
+OSM_CULTURE_QUERY = OverpassAPIQuery(
+    element_types=["node", "way"],
+    tag_filters=[
+        {
+            "amenity": [
+                "library",
+                "theatre",
+                "cinema",
+                "arts_centre",
+                "community_centre",
+                "music_venue",
+                "nightclub",  # live music / cultural overlap
+                "studio",
+                "planetarium",
+            ]
+        },
+        {"tourism": ["gallery", "museum"]},
+        {"shop": ["books", "art", "music"]},
+        {"craft": ["sculptor", "painter", "photographer"]},
+    ],
 )
 
-OSM_RELATIONS_SPEC = OsmDatasetSpec(
-    name="osm_relations",
-    region_ids=["us/illinois"],
-    element_type="relations",
-    target_table="osm_relations",
-    target_schema="raw_data",
+# Fitness: gyms, yoga, classes, sports facilities
+# ----------------------------------------------------------------------
+# Most of this lives under leisure=fitness_centre / leisure=sports_centre,
+# with `sport=*` carrying the specifics (yoga, climbing, swimming, etc.).
+# shop=sports is gear, not activity — excluded.
+OSM_FITNESS_QUERY = OverpassAPIQuery(
+    element_types=["node", "way"],
+    tag_filters=[
+        {
+            "leisure": [
+                "fitness_centre",
+                "sports_centre",
+                "fitness_station",  # outdoor exercise equipment
+                "swimming_pool",
+                "dance",
+                "pitch",  # courts/fields — high volume, may want to split
+                "track",
+            ]
+        },
+        {"shop": "yoga"},  # rare but real
+    ],
 )
+
+
+# Food & drink: anywhere you'd go to eat or drink ready-to-consume things
+# ----------------------------------------------------------------------
+# `amenity` is promoted so you can filter by subtype:
+#   amenity = 'cafe'         -> coffee shops
+#   amenity = 'restaurant'   -> sit-down restaurants
+#   amenity = 'fast_food'    -> quick-service
+#   amenity = 'bar'/'pub'    -> bars
+#   amenity = 'ice_cream'    -> ice cream shops
+#   amenity = 'biergarten'   -> beer gardens
+#   amenity = 'food_court'   -> food courts
+OSM_FOOD_AND_DRINK_QUERY = OverpassAPIQuery(
+    element_types=["node", "way"],
+    tag_filters=[
+        {
+            "amenity": [
+                "cafe",
+                "restaurant",
+                "fast_food",
+                "bar",
+                "pub",
+                "biergarten",
+                "ice_cream",
+                "food_court",
+            ]
+        }
+    ],
+)
+
+# Food retail: anywhere you'd buy food/drink to take home
+# ----------------------------------------------------------------------
+# `shop` is promoted as the subtype column.
+# Bakeries live here (vs. food_and_drink) on the assumption that the
+# more common query is "where can I buy bread"; some bakeries are
+# eat-in spots that you'll miss if querying food_and_drink only.
+OSM_FOOD_RETAIL_QUERY = OverpassAPIQuery(
+    element_types=["node", "way"],
+    tag_filters=[
+        {
+            "shop": [
+                "supermarket",
+                "convenience",
+                "greengrocer",
+                "grocery",
+                "butcher",
+                "bakery",
+                "deli",
+                "cheese",
+                "seafood",
+                "wine",
+                "alcohol",
+                "coffee",  # whole-bean / coffee retail (vs. amenity=cafe)
+                "tea",
+                "chocolate",
+                "confectionery",
+                "pastry",
+                "spices",
+                "health_food",
+            ]
+        },
+        {"amenity": "marketplace"},  # farmers markets, public markets
+    ],
+)
+
+OSM_TRANSIT_QUERY = OverpassAPIQuery(
+    element_types=["node", "way"],
+    tag_filters=[
+        {"public_transport": ["station", "stop_position", "platform"]},
+        {"railway": "station"},
+        {"highway": "bus_stop"},
+        {"amenity": "bicycle_rental"},  # e.g. Divvy stations
+    ],
+)
+
+# *****************
+#    OSM Specs
+# *****************
+BOSTON_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
+    name="boston_osm_bike_parking",
+    target_table="boston_osm_bike_parking",
+    query=OverpassAPIQuery(
+        element_types=["node", "way", "relation"],
+        tag_filters=[{"amenity": "bicycle_parking"}],
+        bbox=BOSTON_BBOX,
+    ),
+    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+    entity_key=["osm_type", "osm_id"],
+)
+
+BOSTON_OSM_TRANSIT_SPEC = OSMDatasetSpec(
+    name="boston_osm_transit",
+    target_table="boston_osm_transit",
+    query=OSM_TRANSIT_QUERY.for_bbox(BOSTON_BBOX),
+    promoted_tags=[
+        "name",
+        "public_transport",
+        "railway",
+        "highway",
+        "amenity",
+        "network",
+        "operator",
+        "ref",
+        "wheelchair",
+    ],
+)
+
+CHICAGO_OSM_BARS_SPEC = OSMDatasetSpec(
+    name="chicago_osm_bars",
+    target_table="chicago_osm_bars",
+    query=OverpassAPIQuery(
+        element_types=["node", "way"],
+        tag_filters=[
+            {"amenity": ["bar", "pub", "biergarten"]},
+        ],
+        bbox=CHICAGO_BBOX,
+    ),
+    promoted_tags=[
+        "name",
+        "amenity",
+        "brand",
+        "cuisine",
+        "microbrewery",
+        "craft_beer",
+        "food",
+        "outdoor_seating",
+        "smoking",
+        "opening_hours",
+        "website",
+        "phone",
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+CHICAGO_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
+    name="chicago_osm_bike_parking",
+    target_table="chicago_osm_bike_parking",
+    query=OverpassAPIQuery(
+        element_types=["node", "way", "relation"],
+        tag_filters=[{"amenity": "bicycle_parking"}],
+        bbox=CHICAGO_BBOX,
+    ),
+    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+    entity_key=["osm_type", "osm_id"],
+)
+
+CHICAGO_OSM_CAFES_SPEC = OSMDatasetSpec(
+    name="chicago_osm_cafes",
+    target_table="chicago_osm_cafes",
+    query=OverpassAPIQuery(
+        element_types=["node", "way"],
+        tag_filters=[{"amenity": "cafe"}],
+        bbox=CHICAGO_BBOX,
+    ),
+    promoted_tags=[
+        "name",
+        "brand",
+        "cuisine",
+        "takeaway",
+        "outdoor_seating",
+        "internet_access",
+        "opening_hours",
+        "website",
+        "phone",
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+CHICAGO_OSM_CLOTHING_SPEC = OSMDatasetSpec(
+    name="chicago_osm_clothing",
+    target_table="chicago_osm_clothing",
+    query=OSM_CLOTHING_QUERY.for_bbox(CHICAGO_BBOX),
+    promoted_tags=[
+        "name",
+        "shop",  # subtype
+        "brand",
+        "second_hand",  # yes/only/no — thrift signal
+        "clothes",  # men/women/children/etc.
+        "opening_hours",
+        "website",
+        "phone",
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+CHICAGO_OSM_CULTURE_SPEC = OSMDatasetSpec(
+    name="chicago_osm_culture",
+    target_table="chicago_osm_culture",
+    query=OSM_CULTURE_QUERY.for_bbox(CHICAGO_BBOX),
+    promoted_tags=[
+        "name",
+        "amenity",  # subtype for amenity=* rows
+        "tourism",  # subtype for gallery/museum
+        "shop",  # subtype for bookshop/art-shop
+        "craft",  # subtype for craft=* rows
+        "fee",  # free vs. paid admission
+        "opening_hours",
+        "website",
+        "phone",
+        "wheelchair",
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+CHICAGO_OSM_FITNESS_SPEC = OSMDatasetSpec(
+    name="chicago_osm_fitness",
+    target_table="chicago_osm_fitness",
+    query=OSM_FITNESS_QUERY.for_bbox(CHICAGO_BBOX),
+    promoted_tags=[
+        "name",
+        "leisure",  # subtype
+        "sport",  # the most important filter — yoga, climbing, etc.
+        "fitness_station",  # outdoor equipment type
+        "access",  # public/private/customers
+        "fee",
+        "opening_hours",
+        "website",
+        "phone",
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+
+CHICAGO_OSM_FOOD_AND_DRINK_SPEC = OSMDatasetSpec(
+    name="chicago_osm_food_and_drink",
+    target_table="chicago_osm_food_and_drink",
+    query=OSM_FOOD_AND_DRINK_QUERY.for_bbox(CHICAGO_BBOX),
+    promoted_tags=[
+        "name",
+        "amenity",  # subtype filter — the key column for this table
+        "brand",
+        "cuisine",
+        "takeaway",
+        "delivery",
+        "outdoor_seating",
+        "internet_access",  # essential for the "good laptop spot" query
+        "opening_hours",
+        "website",
+        "phone",
+        # Bar-flavored tags — sparse on cafes/restaurants, but cheap to carry:
+        "microbrewery",
+        "craft_beer",
+        "food",  # yes/no: does this bar serve food
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+
+CHICAGO_OSM_FOOD_RETAIL_SPEC = OSMDatasetSpec(
+    name="chicago_osm_food_retail",
+    target_table="chicago_osm_food_retail",
+    query=OSM_FOOD_RETAIL_QUERY.for_bbox(CHICAGO_BBOX),
+    promoted_tags=[
+        "name",
+        "shop",  # primary subtype — null for marketplaces
+        "amenity",  # only set for marketplaces
+        "brand",
+        "organic",
+        "opening_hours",
+        "website",
+        "phone",
+        "addr:housenumber",
+        "addr:street",
+        "addr:city",
+        "addr:postcode",
+    ],
+)
+
+CHICAGO_OSM_TRANSIT_SPEC = OSMDatasetSpec(
+    name="chicago_osm_transit",
+    target_table="chicago_osm_transit",
+    query=OSM_TRANSIT_QUERY.for_bbox(CHICAGO_BBOX),
+    promoted_tags=[
+        "name",
+        "public_transport",
+        "railway",
+        "highway",
+        "amenity",
+        "network",  # CTA, Metra, Divvy
+        "operator",
+        "ref",  # stop number / station code
+        "wheelchair",
+    ],
+)
+
+# Tree coverage in OSM is patchy — expect lots of gaps relative to the
+# actual urban canopy. Still useful as a relative signal across neighborhoods.
+CHICAGO_OSM_TREES_SPEC = OSMDatasetSpec(
+    name="chicago_osm_trees",
+    target_table="chicago_osm_trees",
+    query=OverpassAPIQuery(
+        element_types=["node"],
+        tag_filters=[{"natural": "tree"}],
+        bbox=CHICAGO_BBOX,
+    ),
+    promoted_tags=[
+        "species",
+        "species:en",
+        "genus",
+        "genus:en",
+        "leaf_type",  # broadleaved / needleleaved
+        "leaf_cycle",  # deciduous / evergreen
+        "height",
+        "circumference",
+        "diameter_crown",
+        "denotation",  # urban / avenue / park / etc.
+        "ref",  # municipal tree ID, when present
+    ],
+)
+
+DETROIT_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
+    name="detroit_osm_bike_parking",
+    target_table="detroit_osm_bike_parking",
+    query=OverpassAPIQuery(
+        element_types=["node", "way", "relation"],
+        tag_filters=[{"amenity": "bicycle_parking"}],
+        bbox=DETROIT_BBOX,
+    ),
+    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+    entity_key=["osm_type", "osm_id"],
+)
+
+DETROIT_OSM_TRANSIT_SPEC = OSMDatasetSpec(
+    name="detroit_osm_transit",
+    target_table="detroit_osm_transit",
+    query=OSM_TRANSIT_QUERY.for_bbox(DETROIT_BBOX),
+    promoted_tags=[
+        "name",
+        "public_transport",
+        "railway",
+        "highway",
+        "amenity",
+        "network",  # CTA, Metra, Divvy
+        "operator",
+        "ref",  # stop number / station code
+        "wheelchair",
+    ],
+    entity_key=["osm_type", "osm_id"],
+)
+
+MADISON_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
+    name="madison_osm_bike_parking",
+    target_table="madison_osm_bike_parking",
+    query=OverpassAPIQuery(
+        element_types=["node", "way", "relation"],
+        tag_filters=[{"amenity": "bicycle_parking"}],
+        bbox=MADISON_BBOX,
+    ),
+    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+    entity_key=["osm_type", "osm_id"],
+)
+
+MADISON_OSM_TRANSIT_SPEC = OSMDatasetSpec(
+    name="madison_osm_transit",
+    target_table="madison_osm_transit",
+    query=OSM_TRANSIT_QUERY.for_bbox(MADISON_BBOX),
+    promoted_tags=[
+        "name",
+        "public_transport",
+        "railway",
+        "highway",
+        "amenity",
+        "network",
+        "operator",
+        "ref",  # stop number / station code
+        "wheelchair",
+    ],
+)
+
+# OSM_NODES_SPEC = OsmDatasetSpec(
+#     name="osm_nodes",
+#     region_ids=["us/illinois"],
+#     element_type="nodes",
+#     target_table="osm_nodes",
+#     target_schema="raw_data",
+# )
+
+# OSM_WAYS_SPEC = OsmDatasetSpec(
+#     name="osm_ways",
+#     region_ids=["us/illinois"],
+#     element_type="ways",
+#     target_table="osm_ways",
+#     target_schema="raw_data",
+# )
+
+# OSM_RELATIONS_SPEC = OsmDatasetSpec(
+#     name="osm_relations",
+#     region_ids=["us/illinois"],
+#     element_type="relations",
+#     target_table="osm_relations",
+#     target_schema="raw_data",
+# )
 
 #######################################################################################
 #    OSMnx                                                                            #

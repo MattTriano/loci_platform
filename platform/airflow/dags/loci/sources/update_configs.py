@@ -575,32 +575,151 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
 #    OpenStreetMaps                                                                   #
 #######################################################################################
 
-OSM_NODES_UPDATE_CONFIG = DatasetUpdateConfig(
-    spec=specs.OSM_NODES_SPEC,
-    update_cron="0 3 1-7 2,5,8,11 *",
+BOSTON_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.BOSTON_OSM_BIKE_PARKING_SPEC,
+    update_cron="50 1 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_months=(2, 5, 8, 11),
-    full_update_mode="file_download",
+    full_update_mode="api",
 )
 
-OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
-    spec=specs.OSM_WAYS_SPEC,
-    update_cron="0 5 1-7 2,5,8,11 *",
+BOSTON_OSM_TRANSIT_UC = DatasetUpdateConfig(
+    spec=specs.BOSTON_OSM_TRANSIT_SPEC,
+    update_cron="52 1 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_months=(2, 5, 8, 11),
-    full_update_mode="file_download",
+    full_update_mode="api",
 )
 
-OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
-    spec=specs.OSM_RELATIONS_SPEC,
-    update_cron="30 5 1-7 2,5,8,11 *",
+CHICAGO_BARS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_BARS_SPEC,
+    update_cron="0 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_months=(2, 5, 8, 11),
-    full_update_mode="file_download",
+    full_update_mode="api",
 )
+
+CHICAGO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_BIKE_PARKING_SPEC,
+    update_cron="1 6 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_CAFES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_CAFES_SPEC,
+    update_cron="2 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_CLOTHING_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_CLOTHING_SPEC,
+    update_cron="3 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_CULTURE_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_CULTURE_SPEC,
+    update_cron="4 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_FITNESS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_FITNESS_SPEC,
+    update_cron="5 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_FOOD_AND_DRINK_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_FOOD_AND_DRINK_SPEC,
+    update_cron="6 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_FOOD_RETAIL_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_FOOD_RETAIL_SPEC,
+    update_cron="7 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_TREES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_TREES_SPEC,
+    update_cron="8 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+CHICAGO_OSM_TRANSIT_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_TRANSIT_SPEC,
+    update_cron="9 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_OSM_BIKE_PARKING_SPEC,
+    update_cron="10 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_OSM_TRANSIT_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_OSM_TRANSIT_SPEC,
+    update_cron="12 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+MADISON_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.MADISON_OSM_BIKE_PARKING_SPEC,
+    update_cron="20 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
+    spec=specs.MADISON_OSM_TRANSIT_SPEC,
+    update_cron="22 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+# OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
+#     spec=specs.OSM_WAYS_SPEC,
+#     update_cron="0 5 1-7 2,5,8,11 *",
+#     full_update_week_of_month=1,
+#     full_update_day_of_week=4,
+#     full_update_months=(2, 5, 8, 11),
+#     full_update_mode="file_download",
+# )
+
+# OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
+#     spec=specs.OSM_RELATIONS_SPEC,
+#     update_cron="30 5 1-7 2,5,8,11 *",
+#     full_update_week_of_month=1,
+#     full_update_day_of_week=4,
+#     full_update_months=(2, 5, 8, 11),
+#     full_update_mode="file_download",
+# )
 
 #######################################################################################
 #    OSMnx                                                                            #
