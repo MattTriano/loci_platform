@@ -13,7 +13,7 @@ with socrata_parking as (
         null::text as operator,
         null::text as access,
         geom
-    from {{ ref('stg__soc__chicago_bike_racks') }}
+    from {{ ref('stg__chicago_soc_bike_parking') }}
 ),
 osm_parking as (
     select
@@ -30,7 +30,7 @@ osm_parking as (
         operator,
         access,
         geom
-    from {{ ref('stg__osm__chicago_bike_racks') }}
+    from {{ ref('stg__chicago_osm_bike_parking') }}
 ),
 unioned as (
     select * from socrata_parking

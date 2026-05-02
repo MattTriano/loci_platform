@@ -1,9 +1,9 @@
--- stg__traffic_control_nodes.sql
+-- stg__chicago_traffic_control_nodes.sql
 -- Classifies each node in the bike network by its traffic control type,
 -- intersection status, and the highest road classification meeting there.
 --
--- Produces a per-node safety adjustment (traffic_control_penalty) that is
--- added to the destination edge's safety_cost in bike_safety_weighted_edges.
+-- Produces a per-node stress adjustment (traffic_control_penalty) that is
+-- added to the destination edge's stress_cost in chicago_bike_stress_weighted_edges.
 --
 -- Grain: one row per node (osmid).
 --

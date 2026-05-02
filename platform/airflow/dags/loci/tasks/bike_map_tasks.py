@@ -45,14 +45,14 @@ class CityBuildSpec:
         because they have ordering constraints (e.g. some need to run
         with --indirect-selection=cautious to skip cross-model tests).
     weights_dbt_select
-        dbt --select expression for the safety-weighted edges model that
+        dbt --select expression for the stress-weighted edges model that
         feeds the routing graph.
     """
 
     city: str
     geocode_bbox: str | None
     pre_export_dbt_selects: list[tuple[str, ...]] = field(default_factory=list)
-    weights_dbt_select: str = "+bike_safety_weighted_edges"
+    weights_dbt_select: str = "+chicago_bike_stress_weighted_edges"
 
 
 @task
@@ -84,7 +84,7 @@ def run_dbt_select(env: str, select_args: tuple[str, ...]) -> str:
 def build_routing_graph(
     env: str, conn_id: str, graph_path: str, task_logger: logging.Logger
 ) -> str:
-    """Build the safety-weighted routing graph for testing."""
+    """Build the stress-weighted routing graph for testing."""
     cfg = get_env(env, _city_from_context())
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
     exporter = RoutingGraphExporter(engine, marts_schema=cfg.marts_schema)
@@ -165,7 +165,7 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
     chain(_export_layers, _deploy_map)
 
     # Routing graph + lambda (parallel branch from deps)
-    _build_weights = run_dbt_select.override(task_id="build_safety_weighted_edges")(
+    _build_weights = run_dbt_select.override(task_id="build_stress_weighted_edges")(
         env=ENV_TEMPLATE,
         select_args=("--select", spec.weights_dbt_select),
     )

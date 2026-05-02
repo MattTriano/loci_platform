@@ -6,7 +6,7 @@
 -- Each edge is matched to the safest Socrata bike route that runs along it,
 -- using endpoint proximity, street name similarity, and direction compatibility
 -- as match signals. Each edge is also joined to the OSM-derived infra_type
--- from stg__osm__bike_infrastructure.
+-- from stg__chicago_osm_bike_infrastructure.
 --
 -- Match logic:
 --   Hard filter : both endpoints of the OSMnx edge are within ~10m of the
@@ -31,7 +31,7 @@
 {% set dupe_buffer_degrees = 0.00015 %}
 
 with edges as (
-    select * from {{ ref('stg__osmnx__bike_network_edges') }}
+    select * from {{ ref('stg__chicago_osmnx_bike_network') }}
 ),
 
 osm_infra as (
@@ -40,11 +40,11 @@ osm_infra as (
         infra_category  as osm_infra_category,
         infra_type      as osm_infra_type,
         has_buffer       as osm_has_buffer
-    from {{ ref('stg__osm__bike_infrastructure') }}
+    from {{ ref('stg__chicago_osm_bike_infrastructure') }}
 ),
 
 soc_routes as (
-    select * from {{ ref('stg__soc__bike_infrastructure') }}
+    select * from {{ ref('stg__chicago_soc_bike_infrastructure') }}
 ),
 
 -- Candidate matches: OSMnx edges spatially near a Socrata route.

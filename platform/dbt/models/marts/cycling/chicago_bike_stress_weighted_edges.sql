@@ -1,9 +1,9 @@
--- bike_safety_weighted_edges.sql
--- Assigns a safety cost to each bikeable OSMnx edge for use in
--- safety-weighted routing.
+-- chicago_bike_stress_weighted_edges.sql
+-- Assigns a stress cost to each bikeable OSMnx edge for use in
+-- stress-weighted routing.
 --
 -- Cost formula:
---   safety_cost = length_m
+--   stress_cost = length_m
 --               * speed_factor
 --               * road_type_factor
 --               * infrastructure_factor
@@ -49,7 +49,7 @@ with edges as (
     from {{ ref('chicago_bike_network_edges') }}
 ),
 crashes as (
-    select * from {{ ref('bike_crash_hotspots') }}
+    select * from {{ ref('chicago_bike_crash_hotspots') }}
 ),
 -- =====================================================================
 -- Crash deduplication: assign each crash to exactly one edge.
@@ -217,7 +217,7 @@ factors as (
             else 1.0
         end                             as surface_factor,
 
-        -- Lighting factor: affects nighttime safety.
+        -- Lighting factor: affects nighttime stress.
         case
             when e.lit = 'yes'          then 1.0
             when e.lit = 'no'           then 1.2
@@ -227,7 +227,7 @@ factors as (
 
     from edges e
     left join crash_scores cs using (u, v, key)
-    left join {{ ref('stg__traffic_control_nodes') }} as ntc
+    left join {{ ref('stg__chicago_traffic_control_nodes') }} as ntc
         on ntc.osmid = e.v
 ),
 
@@ -296,7 +296,7 @@ final as (
         crash_score,
         crash_score_per_meter,
 
-        -- Intermediate safety factors (preserved for tuning)
+        -- Intermediate stress factors (preserved for tuning)
         speed_factor,
         road_type_factor,
         infrastructure_factor,
@@ -309,7 +309,7 @@ final as (
         crash_score_per_meter * length_m * {{ crash_weight }}
                                 as crash_penalty,
 
-        -- Final safety cost
+        -- Final stress cost
         greatest(
             length_m
                 * speed_factor
@@ -321,7 +321,7 @@ final as (
                 + (crash_score_per_meter * length_m * {{ crash_weight }})
                 + traffic_control_penalty,
             0
-        ) as safety_cost
+        ) as stress_cost
     from factors
 )
 

@@ -1,4 +1,4 @@
--- stg__osmnx__bike_network_edges.sql
+-- stg__chicago_osmnx_bike_network.sql
 -- Staging model for OSMnx bike network edges over the Chicagoland bbox.
 --
 -- Source: raw_data.osmnx_bike_network_edges (collected via OsmnxCollector)

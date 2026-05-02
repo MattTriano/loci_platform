@@ -77,7 +77,7 @@ def build_chicago_bike_map_exports(marts_schema: str) -> list[GeoJSONExportConfi
         GeoJSONExportConfig(
             name="crashes",
             schema=marts_schema,
-            table="bike_crash_hotspots",
+            table="chicago_bike_crash_hotspots",
             geometry_column="geom",
             properties=[
                 "crash_record_id",

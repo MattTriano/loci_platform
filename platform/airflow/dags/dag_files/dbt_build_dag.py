@@ -13,35 +13,7 @@ def install_dependencies() -> str:
 
 @task
 def alt_build() -> str:
-    return run_dbt("build", "--select", "+bike_safety_weighted_edges")
-
-
-@task
-def dbt_build() -> str:
-    result = subprocess.run(
-        [
-            "/home/airflow/dbt_venv/bin/dbt",
-            "build",
-            "--project-dir",
-            "/opt/airflow/dbt",
-            "--select",
-            "bike_safety_weighted_edges",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    print("=== STDOUT ===")
-    print(result.stdout)
-    print("=== STDERR ===")
-    print(result.stderr)
-
-    if result.returncode != 0:
-        raise Exception(
-            f"dbt build failed with exit code {result.returncode}\n{result.stderr}\n{result.stdout}"
-        )
-
-    return result.stdout
+    return run_dbt("build", "--select", "+chicago_bike_stress_weighted_edges")
 
 
 @dag(
