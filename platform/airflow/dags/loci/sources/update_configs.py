@@ -679,6 +679,14 @@ DETROIT_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+DETROIT_OSM_TRANSIT_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_OSM_TRANSIT_SPEC,
+    update_cron="12 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
 MADISON_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.MADISON_OSM_BIKE_PARKING_SPEC,
     update_cron="20 2 * * 2",
