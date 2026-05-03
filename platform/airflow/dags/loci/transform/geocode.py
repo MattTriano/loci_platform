@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/transform/geocode.py
 """TIGER geocoder wrapper for populating a geocoding cache table.
 
 Uses PostGIS TIGER's normalize_address() and geocode() functions to
@@ -17,6 +18,7 @@ Usage:
 import logging
 
 from loci.db.core import PostgresEngine
+from loci.geo import BBox
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,8 @@ class TigerGeocoder:
         batch_size: Number of rows to fetch and process per batch.
         tiger_data_year: The TIGER data vintage string for audit metadata.
         restrict_region: An optional input to limit the area the geocoder searches for matches.
-            Use "ST_MakeEnvelope(-87.94, 41.64, -87.52, 42.03, 4269)" to limit to Chicagoland.
+            Enter a tuple (south, west, north, east) to limit to a bounding box.
+        restrict_region_srid: A SRID or EPSG number to use as the projection with the bbox values.
     """
 
     PERMANENT_PREFIX_NO_RESULT = "no_result"
@@ -48,7 +51,7 @@ class TigerGeocoder:
         batch_size: int = 100,
         tiger_data_year: str = "2025",
         statement_timeout: str = "30s",
-        restrict_region: str | None = None,
+        restrict_region: BBox | None = None,
     ):
         self.engine = engine
         self.schema_name = schema_name
@@ -58,6 +61,11 @@ class TigerGeocoder:
         self.tiger_data_year = tiger_data_year
         self.statement_timeout = statement_timeout
         self.restrict_region = restrict_region
+
+    def _restrict_region_sql(self) -> str | None:
+        if self.restrict_region is None:
+            return None
+        return self.restrict_region.to_st_makeenvelope()
 
     def normalize(self, address_string: str) -> dict | None:
         """Parse an address string using TIGER's normalize_address().
@@ -105,8 +113,9 @@ class TigerGeocoder:
             geocode() returns no results.
         """
         try:
-            if self.restrict_region is not None:
-                geocode_cmd = f"geocode(%s, 1, {self.restrict_region})"
+            envelope_sql = self._restrict_region_sql()
+            if envelope_sql is not None:
+                geocode_cmd = f"geocode(%s, 1, {envelope_sql})"
             else:
                 geocode_cmd = "geocode(%s, 1)"
             result = self.engine.query(
