@@ -168,7 +168,13 @@ class OsmnxCollector:
                 dataset_id=dataset_id,
                 target_table=f"{spec.target_schema}.{spec.target_table_nodes}",
                 metadata={
-                    "bbox": list(spec.bbox),
+                    "bbox": {
+                        "south": spec.bbox.south,
+                        "west": spec.bbox.west,
+                        "north": spec.bbox.north,
+                        "east": spec.bbox.east,
+                        "srid": spec.bbox.srid,
+                    },
                     "tile_id": tile_id,
                     "network_type": spec.network_type,
                     "node_count": len(nodes_gdf),
@@ -242,7 +248,13 @@ class OsmnxCollector:
                 dataset_id=dataset_id,
                 target_table=f"{spec.target_schema}.{spec.target_table_edges}",
                 metadata={
-                    "bbox": list(spec.bbox),
+                    "bbox": {
+                        "south": spec.bbox.south,
+                        "west": spec.bbox.west,
+                        "north": spec.bbox.north,
+                        "east": spec.bbox.east,
+                        "srid": spec.bbox.srid,
+                    },
                     "tile_id": tile_id,
                     "network_type": spec.network_type,
                     "edge_count": len(edges_gdf),

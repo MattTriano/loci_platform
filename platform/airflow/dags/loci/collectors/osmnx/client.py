@@ -16,15 +16,8 @@ Usage:
 
     client = OsmnxClient(cache_dir="/tmp/osmnx_cache")
 
-    # Iterate over tiles, keeping only one graph in memory at a time:
-    for tile_id, nodes_gdf, edges_gdf in client.iter_bike_network_tiles(
-        bbox=(-87.97, 41.62, -87.5, 42.05),
-        max_tile_degrees=0.3,
-    ):
-        ...
-
-    # Or fetch a single graph and convert yourself:
-    G = client.get_bike_network(bbox=(-87.97, 41.62, -87.5, 42.05))
+    # Fetch a single graph and convert yourself:
+    G = client.get_bike_network(bbox=BBox(41.62, -87.97, 42.05, -87.5))
     nodes_gdf = client.get_nodes_gdf(G)
     edges_gdf = client.get_edges_gdf(G)
 """
@@ -37,6 +30,7 @@ import geopandas as gpd
 import networkx as nx
 import numpy as np
 from loci.collectors.utils import make_temp_dir
+from loci.geo import BBox
 from scipy.spatial import cKDTree
 
 # OSM tags to collect for edges, mapped to Postgres column names.
@@ -191,7 +185,7 @@ class OsmnxClient:
 
     def get_bike_network(
         self,
-        bbox: tuple[float, float, float, float],
+        bbox: BBox,
         network_type: str = "bike",
         include_bikeable_footways: bool = True,
         merge_threshold_meters: float | None = 10,
@@ -313,7 +307,7 @@ class OsmnxClient:
 
     def _fetch_graph(
         self,
-        bbox: tuple[float, float, float, float],
+        bbox: BBox,
         network_type: str | None = "bike",
         custom_filter: str | None = None,
         simplify: bool = True,
@@ -326,9 +320,8 @@ class OsmnxClient:
             if tag not in ox.settings.useful_tags_way:
                 ox.settings.useful_tags_way.append(tag)
 
-        west, south, east, north = bbox
         kwargs = dict(
-            bbox=(west, south, east, north),
+            bbox=(bbox.west, bbox.south, bbox.east, bbox.north),
             retain_all=True,
         )
         if custom_filter:
@@ -607,10 +600,10 @@ class OsmnxClient:
     #  Caching
     # ------------------------------------------------------------------ #
 
-    def _cache_path(self, bbox, cache_key: str) -> Path | None:
+    def _cache_path(self, bbox: BBox, cache_key: str) -> Path | None:
         if not self.cache_dir:
             return None
-        raw = f"{cache_key}_{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}"
+        raw = f"{cache_key}_{bbox.west}_{bbox.south}_{bbox.east}_{bbox.north}"
         h = hashlib.md5(raw.encode()).hexdigest()[:12]
         # Sanitize cache_key for filename
         safe_key = cache_key.replace("=", "_").replace(" ", "_")

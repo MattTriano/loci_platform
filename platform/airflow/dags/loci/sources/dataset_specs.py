@@ -806,30 +806,6 @@ MADISON_OSM_TRANSIT_SPEC = OSMDatasetSpec(
     ],
 )
 
-# OSM_NODES_SPEC = OsmDatasetSpec(
-#     name="osm_nodes",
-#     region_ids=["us/illinois"],
-#     element_type="nodes",
-#     target_table="osm_nodes",
-#     target_schema="raw_data",
-# )
-
-# OSM_WAYS_SPEC = OsmDatasetSpec(
-#     name="osm_ways",
-#     region_ids=["us/illinois"],
-#     element_type="ways",
-#     target_table="osm_ways",
-#     target_schema="raw_data",
-# )
-
-# OSM_RELATIONS_SPEC = OsmDatasetSpec(
-#     name="osm_relations",
-#     region_ids=["us/illinois"],
-#     element_type="relations",
-#     target_table="osm_relations",
-#     target_schema="raw_data",
-# )
-
 #######################################################################################
 #    OSMnx                                                                            #
 #######################################################################################
@@ -839,7 +815,7 @@ OSMNX_CHICAGO_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
     target_table_nodes="chicago_osmnx_bike_network_nodes",
     target_table_edges="chicago_osmnx_bike_network_edges",
     target_schema="raw_data",
-    bbox=(-87.97, 41.62, -87.5, 42.05),
+    bbox=BBox(41.62, -87.97, 42.05, -87.5),
     network_type="bike",
     entity_key_nodes=["osmid"],
     entity_key_edges=["u", "v", "key"],
@@ -851,7 +827,7 @@ OSMNX_DETROIT_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
     target_table_nodes="osmnx_detroit_bike_network_nodes",
     target_table_edges="osmnx_detroit_bike_network_edges",
     target_schema="raw_data",
-    bbox=(-83.29, 42.24, -82.89, 42.46),
+    bbox=BBox(42.24, -83.29, 42.46, -82.89),
     network_type="bike",
     entity_key_nodes=["osmid"],
     entity_key_edges=["u", "v", "key"],

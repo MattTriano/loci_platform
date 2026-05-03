@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from loci.collectors.base_spec import DatasetSpec
+from loci.geo import BBox
 
 
 @dataclass
@@ -37,7 +38,7 @@ class OsmnxDatasetSpec(DatasetSpec):
         Destination table name for graph edges.
     target_schema : str
         Destination schema name. Default "raw_data".
-    bbox : tuple[float, float, float, float]
+    bbox : BBox
         Bounding box as (west, south, east, north) in EPSG:4326.
     network_type : str
         OSMnx network type. Default "bike".
@@ -56,10 +57,10 @@ class OsmnxDatasetSpec(DatasetSpec):
     """
 
     name: str
+    bbox: BBox
     target_table_nodes: str
     target_table_edges: str
     target_schema: str = "raw_data"
-    bbox: tuple[float, float, float, float] = (-87.97, 41.62, -87.5, 42.05)
     network_type: str = "bike"
     entity_key_nodes: list[str] = field(default_factory=lambda: ["osmid"])
     entity_key_edges: list[str] = field(default_factory=lambda: ["u", "v", "key"])
