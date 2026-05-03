@@ -30,52 +30,6 @@ def site_url_for(city: str, env: str) -> str:
     return f"https://{city}.{base}" if env == "prod" else f"https://{city}.{env}.{base}"
 
 
-# def _random_route_within(
-#     bbox: tuple[float, float, float, float],
-#     max_distance_miles: float,
-#     rng: random.Random,
-#     max_attempts: int = 50,
-# ) -> tuple[tuple[float, float], tuple[float, float]]:
-#     """Pick origin in bbox, then a destination within max_distance_miles
-#     that's also in the bbox.
-
-#     Args:
-#         bbox: (south, west, north, east) in lat/lon degrees.
-#         max_distance_miles: Maximum great-circle distance between origin
-#             and destination, approximated as a planar distance (fine at
-#             city scale).
-#         rng: Seeded random.Random for reproducibility.
-#         max_attempts: Outer attempts to pick an origin before giving up.
-
-#     Returns:
-#         ((origin_lat, origin_lon), (destination_lat, destination_lon)).
-#     """
-#     south, west, north, east = bbox
-#     max_meters = max_distance_miles * 1609.344
-
-#     for _ in range(max_attempts):
-#         o_lat = rng.uniform(south, north)
-#         o_lon = rng.uniform(west, east)
-
-#         lat_deg_per_m = 1 / _METERS_PER_DEG_LAT
-#         lon_deg_per_m = 1 / (_METERS_PER_DEG_LAT * math.cos(math.radians(o_lat)))
-#         d_lat_max = max_meters * lat_deg_per_m
-#         d_lon_max = max_meters * lon_deg_per_m
-
-#         for _ in range(20):
-#             d_lat = rng.uniform(-d_lat_max, d_lat_max)
-#             d_lon = rng.uniform(-d_lon_max, d_lon_max)
-#             meters = math.hypot(d_lat / lat_deg_per_m, d_lon / lon_deg_per_m)
-#             if meters > max_meters:
-#                 continue
-#             dest_lat = o_lat + d_lat
-#             dest_lon = o_lon + d_lon
-#             if south <= dest_lat <= north and west <= dest_lon <= east:
-#                 return (o_lat, o_lon), (dest_lat, dest_lon)
-
-#     raise RuntimeError("Could not find a valid origin/destination pair in bbox")
-
-
 def _random_route_within(
     bbox: BBox,
     max_distance_miles: float,

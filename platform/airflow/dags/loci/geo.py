@@ -39,10 +39,18 @@ class BBox:
             raise ValueError(
                 f"west ({self.west}) must be less than east ({self.east}); did you swap lat/lon?"
             )
-        if not -90 <= self.south <= 90 and -90 <= self.north <= 90:
+        if not (-90 <= self.south <= 90 and -90 <= self.north <= 90):
             raise ValueError(f"latitudes out of range: south={self.south}, north={self.north}")
-        if not -180 <= self.west <= 180 and -180 <= self.east <= 180:
+        if not (-180 <= self.west <= 180 and -180 <= self.east <= 180):
             raise ValueError(f"longitudes out of range: west={self.west}, east={self.east}")
+        if self.west > self.east:
+            raise ValueError(
+                f"longitudes possibly reversed, west > east: west={self.west}, east={self.east}"
+            )
+        if self.south > self.north:
+            raise ValueError(
+                f"latitudes possibly reversed, south > north: south={self.south}, north={self.north}"
+            )
 
     def to_st_makeenvelope(self) -> str:
         """Render as a PostGIS ST_MakeEnvelope(xmin, ymin, xmax, ymax, srid) call."""

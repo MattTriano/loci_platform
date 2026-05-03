@@ -13,7 +13,6 @@ from loci.tasks.bike_map_tasks import (
 CHICAGO_SPEC = CityBuildSpec(
     city="chicago",
     bbox=BBox(south=41.64, west=-87.94, north=42.03, east=-87.52),
-    # "ST_MakeEnvelope(-87.94, 41.64, -87.52, 42.03, 4269)",
     pre_export_dbt_selects=[
         # Bike theft hotspots — depends on geocoded address cache.
         (
