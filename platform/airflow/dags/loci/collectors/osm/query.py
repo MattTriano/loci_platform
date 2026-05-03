@@ -29,6 +29,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from loci.geo import BBox
+
 VALID_ELEMENT_TYPES = {"node", "way", "relation"}
 VALID_OUT_MODES = {"geom", "center"}
 
@@ -92,7 +94,7 @@ class OverpassAPIQuery:
 
     element_types: list[str]
     tag_filters: list[dict[str, str | list[str] | Regex | None]]
-    bbox: tuple[float, float, float, float] | None = None
+    bbox: BBox | None = None
     area_name: str | None = None
     timeout: int = 180
     out_mode: str = "geom"
@@ -126,15 +128,6 @@ class OverpassAPIQuery:
         if self.bbox is not None and self.area_name is not None:
             raise ValueError("bbox and area_name are mutually exclusive.")
 
-        if self.bbox is not None:
-            s, w, n, e = self.bbox
-            if not (-90 <= s <= 90 and -90 <= n <= 90):
-                raise ValueError(f"Latitude out of range in bbox: {self.bbox}")
-            if not (-180 <= w <= 180 and -180 <= e <= 180):
-                raise ValueError(f"Longitude out of range in bbox: {self.bbox}")
-            if s >= n:
-                raise ValueError(f"bbox south ({s}) must be less than north ({n})")
-
         # out_mode
         if self.out_mode not in VALID_OUT_MODES:
             raise ValueError(
@@ -145,7 +138,7 @@ class OverpassAPIQuery:
     # Public API
     # ------------------------------------------------------------------
 
-    def for_bbox(self, bbox: tuple[float, float, float, float]) -> OverpassAPIQuery:
+    def for_bbox(self, bbox: BBox) -> OverpassAPIQuery:
         """
         Return a copy of this query with the spatial extent set to bbox.
 
@@ -226,8 +219,8 @@ class OverpassAPIQuery:
             parts.append(f"(newer:{_quote(date_filter)})")
 
         if self.bbox is not None:
-            s, w, n, e = self.bbox
-            parts.append(f"({s},{w},{n},{e})")
+            b = self.bbox
+            parts.append(f"({b.south},{b.west},{b.north},{b.east})")
         else:
             parts.append("(area.searchArea)")
 

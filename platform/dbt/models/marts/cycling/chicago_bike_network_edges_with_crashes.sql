@@ -2,7 +2,7 @@
 -- Enriches bike network edges with time-decayed crash scores.
 --
 -- Source: mart__chicago_bike_network_edges (edges with Socrata enrichment)
---         bike_crash_hotspots (crash locations with severity scores)
+--         chicago_bike_crash_hotspots (crash locations with severity scores)
 --
 -- The crash spatial join is expensive, so we drive it from the small
 -- crashes table (~17.5k) onto the edge index, collect matched edge keys,
@@ -28,7 +28,7 @@ with edges as (
 ),
 
 crashes as (
-    select * from {{ ref('bike_crash_hotspots') }}
+    select * from {{ ref('chicago_bike_crash_hotspots') }}
 ),
 
 -- =====================================================================

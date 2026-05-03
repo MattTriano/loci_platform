@@ -1,8 +1,8 @@
--- stg__osm__bike_infrastructure.sql
+-- stg__chicago_osm_bike_infrastructure.sql
 -- Classifies OSMnx bike network edges into infrastructure categories
 -- using the full set of cycleway/bicycle tags.
 --
--- Source: stg__osmnx__bike_network_edges
+-- Source: stg__chicago_osmnx_bike_network
 -- Grain: one row per directed edge with bike infrastructure present.
 --
 -- Infrastructure taxonomy:
@@ -24,7 +24,7 @@
 ) }}
 
 with edges as (
-    select * from {{ ref('stg__osmnx__bike_network_edges') }}
+    select * from {{ ref('stg__chicago_osmnx_bike_network') }}
 ),
 
 -- Resolve the effective cycleway value for each edge. OSM tags can appear

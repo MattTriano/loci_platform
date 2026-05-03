@@ -1,7 +1,7 @@
--- stg__osmnx__bike_network_edges.sql
+-- stg__chicago_osmnx_bike_network.sql
 -- Staging model for OSMnx bike network edges over the Chicagoland bbox.
 --
--- Source: raw_data.osmnx_bike_network_edges (collected via OsmnxCollector)
+-- Source: raw_data.chicago_osmnx_bike_network_edges (collected via OsmnxCollector)
 -- Grain: one row per directed edge (u, v, key), current version only.
 --
 -- Notes:
@@ -100,7 +100,7 @@ select
     length_m,
     geom
 
-from {{ source('raw_data', 'osmnx_bike_network_edges') }}
+from {{ source('raw_data', 'chicago_osmnx_bike_network_edges') }}
 where
     valid_to is null
     and geom && ST_MakeEnvelope(-87.97, 41.62, -87.5, 42.05, 4326)

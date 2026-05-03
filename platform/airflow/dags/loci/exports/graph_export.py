@@ -1,13 +1,14 @@
+# loci_platform/platform/airflow/dags/loci/exports/graph_export.py
 """
-Export a safety-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
+Export a stress-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
 
-Queries mart__bike_safety_weighted_edges and osmnx_bike_network_nodes from
+Queries mart__chicago_bike_stress_weighted_edges and chicago_osmnx_bike_network_nodes from
 the marts schema, builds a NetworkX DiGraph, serializes it with gzip pickle,
 and writes it to a local path.
 
 The graph stores only what the Lambda routing function needs:
     - Node attributes: lat (y), lon (x)
-    - Edge attributes: key, length_m, safety_cost, name, highway,
+    - Edge attributes: key, length_m, stress_cost, name, highway,
       geometry_coords
 
 Usage from an Airflow task:
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class RoutingGraphExporter:
-    """Builds a safety-weighted routing graph and writes it to a local file.
+    """Builds a stress-weighted routing graph and writes it to a local file.
 
     Parameters
     ----------
@@ -53,43 +54,39 @@ class RoutingGraphExporter:
 
     _EDGE_QUERY = """
         select
-            e.u,
-            e.v,
-            e.key,
-            e.name,
-            e.highway,
-            e.length_m,
-            e.safety_cost,
+            e.u, e.v, e.key, e.name, e.highway, e.length_m, e.stress_cost,
             ST_AsGeoJSON(ST_Simplify(e.geom, 0.00005)) as geom_geojson,
             n_u.latitude  as u_lat,
             n_u.longitude as u_lon,
             n_v.latitude  as v_lat,
             n_v.longitude as v_lon
-        from {marts_schema}.bike_safety_weighted_edges e
-        join raw_data.osmnx_bike_network_nodes n_u
+        from {marts_schema}.{city}_bike_stress_weighted_edges e
+        join raw_data.{city}_osmnx_bike_network_nodes n_u
             on n_u.osmid = e.u
             and n_u.valid_to is null
-        join raw_data.osmnx_bike_network_nodes n_v
+        join raw_data.{city}_osmnx_bike_network_nodes n_v
             on n_v.osmid = e.v
             and n_v.valid_to is null
-        where e.safety_cost is not null
+        where e.stress_cost is not null
         order by e.u, e.v, e.key """
 
     _CRS_QUERY = """
         select srtext
         from spatial_ref_sys
         where srid = (
-            select Find_SRID('{marts_schema}', 'bike_safety_weighted_edges', 'geom')
+            select Find_SRID('{marts_schema}', '{city}_bike_stress_weighted_edges', 'geom')
         ) """
 
     def __init__(
         self,
         engine: PostgresEngine,
+        city: str,
         marts_schema: str,
         batch_size: int = 50_000,
         min_component_size: int = 75,
     ):
         self.engine = engine
+        self.city = city
         self.marts_schema = marts_schema
         self.batch_size = batch_size
         self.min_component_size = min_component_size
@@ -143,7 +140,7 @@ class RoutingGraphExporter:
 
     def _build_graph(self) -> nx.DiGraph:
         """Stream edges from the database and build a NetworkX DiGraph."""
-        query = self._EDGE_QUERY.format(marts_schema=self.marts_schema)
+        query = self._EDGE_QUERY.format(city=self.city, marts_schema=self.marts_schema)
 
         G = nx.DiGraph()
         edge_count = 0
@@ -162,7 +159,7 @@ class RoutingGraphExporter:
                     v,
                     key=row["key"],
                     length_m=row["length_m"],
-                    safety_cost=row["safety_cost"],
+                    stress_cost=row["stress_cost"],
                     name=row["name"],
                     highway=row["highway"],
                     geometry_coords=self._parse_geojson_coords(row["geom_geojson"]),
@@ -171,7 +168,9 @@ class RoutingGraphExporter:
 
             logger.info("Loaded %d edges", edge_count)
 
-        crs_row = self.engine.query(self._CRS_QUERY.format(marts_schema=self.marts_schema))
+        crs_row = self.engine.query(
+            self._CRS_QUERY.format(city=self.city, marts_schema=self.marts_schema)
+        )
         G.graph["crs"] = crs_row["srtext"][0]
 
         logger.info(

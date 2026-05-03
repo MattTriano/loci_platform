@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/tasks/transform_tasks.py
 import subprocess
 from logging import Logger
 
@@ -38,7 +39,11 @@ def build_pre_geocode(env: str, city: str) -> str:
 
 
 @task
-def geocode(conn_id: str, task_logger: Logger, restrict_region: str | None) -> dict:
+def geocode(
+    conn_id: str,
+    task_logger: Logger,
+    restrict_region: tuple[float, float, float, float] | None,
+) -> dict:
     from loci.db.af_utils import get_postgres_engine
     from loci.transform.geocode import TigerGeocoder
 
@@ -59,7 +64,7 @@ def build_post_geocode(env: str, city: str) -> str:
 
 @task_group
 def dbt_build_with_geocoding(
-    env: str, conn_id: str, task_logger: Logger, restrict_region: str | None
+    env: str, conn_id: str, task_logger: Logger, restrict_region: tuple[float, float, float, float]
 ) -> None:
     _pre_build = build_pre_geocode(env=env)
     _geocode = geocode(conn_id=conn_id, task_logger=task_logger, restrict_region=restrict_region)

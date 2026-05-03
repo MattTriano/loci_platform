@@ -9,8 +9,8 @@ Usage:
 
     spec = OsmnxDatasetSpec(
         name="chicagoland_bike_network",
-        target_table_nodes="osmnx_bike_network_nodes",
-        target_table_edges="osmnx_bike_network_edges",
+        target_table_nodes="chicago_osmnx_bike_network_nodes",
+        target_table_edges="chicago_osmnx_bike_network_edges",
         bbox=(-87.97, 41.62, -87.5, 42.05),
     )
 
@@ -168,7 +168,13 @@ class OsmnxCollector:
                 dataset_id=dataset_id,
                 target_table=f"{spec.target_schema}.{spec.target_table_nodes}",
                 metadata={
-                    "bbox": list(spec.bbox),
+                    "bbox": {
+                        "south": spec.bbox.south,
+                        "west": spec.bbox.west,
+                        "north": spec.bbox.north,
+                        "east": spec.bbox.east,
+                        "srid": spec.bbox.srid,
+                    },
                     "tile_id": tile_id,
                     "network_type": spec.network_type,
                     "node_count": len(nodes_gdf),
@@ -242,7 +248,13 @@ class OsmnxCollector:
                 dataset_id=dataset_id,
                 target_table=f"{spec.target_schema}.{spec.target_table_edges}",
                 metadata={
-                    "bbox": list(spec.bbox),
+                    "bbox": {
+                        "south": spec.bbox.south,
+                        "west": spec.bbox.west,
+                        "north": spec.bbox.north,
+                        "east": spec.bbox.east,
+                        "srid": spec.bbox.srid,
+                    },
                     "tile_id": tile_id,
                     "network_type": spec.network_type,
                     "edge_count": len(edges_gdf),

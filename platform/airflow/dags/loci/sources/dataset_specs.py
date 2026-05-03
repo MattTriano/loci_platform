@@ -7,6 +7,7 @@ from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
+from loci.geo import BBox
 
 #######################################################################################
 #    Bike Index                                                                       #
@@ -319,19 +320,19 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT = CensusDatasetSpec(
 #    OpenStreetMaps                                                                   #
 #######################################################################################
 
-BOSTON_BBOX = (42.20, -71.26, 42.45, -70.96)
-CHICAGO_BBOX = (41.62, -87.97, 42.05, -87.5)
-DENVER_BBOX = (39.55, -105.19, 39.94, -104.56)
-DETROIT_BBOX = (42.18, -83.40, 42.56, -82.84)
-LOS_ANGELES_BBOX = (33.69, -118.72, 34.38, -118.02)
-MADISON_BBOX = (42.96, -89.60, 43.21, -89.21)
-NEW_ORLEANS_BBOX = (29.83, -90.22, 30.19, -89.60)
-NEW_YORK_CITY_BBOX = (40.52, -74.05, 40.93, -73.67)
-PORTLAND_BBOX = (45.41, -122.86, 45.66, -122.46)
-SAN_FRANCISCO_BBOX = (37.61, -122.53, 37.84, -122.35)
-SF_BAY_AREA_BBOX = (37.18, -122.59, 37.88, -121.73)
-SEATTLE_BBOX = (47.47, -122.48, 47.78, -122.04)
-TORONTO_BBOX = (43.48, -79.79, 43.95, -78.84)
+BOSTON_BBOX = BBox(42.20, -71.26, 42.45, -70.96)
+CHICAGO_BBOX = BBox(41.62, -87.97, 42.05, -87.5)
+DENVER_BBOX = BBox(39.55, -105.19, 39.94, -104.56)
+DETROIT_BBOX = BBox(42.18, -83.40, 42.56, -82.84)
+LOS_ANGELES_BBOX = BBox(33.69, -118.72, 34.38, -118.02)
+MADISON_BBOX = BBox(42.96, -89.60, 43.21, -89.21)
+NEW_ORLEANS_BBOX = BBox(29.83, -90.22, 30.19, -89.60)
+NEW_YORK_CITY_BBOX = BBox(40.52, -74.05, 40.93, -73.67)
+PORTLAND_BBOX = BBox(45.41, -122.86, 45.66, -122.46)
+SAN_FRANCISCO_BBOX = BBox(37.61, -122.53, 37.84, -122.35)
+SF_BAY_AREA_BBOX = BBox(37.18, -122.59, 37.88, -121.73)
+SEATTLE_BBOX = BBox(47.47, -122.48, 47.78, -122.04)
+TORONTO_BBOX = BBox(43.48, -79.79, 43.95, -78.84)
 
 
 # ====================================================================================
@@ -805,40 +806,16 @@ MADISON_OSM_TRANSIT_SPEC = OSMDatasetSpec(
     ],
 )
 
-# OSM_NODES_SPEC = OsmDatasetSpec(
-#     name="osm_nodes",
-#     region_ids=["us/illinois"],
-#     element_type="nodes",
-#     target_table="osm_nodes",
-#     target_schema="raw_data",
-# )
-
-# OSM_WAYS_SPEC = OsmDatasetSpec(
-#     name="osm_ways",
-#     region_ids=["us/illinois"],
-#     element_type="ways",
-#     target_table="osm_ways",
-#     target_schema="raw_data",
-# )
-
-# OSM_RELATIONS_SPEC = OsmDatasetSpec(
-#     name="osm_relations",
-#     region_ids=["us/illinois"],
-#     element_type="relations",
-#     target_table="osm_relations",
-#     target_schema="raw_data",
-# )
-
 #######################################################################################
 #    OSMnx                                                                            #
 #######################################################################################
 
 OSMNX_CHICAGO_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
     name="chicagoland_bike_network",
-    target_table_nodes="osmnx_bike_network_nodes",
-    target_table_edges="osmnx_bike_network_edges",
+    target_table_nodes="chicago_osmnx_bike_network_nodes",
+    target_table_edges="chicago_osmnx_bike_network_edges",
     target_schema="raw_data",
-    bbox=(-87.97, 41.62, -87.5, 42.05),
+    bbox=BBox(41.62, -87.97, 42.05, -87.5),
     network_type="bike",
     entity_key_nodes=["osmid"],
     entity_key_edges=["u", "v", "key"],
@@ -850,7 +827,7 @@ OSMNX_DETROIT_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
     target_table_nodes="osmnx_detroit_bike_network_nodes",
     target_table_edges="osmnx_detroit_bike_network_edges",
     target_schema="raw_data",
-    bbox=(-83.29, 42.24, -82.89, 42.46),
+    bbox=BBox(42.24, -83.29, 42.46, -82.89),
     network_type="bike",
     entity_key_nodes=["osmid"],
     entity_key_edges=["u", "v", "key"],

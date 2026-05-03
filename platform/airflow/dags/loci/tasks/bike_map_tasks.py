@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/tasks/bike_map_tasks.py
 """
 Shared task-graph builder for per-city bike map refresh DAGs.
 
@@ -21,6 +22,10 @@ from loci.environments import VALID_ENVS, get_env
 from loci.exports.graph_export import RoutingGraphExporter
 from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda
 from loci.tasks.export_tasks import export_bike_map_geojson
+from loci.tasks.testing.deployment_smoke_test import (
+    site_url_for,
+    smoke_test_deployed_routing,
+)
 from loci.tasks.testing.route_tests import run_route_tests
 from loci.tasks.transform_tasks import run_dbt
 
@@ -36,23 +41,26 @@ class CityBuildSpec:
 
     city
         City identifier matching VALID_CITIES (e.g. 'chicago').
-    geocode_bbox
-        PostGIS expression for the geocoding bounding box, or None if
-        the city's pipeline doesn't use the geocoder.
+    bbox
+        (south, west, north, east) in EPSG:4269 (NAD83 lon/lat) as the bounding box
+        for geocoding and limiting to a bounding box around a city.
+    geocode
+        A bool indicating whether geocoding should be used for the city.
     pre_export_dbt_selects
         List of dbt --select expressions to run sequentially before the
         geojson export. Each runs as a separate dbt build invocation
         because they have ordering constraints (e.g. some need to run
         with --indirect-selection=cautious to skip cross-model tests).
     weights_dbt_select
-        dbt --select expression for the safety-weighted edges model that
+        dbt --select expression for the stress-weighted edges model that
         feeds the routing graph.
     """
 
     city: str
-    geocode_bbox: str | None
+    bbox: tuple[float, float, float, float]
+    geocode: bool = False
     pre_export_dbt_selects: list[tuple[str, ...]] = field(default_factory=list)
-    weights_dbt_select: str = "+bike_safety_weighted_edges"
+    weights_dbt_select: str = "+chicago_bike_stress_weighted_edges"
 
 
 @task
@@ -84,10 +92,10 @@ def run_dbt_select(env: str, select_args: tuple[str, ...]) -> str:
 def build_routing_graph(
     env: str, conn_id: str, graph_path: str, task_logger: logging.Logger
 ) -> str:
-    """Build the safety-weighted routing graph for testing."""
+    """Build the stress-weighted routing graph for testing."""
     cfg = get_env(env, _city_from_context())
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
-    exporter = RoutingGraphExporter(engine, marts_schema=cfg.marts_schema)
+    exporter = RoutingGraphExporter(engine, city=cfg.city, marts_schema=cfg.marts_schema)
     output_path = Path(graph_path)
     if output_path.exists():
         output_path.unlink()
@@ -118,6 +126,24 @@ def deploy_graph(env: str, graph_path: str, task_logger: logging.Logger) -> str:
     return uri
 
 
+@task
+def smoke_test_deployment(
+    env: str,
+    bbox: tuple[float, float, float, float] | None,
+    task_logger: logging.Logger,
+) -> dict | None:
+    if bbox is None:
+        task_logger.info("No bbox configured; skipping smoke test")
+        return None
+
+    city = _city_from_context()
+    return smoke_test_deployed_routing(
+        site_url=site_url_for(city=city, env=env),
+        bbox=bbox,
+        logger=task_logger,
+    )
+
+
 def build_refresh_task_graph(spec: CityBuildSpec) -> None:
     """Build the standard refresh task graph for one city.
 
@@ -127,15 +153,14 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
 
     _deps = install_dependencies(env=ENV_TEMPLATE)
 
-    # Geocoding fan-in (only if the city uses geocoding)
-    if spec.geocode_bbox is not None:
+    if spec.geocode:
         from loci.tasks.transform_tasks import build_pre_geocode, geocode
 
         _pre_geocode = build_pre_geocode(env=ENV_TEMPLATE, city=spec.city)
         _geocode = geocode(
             conn_id=CONN_ID,
             task_logger=task_logger,
-            restrict_region=spec.geocode_bbox,
+            restrict_region=spec.bbox,
         )
         chain(_deps, _pre_geocode, _geocode)
         _pre_export_root = _geocode
@@ -165,7 +190,7 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
     chain(_export_layers, _deploy_map)
 
     # Routing graph + lambda (parallel branch from deps)
-    _build_weights = run_dbt_select.override(task_id="build_safety_weighted_edges")(
+    _build_weights = run_dbt_select.override(task_id="build_stress_weighted_edges")(
         env=ENV_TEMPLATE,
         select_args=("--select", spec.weights_dbt_select),
     )
@@ -186,8 +211,14 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
         city=spec.city,
         task_logger=task_logger,
     )
-
     chain(_deps, _build_weights, _build_graph, _run_tests, _deploy_graph, _deploy_lambda)
+
+    _smoke_test = smoke_test_deployment(
+        env=ENV_TEMPLATE,
+        bbox=spec.bbox,  # tuple, not SQL string
+        task_logger=task_logger,
+    )
+    chain([_deploy_lambda, _deploy_map], _smoke_test)
 
 
 def standard_dag_params(city: str) -> dict:

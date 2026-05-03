@@ -36,7 +36,7 @@ with osm_infra as (
         oneway,
         has_buffer,
         'osm' as data_source
-    from {{ ref('stg__osm__bike_infrastructure') }}
+    from {{ ref('stg__chicago_osm_bike_infrastructure') }}
 ),
 
 chicago_infra as (
@@ -52,7 +52,7 @@ chicago_infra as (
         oneway_dir as oneway,
         infra_type = 'buffered_lane' as has_buffer,
         'chicago_data_portal' as data_source
-    from {{ ref('stg__soc__bike_infrastructure') }}
+    from {{ ref('stg__chicago_soc_bike_infrastructure') }}
 ),
 
 combined as (

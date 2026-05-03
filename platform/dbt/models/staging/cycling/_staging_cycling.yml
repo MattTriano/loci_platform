@@ -2,13 +2,13 @@ version: 2
 
 models:
   # ==================================================================
-  # stg__traffic_control_nodes
+  # stg__chicago_traffic_control_nodes
   # ==================================================================
-  - name: stg__traffic_control_nodes
+  - name: stg__chicago_traffic_control_nodes
     description: >
       Per-node traffic control classification. Enriches each node with
       graph degree, intersection status, max road classification, and
-      a safety penalty/bonus for use in edge cost computation.
+      a stress penalty/bonus for use in edge cost computation.
 
     data_tests:
       # All penalties are non-negative
