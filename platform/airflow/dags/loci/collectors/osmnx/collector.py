@@ -9,8 +9,8 @@ Usage:
 
     spec = OsmnxDatasetSpec(
         name="chicagoland_bike_network",
-        target_table_nodes="osmnx_bike_network_nodes",
-        target_table_edges="osmnx_bike_network_edges",
+        target_table_nodes="chicago_osmnx_bike_network_nodes",
+        target_table_edges="chicago_osmnx_bike_network_edges",
         bbox=(-87.97, 41.62, -87.5, 42.05),
     )
 

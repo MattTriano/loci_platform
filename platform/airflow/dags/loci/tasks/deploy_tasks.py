@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/tasks/deploy_tasks.py
 """
 Airflow tasks for deploying the bike map to S3 + CloudFront.
 
@@ -252,7 +253,6 @@ def build_lambda_zip(output_path: Path) -> Path:
 
 @task
 def export_routing_graph(env: str, city: str, conn_id: str, task_logger: Logger) -> dict:
-    cfg = get_env(env, city)
     """Build the stress-weighted routing graph and upload it to S3."""
     cfg = get_env(env, city)
     session = get_boto_session(cfg)

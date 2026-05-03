@@ -70,7 +70,7 @@ nodes as (
             when 2 then 'tertiary'
             else        'minor'
         end                                     as max_road_class
-    from {{ source('raw_data', 'osmnx_bike_network_nodes') }} as n
+    from {{ source('raw_data', 'chicago_osmnx_bike_network_nodes') }} as n
     inner join node_degree nd
         on nd.node_id = n.osmid
     inner join edge_road_ranks err

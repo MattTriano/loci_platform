@@ -9,8 +9,8 @@ Usage:
 
     spec = OsmnxDatasetSpec(
         name="chicagoland_bike_network",
-        target_table_nodes="osmnx_bike_network_nodes",
-        target_table_edges="osmnx_bike_network_edges",
+        target_table_nodes="chicago_osmnx_bike_network_nodes",
+        target_table_edges="chicago_osmnx_bike_network_edges",
         bbox=(-87.97, 41.62, -87.5, 42.05),
     )
 """
@@ -55,9 +55,9 @@ class OsmnxDatasetSpec(DatasetSpec):
         Default 50_000.
     """
 
-    name: str = "chicagoland_bike_network"
-    target_table_nodes: str = "osmnx_bike_network_nodes"
-    target_table_edges: str = "osmnx_bike_network_edges"
+    name: str
+    target_table_nodes: str
+    target_table_edges: str
     target_schema: str = "raw_data"
     bbox: tuple[float, float, float, float] = (-87.97, 41.62, -87.5, 42.05)
     network_type: str = "bike"

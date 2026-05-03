@@ -95,7 +95,7 @@ def build_routing_graph(
     """Build the stress-weighted routing graph for testing."""
     cfg = get_env(env, _city_from_context())
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
-    exporter = RoutingGraphExporter(engine, marts_schema=cfg.marts_schema)
+    exporter = RoutingGraphExporter(engine, city=cfg.city, marts_schema=cfg.marts_schema)
     output_path = Path(graph_path)
     if output_path.exists():
         output_path.unlink()

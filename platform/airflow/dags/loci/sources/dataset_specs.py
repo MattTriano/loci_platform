@@ -836,8 +836,8 @@ MADISON_OSM_TRANSIT_SPEC = OSMDatasetSpec(
 
 OSMNX_CHICAGO_BIKE_NETWORK_SPEC = OsmnxDatasetSpec(
     name="chicagoland_bike_network",
-    target_table_nodes="osmnx_bike_network_nodes",
-    target_table_edges="osmnx_bike_network_edges",
+    target_table_nodes="chicago_osmnx_bike_network_nodes",
+    target_table_edges="chicago_osmnx_bike_network_edges",
     target_schema="raw_data",
     bbox=(-87.97, 41.62, -87.5, 42.05),
     network_type="bike",
