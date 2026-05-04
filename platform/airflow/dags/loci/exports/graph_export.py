@@ -9,7 +9,20 @@ and writes it to a local path.
 The graph stores only what the Lambda routing function needs:
     - Node attributes: lat (y), lon (x)
     - Edge attributes: key, length_m, stress_cost, name, highway,
-      geometry_coords
+      geometry_coords, plus the raw stress-cost components
+      (speed_factor, road_type_factor, infrastructure_factor,
+      tunnel_factor, surface_factor, lighting_factor,
+      crash_score_per_meter, traffic_control_penalty) so the Lambda
+      can return a per-segment cost breakdown.
+
+Memory notes
+------------
+- geometry_coords is stored as a tuple of tuples rather than a list of
+  lists. Tuples have less per-object overhead than lists and pickle to
+  fewer bytes.
+- name and highway strings are interned via sys.intern() so that the
+  thousands of edges sharing values like "residential" or "Milwaukee
+  Avenue" point to a single string object instead of one per edge.
 
 Usage from an Airflow task:
 
@@ -25,6 +38,7 @@ import gzip
 import json
 import logging
 import pickle
+import sys
 from pathlib import Path
 
 import networkx as nx
@@ -55,6 +69,14 @@ class RoutingGraphExporter:
     _EDGE_QUERY = """
         select
             e.u, e.v, e.key, e.name, e.highway, e.length_m, e.stress_cost,
+            e.speed_factor,
+            e.road_type_factor,
+            e.infrastructure_factor,
+            e.tunnel_factor,
+            e.surface_factor,
+            e.lighting_factor,
+            e.crash_score_per_meter,
+            e.traffic_control_penalty,
             ST_AsGeoJSON(ST_Simplify(e.geom, 0.00005)) as geom_geojson,
             n_u.latitude  as u_lat,
             n_u.longitude as u_lon,
@@ -123,20 +145,38 @@ class RoutingGraphExporter:
         return output_path
 
     @staticmethod
-    def _parse_geojson_coords(geom_geojson: str | None) -> list | None:
-        """Parse a GeoJSON geometry string into a coordinate list.
+    def _parse_geojson_coords(geom_geojson: str | None) -> tuple | None:
+        """Parse a GeoJSON geometry string into a coordinate tuple.
 
-        Returns the coordinates array from the GeoJSON (e.g. [[lon, lat], ...])
-        or None if the input is null or unparseable. Parsing at export time
-        avoids repeated json.loads calls at request time in the Lambda.
+        Returns the coordinates as a tuple of (lon, lat) tuples
+        (e.g. ((lon, lat), ...)) or None if the input is null or
+        unparseable. Tuples use less memory than lists when stored
+        as edge attributes across hundreds of thousands of edges.
+        Parsing at export time avoids repeated json.loads calls at
+        request time in the Lambda.
         """
         if not geom_geojson:
             return None
         try:
             geom = json.loads(geom_geojson)
-            return geom.get("coordinates")
+            coords = geom.get("coordinates")
+            if coords is None:
+                return None
+            return tuple(tuple(c) for c in coords)
         except (json.JSONDecodeError, TypeError):
             return None
+
+    @staticmethod
+    def _intern_or_none(value):
+        """sys.intern() the value if it's a non-empty string, else return as-is.
+
+        Many edges share values like 'residential' or 'Milwaukee Avenue'.
+        Interning lets all those edges point to the same underlying
+        string object, cutting memory use meaningfully on a city graph.
+        """
+        if isinstance(value, str) and value:
+            return sys.intern(value)
+        return value
 
     def _build_graph(self) -> nx.DiGraph:
         """Stream edges from the database and build a NetworkX DiGraph."""
@@ -160,9 +200,17 @@ class RoutingGraphExporter:
                     key=row["key"],
                     length_m=row["length_m"],
                     stress_cost=row["stress_cost"],
-                    name=row["name"],
-                    highway=row["highway"],
+                    name=self._intern_or_none(row["name"]),
+                    highway=self._intern_or_none(row["highway"]),
                     geometry_coords=self._parse_geojson_coords(row["geom_geojson"]),
+                    speed_factor=row["speed_factor"],
+                    road_type_factor=row["road_type_factor"],
+                    infrastructure_factor=row["infrastructure_factor"],
+                    tunnel_factor=row["tunnel_factor"],
+                    surface_factor=row["surface_factor"],
+                    lighting_factor=row["lighting_factor"],
+                    crash_score_per_meter=row["crash_score_per_meter"],
+                    traffic_control_penalty=row["traffic_control_penalty"],
                 )
                 edge_count += 1
 

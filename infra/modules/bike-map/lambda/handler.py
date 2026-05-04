@@ -1,4 +1,4 @@
-# /loci_platform/infra/modules/bike-map/lambda/handler.py
+# loci_platform/infra/modules/bike-map/lambda/handler.py
 """
 Lambda handler for the bike routing API.
 
@@ -22,7 +22,31 @@ Response:
         "total_cost": float,
         "total_length_m": float,
         "nodes": [osmid, ...],
-        "coordinates": [[lon, lat], ...]   # GeoJSON order, ready to render
+        "segments": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": [[lon, lat], ...]},
+                    "properties": {
+                        "name": str | None,
+                        "highway": str | None,
+                        "length_m": float,
+                        "stress_cost": float,
+                        "speed_factor": float,
+                        "road_type_factor": float,
+                        "infrastructure_factor": float,
+                        "tunnel_factor": float,
+                        "surface_factor": float,
+                        "lighting_factor": float,
+                        "crash_score_per_meter": float,
+                        "traffic_control_penalty": float,
+                        "left_turn_penalty": float
+                    }
+                },
+                ...
+            ]
+        }
     }
 """
 
@@ -92,6 +116,58 @@ def _ensure_loaded():
         _graph, _kdtree, _node_ids = _load_graph()
     if _api_key is None:
         _api_key = _load_api_key()
+
+
+# ---------------------------------------------------------------------------
+# Response shaping
+# ---------------------------------------------------------------------------
+# Segment fields carried through to the response. Defined here rather
+# than copying from routing.py so the Lambda contract is explicit and
+# changes to the upstream segment dict don't silently leak through.
+_SEGMENT_PROPERTY_FIELDS: tuple[str, ...] = (
+    "name",
+    "highway",
+    "length_m",
+    "stress_cost",
+    "speed_factor",
+    "road_type_factor",
+    "infrastructure_factor",
+    "tunnel_factor",
+    "surface_factor",
+    "lighting_factor",
+    "crash_score_per_meter",
+    "traffic_control_penalty",
+    "left_turn_penalty",
+)
+
+
+def _route_to_response_body(route: dict) -> dict:
+    """Convert a routing.find_route() result into the JSON response body.
+
+    Wraps segments in a GeoJSON FeatureCollection so the frontend can
+    drop them directly into a MapLibre source.
+    """
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": seg["coordinates"],
+            },
+            "properties": {field: seg.get(field) for field in _SEGMENT_PROPERTY_FIELDS},
+        }
+        for seg in route["segments"]
+    ]
+
+    return {
+        "total_cost": route["total_cost"],
+        "total_length_m": route["total_length_m"],
+        "nodes": route["nodes"],
+        "segments": {
+            "type": "FeatureCollection",
+            "features": features,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -167,5 +243,5 @@ def lambda_handler(event: dict, context) -> dict:
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(result),
+        "body": json.dumps(_route_to_response_body(result)),
     }

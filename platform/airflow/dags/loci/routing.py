@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/routing.py
 """
 Core bike-stress routing logic.
 
@@ -16,6 +17,14 @@ residential street.
 The penalty is additive (meters of "virtual stress cost") so it
 composes naturally with the per-edge stress_cost already stored in the
 graph.
+
+Route output
+------------
+find_route returns both a flat coordinate list (for drawing the route
+as a single line) and a `segments` list (one entry per traversed edge)
+with the raw stress-cost components on each segment so callers can
+display a per-segment cost breakdown. Left-turn penalties are attached
+to the outgoing segment (the segment the rider is turning onto).
 """
 
 from __future__ import annotations
@@ -56,6 +65,20 @@ _ROAD_CLASS_MULTIPLIER: dict[str, float] = {
     "pedestrian": 0.0,
 }
 _DEFAULT_ROAD_MULTIPLIER = 1.0
+
+# Edge attributes returned with each segment in find_route's output.
+# Kept here as a single source of truth so the Lambda response shape
+# can't drift from what the graph actually carries.
+_SEGMENT_FACTOR_FIELDS: tuple[str, ...] = (
+    "speed_factor",
+    "road_type_factor",
+    "infrastructure_factor",
+    "tunnel_factor",
+    "surface_factor",
+    "lighting_factor",
+    "crash_score_per_meter",
+    "traffic_control_penalty",
+)
 
 
 # =====================================================================
@@ -273,6 +296,72 @@ def _astar_with_turn_costs(
 
 
 # =====================================================================
+# Segment construction
+# =====================================================================
+def _orient_edge_coords(
+    G: nx.DiGraph,
+    u: int,
+    edge_coords: tuple | list | None,
+) -> list:
+    """Return edge_coords oriented so the first point is closest to node u.
+
+    OSMnx edge geometries are stored without a guaranteed direction
+    relative to (u, v). We pick the orientation that puts the start of
+    the geometry nearest u so segment coordinates flow in travel order.
+    Returns a fresh list either way (callers may mutate it).
+    """
+    if not edge_coords:
+        u_data = G.nodes[u]
+        # Fall back to straight line between endpoints when geometry is missing.
+        # The caller will append the v endpoint.
+        return [[u_data["x"], u_data["y"]]]
+
+    u_data = G.nodes[u]
+    first = edge_coords[0]
+    last = edge_coords[-1]
+    dist_to_first = (first[0] - u_data["x"]) ** 2 + (first[1] - u_data["y"]) ** 2
+    dist_to_last = (last[0] - u_data["x"]) ** 2 + (last[1] - u_data["y"]) ** 2
+    if dist_to_first <= dist_to_last:
+        return [list(c) for c in edge_coords]
+    return [list(c) for c in reversed(edge_coords)]
+
+
+def _build_segment(
+    G: nx.DiGraph,
+    u: int,
+    v: int,
+    edge_data: dict,
+    left_turn_penalty: float,
+) -> dict:
+    """Build a single segment dict for the route response.
+
+    Each segment carries its own oriented coordinates plus the raw
+    cost components for that edge. The left-turn penalty is attached
+    to the outgoing segment (the one the rider is turning onto), so
+    the first segment in a route always has 0.0.
+    """
+    coords = _orient_edge_coords(G, u, edge_data.get("geometry_coords"))
+    if not edge_data.get("geometry_coords"):
+        # Straight-line fallback: append the v endpoint
+        v_data = G.nodes[v]
+        coords.append([v_data["x"], v_data["y"]])
+
+    segment = {
+        "u": u,
+        "v": v,
+        "coordinates": coords,
+        "name": edge_data.get("name"),
+        "highway": edge_data.get("highway"),
+        "length_m": edge_data.get("length_m", 0.0),
+        "stress_cost": edge_data.get("stress_cost", 0.0),
+        "left_turn_penalty": left_turn_penalty,
+    }
+    for field in _SEGMENT_FACTOR_FIELDS:
+        segment[field] = edge_data.get(field)
+    return segment
+
+
+# =====================================================================
 # Public routing API
 # =====================================================================
 def find_route(
@@ -289,7 +378,14 @@ def find_route(
     Uses A* with stress_cost edge weights and left-turn penalties at
     intersections.
 
-    Returns a dict with total_cost, total_length_m, nodes, and coordinates.
+    Returns a dict with:
+        total_cost      : sum of edge stress_costs plus turn penalties
+        total_length_m  : sum of edge lengths
+        nodes           : list of osmids along the path
+        coordinates     : flat list of [lon, lat] points for the whole route
+        segments        : list of per-edge dicts with coordinates, name,
+                          highway, length_m, stress_cost, raw factors,
+                          and left_turn_penalty
     """
     origin_node = nearest_node(kdtree, node_ids, origin_lat, origin_lon)
     dest_node = nearest_node(kdtree, node_ids, dest_lat, dest_lon)
@@ -301,6 +397,7 @@ def find_route(
             "total_length_m": 0.0,
             "nodes": [origin_node],
             "coordinates": [[node_data["x"], node_data["y"]]],
+            "segments": [],
         }
 
     def heuristic(u, v):
@@ -312,7 +409,8 @@ def find_route(
 
     total_cost = 0.0
     total_length_m = 0.0
-    coordinates = []
+    coordinates: list = []
+    segments: list = []
 
     prev_node = None
     for u, v in zip(path[:-1], path[1:], strict=True):
@@ -320,7 +418,8 @@ def find_route(
         edge_cost = edge_data.get("stress_cost", 0.0)
         total_length_m += edge_data.get("length_m", 0.0)
 
-        # Include turn penalty in the reported total_cost
+        # Include turn penalty in the reported total_cost and attach it
+        # to this (outgoing) segment.
         turn_penalty = 0.0
         if prev_node is not None:
             turn_penalty = compute_left_turn_penalty(
@@ -331,32 +430,26 @@ def find_route(
                 edge_data,
             )
         total_cost += edge_cost + turn_penalty
-        prev_node = u
 
-        edge_coords = edge_data.get("geometry_coords")
-        if edge_coords:
-            u_data = G.nodes[u]
-            first = edge_coords[0]
-            last = edge_coords[-1]
-            dist_to_first = (first[0] - u_data["x"]) ** 2 + (first[1] - u_data["y"]) ** 2
-            dist_to_last = (last[0] - u_data["x"]) ** 2 + (last[1] - u_data["y"]) ** 2
-            oriented = edge_coords if dist_to_first <= dist_to_last else list(reversed(edge_coords))
+        segment = _build_segment(G, u, v, edge_data, turn_penalty)
+        segments.append(segment)
 
-            if coordinates:
-                oriented = oriented[1:]
-            coordinates.extend(oriented)
+        # Append this segment's coords to the flat list, dropping the
+        # shared endpoint so consecutive segments don't double up.
+        seg_coords = segment["coordinates"]
+        if coordinates:
+            coordinates.extend(seg_coords[1:])
         else:
-            if coordinates:
-                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
-            else:
-                coordinates.append([G.nodes[u]["x"], G.nodes[u]["y"]])
-                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+            coordinates.extend(seg_coords)
+
+        prev_node = u
 
     return {
         "total_cost": round(total_cost, 4),
         "total_length_m": round(total_length_m, 1),
         "nodes": path,
         "coordinates": coordinates,
+        "segments": segments,
     }
 
 
