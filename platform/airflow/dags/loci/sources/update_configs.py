@@ -703,23 +703,21 @@ MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-# OSM_WAYS_UPDATE_CONFIG = DatasetUpdateConfig(
-#     spec=specs.OSM_WAYS_SPEC,
-#     update_cron="0 5 1-7 2,5,8,11 *",
-#     full_update_week_of_month=1,
-#     full_update_day_of_week=4,
-#     full_update_months=(2, 5, 8, 11),
-#     full_update_mode="file_download",
-# )
+CHICAGO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="0 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
 
-# OSM_RELATIONS_UPDATE_CONFIG = DatasetUpdateConfig(
-#     spec=specs.OSM_RELATIONS_SPEC,
-#     update_cron="30 5 1-7 2,5,8,11 *",
-#     full_update_week_of_month=1,
-#     full_update_day_of_week=4,
-#     full_update_months=(2, 5, 8, 11),
-#     full_update_mode="file_download",
-# )
+CHICAGO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="0 3 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
 
 #######################################################################################
 #    OSMnx                                                                            #
