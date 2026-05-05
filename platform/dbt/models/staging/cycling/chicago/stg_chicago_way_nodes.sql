@@ -1,3 +1,4 @@
+-- loci_platform/platform/dbt/models/staging/cycling/chicago/stg_chicago_way_nodes.sql
 {{ config(materialized='view') }}
 
 select

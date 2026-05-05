@@ -1,5 +1,5 @@
--- models/staging/cycling/chicago/stg_chicago_bike_ways.sql
-{{ config(materialized='view') }}
+-- loci_platform/platform/dbt/models/staging/cycling/chicago/stg_chicago_bike_ways.sql
+{{ config(materialized='table') }}
 
 select
     osm_id,

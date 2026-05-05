@@ -1,4 +1,4 @@
--- models/staging/cycling/chicago/stg_chicago_bike_segments.sql
+-- loci_platform/platform/dbt/models/staging/cycling/chicago/stg_chicago_bike_segments.sql
 -- Bike network segments, one row per intersection-to-intersection
 -- portion of a way, with bike infrastructure classification and
 -- physical conditions joined in.

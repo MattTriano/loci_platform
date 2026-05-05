@@ -1,4 +1,4 @@
--- chicago_bike_crash_hotspots.sql
+-- loci_platform/platform/dbt/models/marts/cycling/chicago_bike_crash_hotspots.sql
 -- Bike crash data aggregated for heatmap display.
 --
 -- Two output modes in one model:
