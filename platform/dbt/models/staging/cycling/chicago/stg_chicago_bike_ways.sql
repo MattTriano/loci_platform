@@ -41,6 +41,8 @@ select
     tags->>'class:bicycle'               as class_bicycle,
     tags->>'bicycle_road'                as bicycle_road,
     tags->>'cyclestreet'                 as cyclestreet,
+    tags->>'service'                     as service,
+    tags->>'access'                      as access,
 
     -- Canonical bike-routing direction
     case
@@ -63,4 +65,7 @@ where
     and (
         highway != 'footway'
         or bicycle in ('yes', 'designated', 'permissive')
+    ) and (
+        (tags->>'access' is null)
+        or (tags->>'access' not in ('private', 'no', 'customers', 'permit'))
     )

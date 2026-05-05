@@ -27,7 +27,7 @@ CHICAGO_SPEC = CityBuildSpec(
         # which references chicago_bike_crash_hotspots but isn't built yet.
         ("--select", "+chicago_bike_crash_hotspots", "--indirect-selection=cautious"),
     ],
-    weights_dbt_select="+chicago_bike_stress_weighted_edges",
+    weights_dbt_select="+chicago_bike_stress_weighted_segments",
 )
 
 
