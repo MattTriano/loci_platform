@@ -636,6 +636,16 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  .popup-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 8px;
+    margin-bottom: 2px;
+  }
+
   .popup-row {
     display: flex;
     justify-content: space-between;
@@ -785,7 +795,7 @@
           Why this route?
         </button>
         <div class="route-why-text" id="route-why-text">
-          This route prefers streets with better bike infrastructure, lower speed limits, lighting, and less severe recent crash history, even if that means a slightly longer ride. It may differ from the shortest path based on these preferences. Conditions change — always use your own judgment.
+          This route prefers streets with better bike infrastructure, lower speed limits, lighting, and less severe recent crash history, even if that means a slightly longer ride. It may differ from the shortest path based on these preferences. Conditions change — always use your own judgment. Hover or tap any segment to see what factors drove its cost.
         </div>
       </div>
     </div>
@@ -978,6 +988,16 @@ const LAYERS = {
   },
 };
 
+// ── Route segment color scale ────────────────────────────
+// Stops for stress-cost-per-meter. Used as a fallback when there are
+// too few segments to compute meaningful percentiles.
+const ROUTE_COLOR_STOPS = [
+  { max: 1.0, color: '#22c55e' },  // green: cycleway/quiet residential, no penalties
+  { max: 2.0, color: '#84cc16' },  // lime: typical residential
+  { max: 3.5, color: '#f59e0b' },  // orange: tertiary, mild penalty
+  { max: Infinity, color: '#ef4444' }, // red: arterial or heavy penalties
+];
+
 // ── Runtime state ────────────────────────────────────────
 const layerData = {};
 const layerCounts = {};
@@ -992,6 +1012,13 @@ let routeDestination = null;
 let routeData = null;
 let originMarker = null;
 let destMarker = null;
+
+// Route segment hover/click popup state (separate from currentPopup so
+// dataset point popups and route segment popups don't fight each other).
+let hoverPopup = null;
+let hoveredSegmentIdx = null;
+let clickPopup = null;
+let clickedSegmentIdx = null;
 
 const whyToggle = document.getElementById('route-why-toggle');
 const whyText = document.getElementById('route-why-text');
@@ -1177,30 +1204,54 @@ function initMap() {
   }), 'top-right');
 
   map.on('load', () => {
-    map.addSource('route', {
+    // Route source: a FeatureCollection of per-segment LineStrings. Each
+    // feature has its own color (driven by stress cost), cost components
+    // for the popup, and a numeric id used for hover feature-state.
+    map.addSource('route-segments', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
     });
 
+    // Dark casing under the route line for legibility on light tiles.
     map.addLayer({
       id: 'route-casing',
       type: 'line',
-      source: 'route',
+      source: 'route-segments',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
-        'line-color': 'rgba(0, 0, 0, 0.4)',
+        'line-color': 'rgba(0, 0, 0, 0.45)',
         'line-width': 8,
       },
     });
 
+    // The visible route line. Color comes from the feature's `color`
+    // property (set per-segment based on stress cost). Hover/clicked
+    // segments get a slight width bump.
     map.addLayer({
       id: 'route-line',
       type: 'line',
-      source: 'route',
+      source: 'route-segments',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
-        'line-color': '#6366f1',
-        'line-width': 5,
+        'line-color': ['get', 'color'],
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false], 7,
+          5,
+        ],
+        'line-opacity': 0.95,
+      },
+    });
+
+    // Wider invisible line for easier hover/click targeting (~14px).
+    map.addLayer({
+      id: 'route-segments-hitarea',
+      type: 'line',
+      source: 'route-segments',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': 'rgba(0, 0, 0, 0)',
+        'line-width': 14,
       },
     });
 
@@ -1434,17 +1485,23 @@ function applyDateFilter(id) {
 function wireRouting() {
   map.on('click', handleMapClick);
   document.getElementById('route-clear-btn').addEventListener('click', clearRoute);
+  wireRouteSegmentInteractions();
 }
 
 function handleMapClick(e) {
-  const pointLayers = Object.keys(LAYERS)
-    .flatMap(id => [`${id}-clusters`, `${id}-points-hitarea`])
-    .filter(lid => map.getLayer(lid));
-  const hitFeatures = map.queryRenderedFeatures(e.point, { layers: pointLayers });
-  if (hitFeatures.length > 0) return;
+  // Don't place waypoints when clicking on dataset points or route segments
+  // (those layers have their own click handlers).
+  const blockingLayers = [
+    ...Object.keys(LAYERS).flatMap(id => [`${id}-clusters`, `${id}-points-hitarea`]),
+    'route-segments-hitarea',
+  ].filter(lid => map.getLayer(lid));
+  if (map.queryRenderedFeatures(e.point, { layers: blockingLayers }).length > 0) return;
+
+  // If a route is already displayed, blank clicks do nothing. Users can
+  // drag the A/B markers to update the route, or use the Clear button.
+  if (routeData) return;
 
   const lngLat = [e.lngLat.lng, e.lngLat.lat];
-
   if (!routeOrigin) {
     setOrigin(lngLat);
   } else if (!routeDestination) {
@@ -1511,6 +1568,42 @@ function updateRouteLabel(which, lngLat) {
   labelEl.classList.add('set');
 }
 
+// ── Route segment color scale ────────────────────────────
+// Pick a color for each segment based on stress cost per meter. When a
+// route has enough segments, we use percentile bins relative to the
+// route itself so the worst parts of any route are clearly visible.
+// Otherwise we fall back to absolute thresholds.
+function colorForCostPerMeter(costPerMeter) {
+  for (const stop of ROUTE_COLOR_STOPS) {
+    if (costPerMeter <= stop.max) return stop.color;
+  }
+  return ROUTE_COLOR_STOPS[ROUTE_COLOR_STOPS.length - 1].color;
+}
+
+function assignSegmentColors(segments) {
+  const cpm = segments.map(s => {
+    const len = s.length_m || 0;
+    return len > 0 ? (s.stress_cost || 0) / len : 0;
+  });
+
+  // Few segments → absolute thresholds. Many segments → quartile bins
+  // computed from this route's own distribution.
+  if (segments.length < 5) return cpm.map(colorForCostPerMeter);
+
+  const sorted = [...cpm].sort((a, b) => a - b);
+  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+  const q25 = q(0.25);
+  const q50 = q(0.50);
+  const q75 = q(0.75);
+
+  return cpm.map(v => {
+    if (v <= q25) return ROUTE_COLOR_STOPS[0].color;
+    if (v <= q50) return ROUTE_COLOR_STOPS[1].color;
+    if (v <= q75) return ROUTE_COLOR_STOPS[2].color;
+    return ROUTE_COLOR_STOPS[3].color;
+  });
+}
+
 // ── Route: fetch from Lambda ─────────────────────────────
 async function fetchRoute() {
   if (!CONFIG.routing_api_url) {
@@ -1543,18 +1636,41 @@ async function fetchRoute() {
     const data = await resp.json();
     routeData = data;
 
-    map.getSource('route').setData({
+    const colors = assignSegmentColors(data.segments);
+
+    const features = data.segments.map((seg, idx) => ({
       type: 'Feature',
+      id: idx,
+      properties: {
+        idx,
+        name: seg.name,
+        highway: seg.highway,
+        infra_type: seg.infra_type,
+        length_m: seg.length_m,
+        stress_cost: seg.stress_cost,
+        color: colors[idx],
+        // cost_components becomes a JSON string in feature.properties when
+        // queried from the map; we round-trip it through JSON ourselves
+        // so popup code can rely on parse(string) → object.
+        cost_components: JSON.stringify(seg.cost_components),
+      },
       geometry: {
         type: 'LineString',
-        coordinates: data.coordinates,
+        coordinates: seg.coordinates,
       },
+    }));
+
+    map.getSource('route-segments').setData({
+      type: 'FeatureCollection',
+      features,
     });
 
-    const bounds = data.coordinates.reduce(
-      (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(data.coordinates[0], data.coordinates[0])
-    );
+    // Fit bounds across all segment coordinates
+    const firstCoord = data.segments[0].coordinates[0];
+    const bounds = new maplibregl.LngLatBounds(firstCoord, firstCoord);
+    for (const seg of data.segments) {
+      for (const c of seg.coordinates) bounds.extend(c);
+    }
     map.fitBounds(bounds, { padding: 80 });
 
     const distKm = data.total_length_m / 1000;
@@ -1585,9 +1701,15 @@ function clearRoute() {
   if (originMarker) { originMarker.remove(); originMarker = null; }
   if (destMarker) { destMarker.remove(); destMarker = null; }
 
-  if (map.getSource('route')) {
-    map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
+  if (map.getSource('route-segments')) {
+    map.getSource('route-segments').setData({ type: 'FeatureCollection', features: [] });
   }
+
+  // Clean up any open route-segment popups and hover state
+  if (hoverPopup) { hoverPopup.remove(); hoverPopup = null; }
+  if (clickPopup) { clickPopup.remove(); clickPopup = null; }
+  hoveredSegmentIdx = null;
+  clickedSegmentIdx = null;
 
   const startLabel = document.getElementById('route-start-label');
   const endLabel = document.getElementById('route-end-label');
@@ -1606,9 +1728,205 @@ function clearRoute() {
   map.getContainer().classList.add('crosshair-cursor');
 }
 
+// ── Route segment popup builder ──────────────────────────
+const ROUTE_SEGMENT_COLOR = '#a5b4fc';
+
+function fmtMultiplier(v) {
+  if (v == null) return null;
+  return `×${(+v).toFixed(2)}`;
+}
+
+function fmtMeters(v) {
+  if (v == null) return null;
+  return `${(+v).toFixed(1)} m`;
+}
+
+function buildRouteSegmentPopupHTML(props) {
+  // cost_components is JSON-stringified in feature properties; parse back.
+  const cc = typeof props.cost_components === 'string'
+    ? JSON.parse(props.cost_components)
+    : props.cost_components;
+
+  const headerRows = [
+    ['Street', props.name],
+    ['Type', props.highway],
+    ['Infra', props.infra_type],
+  ].filter(([, v]) => v != null && v !== '');
+
+  const factorRows = [
+    ['Speed',          fmtMultiplier(cc.speed_factor)],
+    ['Road type',      fmtMultiplier(cc.road_type_factor)],
+    ['Infrastructure', fmtMultiplier(cc.infrastructure_factor)],
+    ['Tunnel',         fmtMultiplier(cc.tunnel_factor)],
+    ['Surface',        fmtMultiplier(cc.surface_factor)],
+    ['Lighting',       fmtMultiplier(cc.lighting_factor)],
+  ];
+
+  const penaltyRows = [
+    ['Crash penalty',     fmtMeters(cc.crash_penalty)],
+    ['Traffic control',   fmtMeters(cc.traffic_control_penalty)],
+    ['Left-turn penalty', fmtMeters(cc.left_turn_penalty)],
+  ].filter(([, v]) => v != null && parseFloat(v) > 0);
+
+  function renderRows(rows) {
+    return rows
+      .map(([k, v]) => `<div class="popup-row"><span class="popup-key">${k}</span><span class="popup-val">${escHtml(String(v))}</span></div>`)
+      .join('');
+  }
+
+  const headerSection = headerRows.length ? renderRows(headerRows) : '';
+  const factorsSection = factorRows.length
+    ? `<div class="popup-section-title">Multipliers</div>${renderRows(factorRows)}`
+    : '';
+  const penaltiesSection = penaltyRows.length
+    ? `<div class="popup-section-title">Penalties</div>${renderRows(penaltyRows)}`
+    : '';
+
+  return `
+    <div class="popup-title" style="color:${ROUTE_SEGMENT_COLOR}">Route Segment</div>
+    ${headerSection}
+    <div class="popup-row"><span class="popup-key">Length</span><span class="popup-val">${fmtMeters(props.length_m)}</span></div>
+    <div class="popup-row"><span class="popup-key">Stress cost</span><span class="popup-val">${fmtMeters(props.stress_cost)}</span></div>
+    ${factorsSection}
+    ${penaltiesSection}
+  `;
+}
+
+// ── Route segment hover + click ──────────────────────────
+function clearHoverState() {
+  if (hoveredSegmentIdx !== null && hoveredSegmentIdx !== clickedSegmentIdx) {
+    map.setFeatureState(
+      { source: 'route-segments', id: hoveredSegmentIdx },
+      { hover: false },
+    );
+  }
+  hoveredSegmentIdx = null;
+  if (hoverPopup) { hoverPopup.remove(); hoverPopup = null; }
+  map.getCanvas().style.cursor = '';
+}
+
+function wireRouteSegmentInteractions() {
+  map.on('mousemove', 'route-segments-hitarea', (e) => {
+    if (!e.features.length) return;
+    const feat = e.features[0];
+    const idx = feat.id;
+
+    // If the click popup is already open for this segment, suppress hover.
+    if (clickedSegmentIdx === idx) return;
+
+    if (idx !== hoveredSegmentIdx) {
+      if (hoveredSegmentIdx !== null && hoveredSegmentIdx !== clickedSegmentIdx) {
+        map.setFeatureState(
+          { source: 'route-segments', id: hoveredSegmentIdx },
+          { hover: false },
+        );
+      }
+      hoveredSegmentIdx = idx;
+      map.setFeatureState(
+        { source: 'route-segments', id: idx },
+        { hover: true },
+      );
+    }
+
+    map.getCanvas().style.cursor = 'pointer';
+
+    const html = buildRouteSegmentPopupHTML(feat.properties);
+    if (!hoverPopup) {
+      hoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 8,
+        maxWidth: '320px',
+      })
+        .setLngLat(e.lngLat)
+        .setHTML(html)
+        .addTo(map);
+    } else {
+      hoverPopup.setLngLat(e.lngLat).setHTML(html);
+    }
+  });
+
+  map.on('mouseleave', 'route-segments-hitarea', clearHoverState);
+
+  map.on('click', 'route-segments-hitarea', (e) => {
+    if (!e.features.length) return;
+    const feat = e.features[0];
+    const idx = feat.id;
+
+    // Tear down hover popup so it doesn't overlap the pinned popup.
+    if (hoverPopup) { hoverPopup.remove(); hoverPopup = null; }
+    hoveredSegmentIdx = null;
+
+    // Drop any previously pinned popup; a new one replaces it.
+    if (clickPopup) {
+      if (clickedSegmentIdx !== null && clickedSegmentIdx !== idx) {
+        map.setFeatureState(
+          { source: 'route-segments', id: clickedSegmentIdx },
+          { hover: false },
+        );
+      }
+      clickPopup.remove();
+    }
+
+    clickPopup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,  // we close it ourselves; closeOnClick fires on the
+                            // same click that opened it inside the same map click handler
+      offset: 8,
+      maxWidth: '320px',
+    })
+      .setLngLat(e.lngLat)
+      .setHTML(buildRouteSegmentPopupHTML(feat.properties))
+      .addTo(map);
+    clickedSegmentIdx = idx;
+
+    clickPopup.on('close', () => {
+      if (clickedSegmentIdx !== null) {
+        map.setFeatureState(
+          { source: 'route-segments', id: clickedSegmentIdx },
+          { hover: false },
+        );
+      }
+      clickedSegmentIdx = null;
+      clickPopup = null;
+    });
+
+    map.setFeatureState(
+      { source: 'route-segments', id: idx },
+      { hover: true },
+    );
+  });
+
+  // Clicking the map background while a route-segment popup is pinned
+  // should dismiss it. We do this by listening to all map clicks and
+  // checking that they didn't land on a route segment.
+  map.on('click', (e) => {
+    if (!clickPopup) return;
+    const onSegment = map.queryRenderedFeatures(e.point, {
+      layers: ['route-segments-hitarea'],
+    }).length > 0;
+    if (!onSegment) {
+      clickPopup.remove();  // close handler clears state
+    }
+  });
+}
+
 // ── Route: log to API Gateway ────────────────────────────
 function logRouteRequest(data) {
   if (!CONFIG.log_endpoint) return;
+
+  // Reconstruct a single coordinate list from segments for logging
+  // compatibility (logs already record route_geometry as a LineString).
+  const allCoords = [];
+  for (const seg of data.segments) {
+    if (allCoords.length === 0) {
+      allCoords.push(...seg.coordinates);
+    } else {
+      // Skip the first coordinate of each subsequent segment to avoid
+      // duplicating shared endpoints between consecutive segments.
+      allCoords.push(...seg.coordinates.slice(1));
+    }
+  }
 
   const payload = {
     timestamp: new Date().toISOString(),
@@ -1616,7 +1934,7 @@ function logRouteRequest(data) {
     destination: { lng: routeDestination[0], lat: routeDestination[1] },
     total_length_m: data.total_length_m,
     total_cost: data.total_cost,
-    route_geometry: { type: 'LineString', coordinates: data.coordinates },
+    route_geometry: { type: 'LineString', coordinates: allCoords },
     user_agent: navigator.userAgent,
     screen: { width: screen.width, height: screen.height },
     viewport: { width: window.innerWidth, height: window.innerHeight },

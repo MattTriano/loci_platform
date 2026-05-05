@@ -26,6 +26,7 @@ Response:
     }
 """
 
+import decimal
 import gzip
 import json
 import logging
@@ -46,6 +47,13 @@ _graph = None
 _kdtree = None
 _node_ids = None
 _api_key = None
+
+
+class _DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, decimal.Decimal):
+            return float(o)
+        return super().default(o)
 
 
 def _load_graph():
@@ -167,5 +175,5 @@ def lambda_handler(event: dict, context) -> dict:
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(result),
+        "body": json.dumps(result, cls=_DecimalEncoder),
     }

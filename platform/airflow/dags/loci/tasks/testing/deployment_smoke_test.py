@@ -112,18 +112,30 @@ def smoke_test_deployed_routing(
 
     if resp.status_code != 200:
         raise RuntimeError(
-            f"Smoke test failed: {resp.status_code} from {api_url} — {resp.text[:300]}"
+            f"Smoke test failed: {resp.status_code} from {api_url} — {resp.text[:500]}"
         )
 
     data = resp.json()
-    if not data.get("coordinates"):
-        raise RuntimeError(f"Routing returned no coordinates: {data}")
+    segments = data.get("segments")
+    if not segments:
+        raise RuntimeError(f"Routing returned no segments: {data}")
     if data.get("total_length_m", 0) <= 0:
         raise RuntimeError(f"Routing returned zero length: {data}")
 
+    # Sanity: every segment should have at least one coordinate pair and a
+    # stress_cost. Catches malformed responses where the shape is right but
+    # the contents are empty.
+    for i, seg in enumerate(segments):
+        if not seg.get("coordinates"):
+            raise RuntimeError(f"Segment {i} has no coordinates: {seg}")
+        if seg.get("stress_cost") is None:
+            raise RuntimeError(f"Segment {i} missing stress_cost: {seg}")
+
+    total_points = sum(len(seg["coordinates"]) for seg in segments)
     logger.info(
-        "Smoke test OK: %.0fm route, %d points",
+        "Smoke test OK: %.0fm route, %d segments, %d total points",
         data["total_length_m"],
-        len(data["coordinates"]),
+        len(segments),
+        total_points,
     )
     return data

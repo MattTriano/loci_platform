@@ -39,17 +39,29 @@ class RoutingGraphExporter:
         Weakly connected components smaller than this are dropped.
     """
 
+    # Must match crash_weight in chicago_bike_stress_weighted_segments.sql.
+    # Recomputed here because the SQL model doesn't expose crash_penalty as a column.
+    _CRASH_WEIGHT = 24.0
+
     _SEGMENT_QUERY = """
         select
             segment_id,
-            way_id,
             start_node_id,
             end_node_id,
             direction,
             name,
             highway,
+            infra_type,
             length_m,
             stress_cost,
+            speed_factor,
+            road_type_factor,
+            infrastructure_factor,
+            tunnel_factor,
+            surface_factor,
+            lighting_factor,
+            traffic_control_penalty,
+            crash_score_per_meter,
             ST_AsGeoJSON(ST_Simplify(geom, 0.00005)) as geom_geojson,
             ST_X(ST_StartPoint(geom)) as start_lon,
             ST_Y(ST_StartPoint(geom)) as start_lat,
@@ -105,20 +117,37 @@ class RoutingGraphExporter:
         return output_path
 
     @staticmethod
-    def _parse_geojson_coords(geom_geojson: str | None) -> list | None:
+    def _parse_geojson_coords(geom_geojson: str | None) -> tuple | None:
+        """Parse a GeoJSON LineString's coordinates as a tuple of (lon, lat) tuples.
+
+        Tuples are used instead of lists for memory efficiency: each tuple is
+        smaller than a list of equal length and uses no over-allocation.
+        """
         if not geom_geojson:
             return None
         try:
             geom = json.loads(geom_geojson)
-            return geom.get("coordinates")
-        except (json.JSONDecodeError, TypeError):
+            coords = geom.get("coordinates")
+            if coords is None:
+                return None
+            return tuple((c[0], c[1]) for c in coords)
+        except (json.JSONDecodeError, TypeError, IndexError):
             return None
 
     def _build_graph(self) -> nx.DiGraph:
-        """Stream segments and expand into directed edges."""
+        """Stream segments and expand into directed edges.
+
+        To save memory in the routing Lambda, geometry is stored once per
+        undirected segment in G.graph['segment_geometry'] (keyed by
+        segment_id). Edges carry segment_id + a 'forward' bool so the
+        routing layer can look up and orient geometry at response time.
+        """
         query = self._SEGMENT_QUERY.format(city=self.city, marts_schema=self.marts_schema)
 
         G = nx.DiGraph()
+        segment_geometry: dict[int, tuple] = {}
+        G.graph["segment_geometry"] = segment_geometry
+
         segment_count = 0
         edge_count = 0
 
@@ -127,50 +156,61 @@ class RoutingGraphExporter:
                 start_node = row["start_node_id"]
                 end_node = row["end_node_id"]
                 direction = row["direction"]
-                geom_coords = self._parse_geojson_coords(row["geom_geojson"])
+                segment_id = row["segment_id"]
 
-                # Add nodes (idempotent — duplicate add_node calls are no-ops
-                # if attributes match, but x/y are stable so this is fine).
+                geom_coords = self._parse_geojson_coords(row["geom_geojson"])
+                if geom_coords is not None:
+                    segment_geometry[segment_id] = geom_coords
+
                 if start_node not in G:
                     G.add_node(start_node, x=row["start_lon"], y=row["start_lat"])
                 if end_node not in G:
                     G.add_node(end_node, x=row["end_lon"], y=row["end_lat"])
 
+                def _f(v):
+                    """Coerce numeric DB values (Decimal/None) to native float.
+
+                    Decimal values from psycopg are ~4x larger than floats and
+                    aren't JSON-serializable. Floats are also faster to compare in
+                    A* edge relaxation.
+                    """
+                    return float(v) if v is not None else None
+
                 base_attrs = {
-                    "segment_id": row["segment_id"],
-                    "way_id": row["way_id"],
-                    "length_m": row["length_m"],
-                    "stress_cost": row["stress_cost"],
+                    "segment_id": segment_id,
+                    "length_m": _f(row["length_m"]),
+                    "stress_cost": _f(row["stress_cost"]),
                     "name": row["name"],
                     "highway": row["highway"],
+                    "infra_type": row["infra_type"],
+                    "speed_factor": _f(row["speed_factor"]),
+                    "road_type_factor": _f(row["road_type_factor"]),
+                    "infrastructure_factor": _f(row["infrastructure_factor"]),
+                    "tunnel_factor": _f(row["tunnel_factor"]),
+                    "surface_factor": _f(row["surface_factor"]),
+                    "lighting_factor": _f(row["lighting_factor"]),
+                    "traffic_control_penalty": _f(row["traffic_control_penalty"]),
+                    "crash_penalty": (
+                        float(row["crash_score_per_meter"] or 0.0)
+                        * float(row["length_m"] or 0.0)
+                        * self._CRASH_WEIGHT
+                    ),
                 }
 
-                # Forward edge: geometry runs start_node → end_node.
+                # Forward edge: geometry runs start_node -> end_node
                 if direction in ("forward", "bidirectional"):
-                    G.add_edge(
-                        start_node,
-                        end_node,
-                        geometry_coords=geom_coords,
-                        **base_attrs,
-                    )
+                    G.add_edge(start_node, end_node, forward=True, **base_attrs)
                     edge_count += 1
 
-                # Backward edge: reverse the geometry coords so the edge's
-                # geometry flows from from_node → to_node.
+                # Backward edge: orientation flag tells routing to reverse
                 if direction in ("backward", "bidirectional"):
-                    reversed_coords = list(reversed(geom_coords)) if geom_coords else None
-                    G.add_edge(
-                        end_node,
-                        start_node,
-                        geometry_coords=reversed_coords,
-                        **base_attrs,
-                    )
+                    G.add_edge(end_node, start_node, forward=False, **base_attrs)
                     edge_count += 1
 
                 segment_count += 1
 
             logger.info(
-                "Loaded %d segments → %d directed edges so far",
+                "Loaded %d segments -> %d directed edges so far",
                 segment_count,
                 edge_count,
             )
@@ -186,10 +226,10 @@ class RoutingGraphExporter:
             G.graph["crs"] = crs_row["srtext"].iloc[0]
 
         logger.info(
-            "Graph complete: %d nodes, %d edges (from %d segments)",
+            "Graph complete: %d nodes, %d edges, %d unique segment geometries",
             G.number_of_nodes(),
             G.number_of_edges(),
-            segment_count,
+            len(segment_geometry),
         )
         return G
 
@@ -204,6 +244,13 @@ class RoutingGraphExporter:
         small = [c for c in components if len(c) < self.min_component_size]
         nodes_to_remove = set().union(*small) if small else set()
         G.remove_nodes_from(nodes_to_remove)
+
+        # Prune geometries for segments no longer referenced by any edge
+        referenced = {data["segment_id"] for _, _, data in G.edges(data=True)}
+        seg_geom = G.graph.get("segment_geometry", {})
+        for sid in list(seg_geom):
+            if sid not in referenced:
+                del seg_geom[sid]
 
         logger.info(
             "Component filtering: removed %d components (%d nodes, %d edges) "
