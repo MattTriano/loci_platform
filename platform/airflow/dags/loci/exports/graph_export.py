@@ -83,6 +83,12 @@ class RoutingGraphExporter:
         )
     """
 
+    _HEURISTIC_FLOOR_QUERY = """
+        select min(stress_cost / length_m) as floor
+        from {marts_schema}.{city}_bike_stress_weighted_segments
+        where length_m > 0 and stress_cost is not null
+    """
+
     def __init__(
         self,
         engine: PostgresEngine,
@@ -224,6 +230,30 @@ class RoutingGraphExporter:
             )
         else:
             G.graph["crs"] = crs_row["srtext"].iloc[0]
+
+        floor_row = self.engine.query(
+            self._HEURISTIC_FLOOR_QUERY.format(
+                city=self.city,
+                marts_schema=self.marts_schema,
+            )
+        )
+        if floor_row.empty or floor_row["floor"].iloc[0] is None:
+            logger.warning(
+                "Could not compute heuristic floor; routing will use a "
+                "conservative default and may be slower than necessary"
+            )
+            G.graph["heuristic_floor"] = 0.0
+        else:
+            # Multiply by 0.95 for a small safety margin so the heuristic
+            # stays admissible even if the cost formula changes slightly
+            # (e.g. dbt rebuild between graph export and lambda load).
+            raw_floor = float(floor_row["floor"].iloc[0])
+            G.graph["heuristic_floor"] = raw_floor * 0.95
+            logger.info(
+                "Heuristic floor: %.4f cost-per-meter (raw min: %.4f)",
+                G.graph["heuristic_floor"],
+                raw_floor,
+            )
 
         logger.info(
             "Graph complete: %d nodes, %d edges, %d unique segment geometries",

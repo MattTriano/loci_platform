@@ -93,13 +93,13 @@ TEST_CASES = [
         destination=(41.9295, -87.7080),  # Logan Square monument
         must_avoid=["Western Avenue", "North Western Avenue"],
     ),
-    # RouteTestCase(
-    #     name="Belmont under the Kennedy should just use the cycleway",
-    #     origin=(41.9394, -87.7117),  # West of Kennedy
-    #     destination=(41.9393, -87.7051),  # East of Kennedy
-    #     must_use=["Belmont Avenue Bikeway"],
-    #     must_avoid=["North Avondale Avenue", "North Kedzie Avenue"],
-    # ),
+    RouteTestCase(
+        name="Belmont under the Kennedy should just use the cycleway",
+        origin=(41.9394, -87.7117),  # West of Kennedy
+        destination=(41.9393, -87.7051),  # East of Kennedy
+        must_use=["Belmont Avenue Bikeway"],
+        must_avoid=["North Avondale Avenue", "North Kedzie Avenue"],
+    ),
     RouteTestCase(
         name="Avoid the northbound underpass on Ashland above Cortland",
         origin=(41.9157, -87.6678),  # South of the underpass

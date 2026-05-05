@@ -97,52 +97,62 @@ factors as (
 
         -- Speed factor
         case
-            when s.maxspeed is null                                         then 1.4
-            when regexp_replace(s.maxspeed, '[^0-9].*', '') ~ '^\d+$'
-                and regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 20  then 1.0
-            when regexp_replace(s.maxspeed, '[^0-9].*', '') ~ '^\d+$'
-                and regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 25  then 1.3
-            when regexp_replace(s.maxspeed, '[^0-9].*', '') ~ '^\d+$'
-                and regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 30  then 1.6
-            when regexp_replace(s.maxspeed, '[^0-9].*', '') ~ '^\d+$'
-                and regexp_replace(s.maxspeed, '[^0-9].*', '')::int  > 30  then 2.0
+            when s.highway in ('cycleway', 'path', 'footway', 'bridleway',
+                               'pedestrian', 'living_street')                  then 1.0
+            when s.highway like '%cycleway%' or s.highway like '%path%'        then 1.0
+            when s.maxspeed is not null
+                and regexp_replace(s.maxspeed, '[^0-9].*', '') ~ '^\d+$'
+            then case
+                when regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 20 then 1.0
+                when regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 25 then 1.3
+                when regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 30 then 1.6
+                else 2.0
+            end
+            when s.highway in ('service', 'residential', 'unclassified')       then 1.3
+            when s.highway like '%residential%'                                then 1.3
+            when s.highway in ('tertiary', 'tertiary_link')                    then 1.5
+            when s.highway like '%tertiary%'                                   then 1.5
+            when s.highway in ('secondary', 'secondary_link', 'busway')        then 1.7
+            when s.highway like '%secondary%'                                  then 1.7
+            when s.highway in ('primary', 'primary_link')                      then 2.0
+            when s.highway like '%primary%'                                    then 2.0
             else 1.4
         end as speed_factor,
 
         -- Road type factor
         case
-            when s.highway in ('cycleway')                      then 0.3
-            when s.highway like '%cycleway%'                    then 0.3
-            when s.highway in ('path', 'footway', 'bridleway')  then 0.4
-            when s.highway like '%path%'                        then 0.4
-            when s.highway in ('pedestrian')                    then 0.5
-            when s.highway in ('living_street')                 then 0.9
-            when s.highway in ('service')                       then 1.0
-            when s.highway in ('residential')                   then 1.1
-            when s.highway like '%residential%'                 then 1.1
-            when s.highway in ('unclassified')                  then 1.4
-            when s.highway in ('busway')                        then 1.4
-            when s.highway in ('tertiary', 'tertiary_link')     then 1.7
-            when s.highway like '%tertiary%'                    then 1.7
-            when s.highway in ('secondary', 'secondary_link')   then 2.2
-            when s.highway like '%secondary%'                   then 2.2
-            when s.highway in ('primary', 'primary_link')       then 2.7
-            when s.highway like '%primary%'                     then 2.7
+            when s.highway in ('cycleway')                      then 1.0
+            when s.highway like '%cycleway%'                    then 1.0
+            when s.highway in ('path', 'footway', 'bridleway')  then 1.2
+            when s.highway like '%path%'                        then 1.2
+            when s.highway in ('pedestrian')                    then 1.5
+            when s.highway in ('living_street')                 then 3.0
+            when s.highway in ('residential')                   then 3.0
+            when s.highway like '%residential%'                 then 3.0
+            when s.highway in ('unclassified')                  then 3.5
+            when s.highway in ('busway')                        then 3.5
+            when s.highway in ('service')                       then 6.0
+            when s.highway in ('tertiary', 'tertiary_link')     then 5.5
+            when s.highway like '%tertiary%'                    then 5.5
+            when s.highway in ('secondary', 'secondary_link')   then 7.3
+            when s.highway like '%secondary%'                   then 7.3
+            when s.highway in ('primary', 'primary_link')       then 9.0
+            when s.highway like '%primary%'                     then 9.0
             else 1.3
         end as road_type_factor,
 
         -- Infrastructure factor (no Socrata fallback in segment-grain pipeline)
         case
-            when s.infra_type = 'protected_lane'    then 0.4
-            when s.infra_type = 'track'             then 0.5
-            when s.infra_type = 'shared_path'       then 0.6
-            when s.infra_type = 'buffered_lane'     then 0.7
-            when s.infra_type = 'designated_path'   then 0.7
-            when s.infra_type = 'bicycle_road'      then 0.8
-            when s.infra_type = 'bike_lane'         then 0.85
-            when s.infra_type = 'share_busway'      then 0.9
-            when s.infra_type = 'sharrow'           then 0.95
-            else 1.0
+            when s.infra_type = 'protected_lane'    then 1.0
+            when s.infra_type = 'track'             then 1.0
+            when s.infra_type = 'shared_path'       then 1.3
+            when s.infra_type = 'buffered_lane'     then 1.5
+            when s.infra_type = 'designated_path'   then 1.5
+            when s.infra_type = 'bicycle_road'      then 1.7
+            when s.infra_type = 'bike_lane'         then 1.85
+            when s.infra_type = 'share_busway'      then 2.0
+            when s.infra_type = 'sharrow'           then 2.0
+            else 2.5
         end as infrastructure_factor,
 
         -- Tunnel factor
