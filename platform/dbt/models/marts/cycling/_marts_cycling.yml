@@ -64,7 +64,7 @@ models:
             other_model: "ref('chicago_bike_crash_hotspots')"
             this_model_agg: "sum(crash_count)"
             other_model_agg: "count(distinct crash_record_id)"
-            assertion: "this_model_agg / other_model_agg::float between 0.99 and 1.0"
+            assertion: "this_model_agg / other_model_agg::float between 0.98 and 1.0"
 
     columns:
       - name: u

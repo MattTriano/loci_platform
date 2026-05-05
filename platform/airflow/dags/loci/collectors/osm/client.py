@@ -212,6 +212,7 @@ def _element_to_row(element: dict, spec: OSMDatasetSpec) -> dict[str, Any]:
     Missing tags become None.
     """
     tags = element.get("tags") or {}
+    nodes = element.get("nodes")
 
     row: dict[str, Any] = {
         "osm_type": element.get("type"),
@@ -220,6 +221,7 @@ def _element_to_row(element: dict, spec: OSMDatasetSpec) -> dict[str, Any]:
         "osm_timestamp": element.get("timestamp"),
         "geom": element_to_wkt(element),
         "tags": tags,
+        "node_ids": _format_pg_bigint_array(nodes),
     }
 
     # Promoted columns: look up each original tag key, write under its
@@ -228,3 +230,15 @@ def _element_to_row(element: dict, spec: OSMDatasetSpec) -> dict[str, Any]:
         row[column_name] = tags.get(original_key)
 
     return row
+
+
+def _format_pg_bigint_array(values: list[int] | None) -> str | None:
+    """
+    Format a Python list of ints as a Postgres array literal for COPY.
+
+    Returns None for None or empty input (so the column gets NULL via
+    the NULL '\\N' marker that StagedIngest already handles).
+    """
+    if not values:
+        return None
+    return "{" + ",".join(str(v) for v in values) + "}"

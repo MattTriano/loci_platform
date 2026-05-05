@@ -320,7 +320,6 @@ def find_route(
         edge_cost = edge_data.get("stress_cost", 0.0)
         total_length_m += edge_data.get("length_m", 0.0)
 
-        # Include turn penalty in the reported total_cost
         turn_penalty = 0.0
         if prev_node is not None:
             turn_penalty = compute_left_turn_penalty(
@@ -335,16 +334,12 @@ def find_route(
 
         edge_coords = edge_data.get("geometry_coords")
         if edge_coords:
-            u_data = G.nodes[u]
-            first = edge_coords[0]
-            last = edge_coords[-1]
-            dist_to_first = (first[0] - u_data["x"]) ** 2 + (first[1] - u_data["y"]) ** 2
-            dist_to_last = (last[0] - u_data["x"]) ** 2 + (last[1] - u_data["y"]) ** 2
-            oriented = edge_coords if dist_to_first <= dist_to_last else list(reversed(edge_coords))
-
+            # Geometry is pre-oriented at export time: coords[0] is at u,
+            # coords[-1] is at v. No runtime reorientation needed.
             if coordinates:
-                oriented = oriented[1:]
-            coordinates.extend(oriented)
+                coordinates.extend(edge_coords[1:])
+            else:
+                coordinates.extend(edge_coords)
         else:
             if coordinates:
                 coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
