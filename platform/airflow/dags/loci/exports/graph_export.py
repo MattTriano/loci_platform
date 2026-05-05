@@ -2,21 +2,13 @@
 """
 Export a stress-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
 
-Queries mart__chicago_bike_stress_weighted_edges and chicago_osmnx_bike_network_nodes from
-the marts schema, builds a NetworkX DiGraph, serializes it with gzip pickle,
-and writes it to a local path.
+Reads chicago_bike_stress_weighted_segments (one row per undirected segment)
+and expands each segment into one or two directed edges based on its
+direction column.
 
 The graph stores only what the Lambda routing function needs:
     - Node attributes: lat (y), lon (x)
-    - Edge attributes: key, length_m, stress_cost, name, highway,
-      geometry_coords
-
-Usage from an Airflow task:
-
-    from loci.exports.graph_export import RoutingGraphExporter
-
-    exporter = RoutingGraphExporter(engine, marts_schema="dbt_loci_marts")
-    output_path = exporter.export(output_path=Path("/tmp/routing_graph.pkl.gz"))
+    - Edge attributes: length_m, stress_cost, name, highway, geometry_coords
 """
 
 from __future__ import annotations
@@ -39,43 +31,57 @@ class RoutingGraphExporter:
     Parameters
     ----------
     engine : PostgresEngine
+    city : str
     marts_schema : str
-        dbt marts schema name. Caller is responsible for determining this
-        from the target environment.
+        Schema where chicago_bike_stress_weighted_segments lives.
     batch_size : int
-        Rows per batch when streaming edges from the database.
     min_component_size : int
-        Weakly connected components smaller than this are dropped before
-        serialization. This removes isolated subgraphs (parking lots,
-        dead-end service roads, tile boundary fragments) that are
-        unreachable from the main network and would never appear in a
-        real route. Default is 75. Set to 1 to disable filtering.
+        Weakly connected components smaller than this are dropped.
     """
 
-    _EDGE_QUERY = """
+    # Must match crash_weight in chicago_bike_stress_weighted_segments.sql.
+    # Recomputed here because the SQL model doesn't expose crash_penalty as a column.
+    _CRASH_WEIGHT = 24.0
+
+    _SEGMENT_QUERY = """
         select
-            e.u, e.v, e.key, e.name, e.highway, e.length_m, e.stress_cost,
-            ST_AsGeoJSON(ST_Simplify(e.geom, 0.00005)) as geom_geojson,
-            n_u.latitude  as u_lat,
-            n_u.longitude as u_lon,
-            n_v.latitude  as v_lat,
-            n_v.longitude as v_lon
-        from {marts_schema}.{city}_bike_stress_weighted_edges e
-        join raw_data.{city}_osmnx_bike_network_nodes n_u
-            on n_u.osmid = e.u
-            and n_u.valid_to is null
-        join raw_data.{city}_osmnx_bike_network_nodes n_v
-            on n_v.osmid = e.v
-            and n_v.valid_to is null
-        where e.stress_cost is not null
-        order by e.u, e.v, e.key """
+            segment_id,
+            start_node_id,
+            end_node_id,
+            direction,
+            name,
+            highway,
+            infra_type,
+            length_m,
+            stress_cost,
+            speed_factor,
+            road_type_factor,
+            infrastructure_factor,
+            tunnel_factor,
+            surface_factor,
+            lighting_factor,
+            traffic_control_penalty,
+            crash_score_per_meter,
+            ST_AsGeoJSON(ST_Simplify(geom, 0.00005)) as geom_geojson,
+            ST_X(ST_StartPoint(geom)) as start_lon,
+            ST_Y(ST_StartPoint(geom)) as start_lat,
+            ST_X(ST_EndPoint(geom)) as end_lon,
+            ST_Y(ST_EndPoint(geom)) as end_lat
+        from {marts_schema}.{city}_bike_stress_weighted_segments
+        where stress_cost is not null
+        order by way_id, start_position
+    """
 
     _CRS_QUERY = """
         select srtext
         from spatial_ref_sys
         where srid = (
-            select Find_SRID('{marts_schema}', '{city}_bike_stress_weighted_edges', 'geom')
-        ) """
+            select ST_SRID(geom) as srid
+            from {marts_schema}.{city}_bike_stress_weighted_segments
+            where geom is not null
+            limit 1
+        )
+    """
 
     def __init__(
         self,
@@ -92,17 +98,6 @@ class RoutingGraphExporter:
         self.min_component_size = min_component_size
 
     def export(self, output_path: Path) -> Path:
-        """Build the routing graph and write it to output_path as a gzip pickle.
-
-        Parameters
-        ----------
-        output_path : Path
-            Destination file path. Parent directory must exist.
-
-        Returns
-        -------
-        Path to the written file.
-        """
         output_path = Path(output_path)
         logger.info("Building routing graph → %s", output_path)
 
@@ -115,7 +110,6 @@ class RoutingGraphExporter:
             G.number_of_edges(),
         )
         compressed = gzip.compress(pickle.dumps(G, protocol=pickle.HIGHEST_PROTOCOL))
-
         output_path.write_bytes(compressed)
         size_mb = output_path.stat().st_size / 1_048_576
         logger.info("Wrote %s (%.1f MB compressed)", output_path, size_mb)
@@ -123,69 +117,123 @@ class RoutingGraphExporter:
         return output_path
 
     @staticmethod
-    def _parse_geojson_coords(geom_geojson: str | None) -> list | None:
-        """Parse a GeoJSON geometry string into a coordinate list.
+    def _parse_geojson_coords(geom_geojson: str | None) -> tuple | None:
+        """Parse a GeoJSON LineString's coordinates as a tuple of (lon, lat) tuples.
 
-        Returns the coordinates array from the GeoJSON (e.g. [[lon, lat], ...])
-        or None if the input is null or unparseable. Parsing at export time
-        avoids repeated json.loads calls at request time in the Lambda.
+        Tuples are used instead of lists for memory efficiency: each tuple is
+        smaller than a list of equal length and uses no over-allocation.
         """
         if not geom_geojson:
             return None
         try:
             geom = json.loads(geom_geojson)
-            return geom.get("coordinates")
-        except (json.JSONDecodeError, TypeError):
+            coords = geom.get("coordinates")
+            if coords is None:
+                return None
+            return tuple((c[0], c[1]) for c in coords)
+        except (json.JSONDecodeError, TypeError, IndexError):
             return None
 
     def _build_graph(self) -> nx.DiGraph:
-        """Stream edges from the database and build a NetworkX DiGraph."""
-        query = self._EDGE_QUERY.format(city=self.city, marts_schema=self.marts_schema)
+        """Stream segments and expand into directed edges.
+
+        To save memory in the routing Lambda, geometry is stored once per
+        undirected segment in G.graph['segment_geometry'] (keyed by
+        segment_id). Edges carry segment_id + a 'forward' bool so the
+        routing layer can look up and orient geometry at response time.
+        """
+        query = self._SEGMENT_QUERY.format(city=self.city, marts_schema=self.marts_schema)
 
         G = nx.DiGraph()
+        segment_geometry: dict[int, tuple] = {}
+        G.graph["segment_geometry"] = segment_geometry
+
+        segment_count = 0
         edge_count = 0
 
         for batch in self.engine.query_batches(query, batch_size=self.batch_size):
             for row in batch:
-                u, v = row["u"], row["v"]
+                start_node = row["start_node_id"]
+                end_node = row["end_node_id"]
+                direction = row["direction"]
+                segment_id = row["segment_id"]
 
-                if u not in G:
-                    G.add_node(u, x=row["u_lon"], y=row["u_lat"])  # x=lon, y=lat
-                if v not in G:
-                    G.add_node(v, x=row["v_lon"], y=row["v_lat"])
+                geom_coords = self._parse_geojson_coords(row["geom_geojson"])
+                if geom_coords is not None:
+                    segment_geometry[segment_id] = geom_coords
 
-                G.add_edge(
-                    u,
-                    v,
-                    key=row["key"],
-                    length_m=row["length_m"],
-                    stress_cost=row["stress_cost"],
-                    name=row["name"],
-                    highway=row["highway"],
-                    geometry_coords=self._parse_geojson_coords(row["geom_geojson"]),
-                )
-                edge_count += 1
+                if start_node not in G:
+                    G.add_node(start_node, x=row["start_lon"], y=row["start_lat"])
+                if end_node not in G:
+                    G.add_node(end_node, x=row["end_lon"], y=row["end_lat"])
 
-            logger.info("Loaded %d edges", edge_count)
+                def _f(v):
+                    """Coerce numeric DB values (Decimal/None) to native float.
+
+                    Decimal values from psycopg are ~4x larger than floats and
+                    aren't JSON-serializable. Floats are also faster to compare in
+                    A* edge relaxation.
+                    """
+                    return float(v) if v is not None else None
+
+                base_attrs = {
+                    "segment_id": segment_id,
+                    "length_m": _f(row["length_m"]),
+                    "stress_cost": _f(row["stress_cost"]),
+                    "name": row["name"],
+                    "highway": row["highway"],
+                    "infra_type": row["infra_type"],
+                    "speed_factor": _f(row["speed_factor"]),
+                    "road_type_factor": _f(row["road_type_factor"]),
+                    "infrastructure_factor": _f(row["infrastructure_factor"]),
+                    "tunnel_factor": _f(row["tunnel_factor"]),
+                    "surface_factor": _f(row["surface_factor"]),
+                    "lighting_factor": _f(row["lighting_factor"]),
+                    "traffic_control_penalty": _f(row["traffic_control_penalty"]),
+                    "crash_penalty": (
+                        float(row["crash_score_per_meter"] or 0.0)
+                        * float(row["length_m"] or 0.0)
+                        * self._CRASH_WEIGHT
+                    ),
+                }
+
+                # Forward edge: geometry runs start_node -> end_node
+                if direction in ("forward", "bidirectional"):
+                    G.add_edge(start_node, end_node, forward=True, **base_attrs)
+                    edge_count += 1
+
+                # Backward edge: orientation flag tells routing to reverse
+                if direction in ("backward", "bidirectional"):
+                    G.add_edge(end_node, start_node, forward=False, **base_attrs)
+                    edge_count += 1
+
+                segment_count += 1
+
+            logger.info(
+                "Loaded %d segments -> %d directed edges so far",
+                segment_count,
+                edge_count,
+            )
 
         crs_row = self.engine.query(
             self._CRS_QUERY.format(city=self.city, marts_schema=self.marts_schema)
         )
-        G.graph["crs"] = crs_row["srtext"][0]
+        if crs_row.empty:
+            logger.warning(
+                "Could not look up CRS srtext; graph will be exported without CRS metadata"
+            )
+        else:
+            G.graph["crs"] = crs_row["srtext"].iloc[0]
 
         logger.info(
-            "Graph complete: %d nodes, %d edges",
+            "Graph complete: %d nodes, %d edges, %d unique segment geometries",
             G.number_of_nodes(),
             G.number_of_edges(),
+            len(segment_geometry),
         )
         return G
 
     def _filter_small_components(self, G: nx.DiGraph) -> nx.DiGraph:
-        """Remove weakly connected components smaller than min_component_size.
-
-        Uses weak connectivity (ignores edge direction) so that subgraphs
-        reachable only in one direction are still considered connected.
-        """
         if self.min_component_size <= 1:
             return G
 
@@ -196,6 +244,13 @@ class RoutingGraphExporter:
         small = [c for c in components if len(c) < self.min_component_size]
         nodes_to_remove = set().union(*small) if small else set()
         G.remove_nodes_from(nodes_to_remove)
+
+        # Prune geometries for segments no longer referenced by any edge
+        referenced = {data["segment_id"] for _, _, data in G.edges(data=True)}
+        seg_geom = G.graph.get("segment_geometry", {})
+        for sid in list(seg_geom):
+            if sid not in referenced:
+                del seg_geom[sid]
 
         logger.info(
             "Component filtering: removed %d components (%d nodes, %d edges) "

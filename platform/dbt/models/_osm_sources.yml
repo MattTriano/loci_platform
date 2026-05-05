@@ -1,0 +1,10 @@
+sources:
+  - name: osm
+    database: loci
+    schema: raw_data
+    tags:
+      - raw
+    tables:
+      - name: chicago_osm_bike_network_edges
+      - name: chicago_osm_bike_network_nodes
+

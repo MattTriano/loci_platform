@@ -335,6 +335,97 @@ SEATTLE_BBOX = BBox(47.47, -122.48, 47.78, -122.04)
 TORONTO_BBOX = BBox(43.48, -79.79, 43.95, -78.84)
 
 
+# ----------------------------------------------------------------------
+# OSM Spec Generators
+# ----------------------------------------------------------------------
+
+
+def generate_osm_bike_network_edges_spec(city: str, bbox: BBox) -> OSMDatasetSpec:
+    """Build a bikeable-ways spec for a given city."""
+    return OSMDatasetSpec(
+        name=f"{city}_osm_bike_network_edges",
+        target_table=f"{city}_osm_bike_network_edges",
+        target_schema="raw_data",
+        query=OverpassAPIQuery(
+            element_types=["way"],
+            tag_filters=[
+                {
+                    "highway": [
+                        "residential",
+                        "tertiary",
+                        "secondary",
+                        "primary",
+                        "unclassified",
+                        "service",
+                        "living_street",
+                        "unclassified",
+                        "pedestrian",
+                        "track",
+                        "path",
+                        "cycleway",
+                        "footway",
+                        "bridleway",
+                        "road",
+                        "busway",
+                    ]
+                },
+                {"bicycle": ["yes", "designated", "permissive"]},
+            ],
+            bbox=bbox,
+        ),
+        promoted_tags=[
+            "highway",
+            "name",
+            "bicycle",
+            "cycleway",
+            "cycleway:left",
+            "cycleway:right",
+            "surface",
+            "maxspeed",
+            "oneway",
+        ],
+    )
+
+
+def generate_osm_bike_network_nodes_spec(city: str, bbox: BBox) -> OSMDatasetSpec:
+    """Build a bike-routing point-features spec for a given city."""
+    return OSMDatasetSpec(
+        name=f"{city}_osm_bike_network_nodes",
+        target_table=f"{city}_osm_bike_network_nodes",
+        target_schema="raw_data",
+        query=OverpassAPIQuery(
+            element_types=["node"],
+            tag_filters=[
+                {
+                    "highway": [
+                        "traffic_signals",
+                        "stop",
+                        "give_way",
+                        "crossing",
+                        "mini_roundabout",
+                        "turning_circle",
+                        "turning_loop",
+                    ]
+                },
+                {"crossing": None},
+                {"traffic_calming": None},
+                {"barrier": None},
+            ],
+            bbox=bbox,
+        ),
+        promoted_tags=[
+            "highway",
+            "crossing",
+            "traffic_calming",
+            "barrier",
+            "bicycle",
+            "name",
+            "button_operated",
+            "tactile_paving",
+        ],
+    )
+
+
 # ====================================================================================
 #    OSM Overpass Queries
 # ====================================================================================
@@ -497,6 +588,14 @@ OSM_TRANSIT_QUERY = OverpassAPIQuery(
 # *****************
 #    OSM Specs
 # *****************
+
+CHICAGO_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
+    city="chicago", bbox=CHICAGO_BBOX
+)
+CHICAGO_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
+    city="chicago", bbox=CHICAGO_BBOX
+)
+
 BOSTON_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
     name="boston_osm_bike_parking",
     target_table="boston_osm_bike_parking",

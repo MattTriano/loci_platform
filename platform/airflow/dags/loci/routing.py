@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/routing.py
 """
 Core bike-stress routing logic.
 
@@ -310,54 +311,122 @@ def find_route(
 
     path = _astar_with_turn_costs(G, origin_node, dest_node, heuristic)
 
+    segment_geometry = G.graph.get("segment_geometry", {})
+    segments = []
     total_cost = 0.0
     total_length_m = 0.0
-    coordinates = []
 
     prev_node = None
     for u, v in zip(path[:-1], path[1:], strict=True):
         edge_data = G[u][v]
         edge_cost = edge_data.get("stress_cost", 0.0)
-        total_length_m += edge_data.get("length_m", 0.0)
+        edge_length = edge_data.get("length_m", 0.0)
 
-        # Include turn penalty in the reported total_cost
-        turn_penalty = 0.0
+        left_turn_penalty = 0.0
         if prev_node is not None:
-            turn_penalty = compute_left_turn_penalty(
+            left_turn_penalty = compute_left_turn_penalty(
                 G,
                 prev_node,
                 u,
                 v,
                 edge_data,
             )
-        total_cost += edge_cost + turn_penalty
-        prev_node = u
 
-        edge_coords = edge_data.get("geometry_coords")
-        if edge_coords:
-            u_data = G.nodes[u]
-            first = edge_coords[0]
-            last = edge_coords[-1]
-            dist_to_first = (first[0] - u_data["x"]) ** 2 + (first[1] - u_data["y"]) ** 2
-            dist_to_last = (last[0] - u_data["x"]) ** 2 + (last[1] - u_data["y"]) ** 2
-            oriented = edge_coords if dist_to_first <= dist_to_last else list(reversed(edge_coords))
+        total_cost += edge_cost + left_turn_penalty
+        total_length_m += edge_length
 
-            if coordinates:
-                oriented = oriented[1:]
-            coordinates.extend(oriented)
+        # Reconstruct geometry: stored once per undirected segment, reversed
+        # if this is the backward direction.
+        sid = edge_data.get("segment_id")
+        base_geom = segment_geometry.get(sid) if sid is not None else None
+        if base_geom:
+            coords = (
+                list(base_geom) if edge_data.get("forward", True) else list(reversed(base_geom))
+            )
+            # Convert tuple pairs back to list pairs for JSON.
+            coords = [[c[0], c[1]] for c in coords]
         else:
-            if coordinates:
-                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
-            else:
-                coordinates.append([G.nodes[u]["x"], G.nodes[u]["y"]])
-                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+            coords = [
+                [G.nodes[u]["x"], G.nodes[u]["y"]],
+                [G.nodes[v]["x"], G.nodes[v]["y"]],
+            ]
+
+        segments.append(
+            {
+                "coordinates": coords,
+                "length_m": round(edge_length, 1),
+                "stress_cost": round(edge_cost, 4),
+                "name": edge_data.get("name"),
+                "highway": edge_data.get("highway"),
+                "infra_type": edge_data.get("infra_type"),
+                "cost_components": {
+                    "length_m": round(edge_length, 1),
+                    "speed_factor": edge_data.get("speed_factor"),
+                    "road_type_factor": edge_data.get("road_type_factor"),
+                    "infrastructure_factor": edge_data.get("infrastructure_factor"),
+                    "tunnel_factor": edge_data.get("tunnel_factor"),
+                    "surface_factor": edge_data.get("surface_factor"),
+                    "lighting_factor": edge_data.get("lighting_factor"),
+                    "crash_penalty": round(edge_data.get("crash_penalty", 0.0), 4),
+                    "traffic_control_penalty": round(
+                        edge_data.get("traffic_control_penalty", 0.0), 4
+                    ),
+                    "left_turn_penalty": round(left_turn_penalty, 4),
+                },
+            }
+        )
+
+        prev_node = u
 
     return {
         "total_cost": round(total_cost, 4),
         "total_length_m": round(total_length_m, 1),
         "nodes": path,
-        "coordinates": coordinates,
+        "segments": segments,
     }
+    # total_cost = 0.0
+    # total_length_m = 0.0
+    # coordinates = []
+
+    # prev_node = None
+    # for u, v in zip(path[:-1], path[1:], strict=True):
+    #     edge_data = G[u][v]
+    #     edge_cost = edge_data.get("stress_cost", 0.0)
+    #     total_length_m += edge_data.get("length_m", 0.0)
+
+    #     turn_penalty = 0.0
+    #     if prev_node is not None:
+    #         turn_penalty = compute_left_turn_penalty(
+    #             G,
+    #             prev_node,
+    #             u,
+    #             v,
+    #             edge_data,
+    #         )
+    #     total_cost += edge_cost + turn_penalty
+    #     prev_node = u
+
+    #     edge_coords = edge_data.get("geometry_coords")
+    #     if edge_coords:
+    #         # Geometry is pre-oriented at export time: coords[0] is at u,
+    #         # coords[-1] is at v. No runtime reorientation needed.
+    #         if coordinates:
+    #             coordinates.extend(edge_coords[1:])
+    #         else:
+    #             coordinates.extend(edge_coords)
+    #     else:
+    #         if coordinates:
+    #             coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+    #         else:
+    #             coordinates.append([G.nodes[u]["x"], G.nodes[u]["y"]])
+    #             coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+
+    # return {
+    #     "total_cost": round(total_cost, 4),
+    #     "total_length_m": round(total_length_m, 1),
+    #     "nodes": path,
+    #     "coordinates": coordinates,
+    # }
 
 
 def get_route_street_names(G: nx.DiGraph, nodes: list) -> set[str]:

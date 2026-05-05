@@ -53,7 +53,7 @@ HASH_EXCLUDE_COLUMNS: set[str] = METADATA_COLUMNS | {
 
 
 # Default flush threshold for batched ingestion.
-DEFAULT_BATCH_SIZE = 5000
+DEFAULT_BATCH_SIZE = 50000
 
 
 class OSMCollector:
@@ -312,6 +312,7 @@ def _build_ddl(spec: OSMDatasetSpec) -> str:
         '    "osm_timestamp" timestamptz',
         '    "geom" geometry(Geometry, 4326)',
         '    "tags" jsonb',
+        '    "node_ids" bigint[]',
     ]
 
     for column_name in spec.promoted_columns:
