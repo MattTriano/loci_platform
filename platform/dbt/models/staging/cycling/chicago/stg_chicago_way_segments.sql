@@ -1,4 +1,4 @@
--- models/intermediate/cycling/chicago/stg_chicago_way_segments.sql
+-- loci_platform/platform/dbt/models/intermediate/cycling/chicago/stg_chicago_way_segments.sql
 {{ config(materialized='table') }}
 
 with way_cuts as (

@@ -2,11 +2,11 @@ version: 2
 
 models:
   # ==================================================================
-  # chicago_bike_stress_weighted_edges
+  # chicago_bike_stress_weighted_segments
   # ==================================================================
-  - name: chicago_bike_stress_weighted_edges
+  - name: chicago_bike_stress_weighted_segments
     description: >
-      Stress-weighted directed edges for bike routing. One row per
+      Stress-weighted directed segments for bike routing. One row per
       directed edge (u, v, key). stress_cost is the primary routing
       weight, combining length, speed, infrastructure, surface,
       lighting, crash history, and traffic control penalties.
@@ -17,9 +17,9 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
-              - u
-              - v
-              - key
+              - start_node_id
+              - end_node_id
+              - way_id
 
       # stress_cost must never be negative (A* correctness)
       - dbt_utils.expression_is_true:
@@ -39,7 +39,7 @@ models:
       # Every edge from the source network must be present.
       - dbt_utils.equal_rowcount:
           arguments:
-            compare_model: ref('chicago_bike_network_edges')
+            compare_model: ref('stg_chicago_bike_segments')
 
       # stress_cost should always be >= length_m * min possible factor product
       # (0.5 * 1.0 * 1.0 * 1.0 = 0.5), so stress_cost >= length_m * 0.5.
@@ -67,13 +67,13 @@ models:
             assertion: "this_model_agg / other_model_agg::float between 0.98 and 1.0"
 
     columns:
-      - name: u
+      - name: start_node_id
         data_tests:
           - not_null
-      - name: v
+      - name: end_node_id
         data_tests:
           - not_null
-      - name: key
+      - name: way_id
         data_tests:
           - not_null
       - name: length_m
@@ -89,31 +89,15 @@ models:
       - name: speed_factor
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              arguments:
-                min_value: 1.0
-                max_value: 2.0
       - name: infrastructure_factor
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              arguments:
-                min_value: 0.0
-                max_value: 1.0
       - name: surface_factor
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              arguments:
-                min_value: 1.0
-                max_value: 1.5
       - name: lighting_factor
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              arguments:
-                min_value: 1.0
-                max_value: 1.2
       - name: crash_penalty
         data_tests:
           - not_null

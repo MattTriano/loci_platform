@@ -1,3 +1,4 @@
+-- loci_platform/platform/dbt/models/staging/cycling/chicago/stg_chicago_intersection_nodes.sql
 {{ config(materialized='table') }}
 
 with node_way_counts as (

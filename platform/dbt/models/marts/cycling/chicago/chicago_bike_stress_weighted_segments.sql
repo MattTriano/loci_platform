@@ -1,3 +1,4 @@
+-- loci_platform/platform/dbt/models/marts/cycling/chicago/chicago_bike_stress_weighted_segments.sql
 -- chicago_bike_stress_weighted_segments.sql
 -- Assigns a stress cost to each bike network segment for use in
 -- stress-weighted routing.
@@ -189,7 +190,7 @@ factors as (
 
     from segments s
     left join crash_scores cs on cs.segment_id = s.segment_id
-    left join {{ ref('stg__chicago_traffic_control_nodes') }} ntc
+    left join {{ ref('stg_chicago_traffic_control_nodes') }} ntc
         on ntc.osmid = s.end_node_id
 )
 
