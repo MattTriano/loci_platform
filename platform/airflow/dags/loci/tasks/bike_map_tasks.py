@@ -19,6 +19,7 @@ from loci.aws import get_boto_session
 from loci.db.af_utils import get_postgres_engine
 from loci.deploy import upload_file_to_s3
 from loci.environments import VALID_ENVS, get_env
+from loci.exports.geojson_export import GeoJSONExportConfig
 from loci.exports.graph_export import RoutingGraphExporter
 from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda
 from loci.tasks.export_tasks import export_bike_map_geojson
@@ -51,6 +52,9 @@ class CityBuildSpec:
         geojson export. Each runs as a separate dbt build invocation
         because they have ordering constraints (e.g. some need to run
         with --indirect-selection=cautious to skip cross-model tests).
+    geojson_exports
+        Per-mart-table export configs for the bike map. Each defines a
+        mart table, geometry source, and properties to expose.
     weights_dbt_select
         dbt --select expression for the stress-weighted edges model that
         feeds the routing graph.
@@ -58,9 +62,10 @@ class CityBuildSpec:
 
     city: str
     bbox: tuple[float, float, float, float]
+    weights_dbt_select: str
     geocode: bool = False
     pre_export_dbt_selects: list[tuple[str, ...]] = field(default_factory=list)
-    weights_dbt_select: str = "+chicago_bike_stress_weighted_edges"
+    geojson_exports: list[GeoJSONExportConfig] = field(default_factory=list)
 
 
 @task
@@ -182,6 +187,7 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
         env=ENV_TEMPLATE,
         city=spec.city,
         conn_id=CONN_ID,
+        exports=spec.geojson_exports,
         task_logger=task_logger,
     )
     chain(pre_export_tasks or [_pre_export_root], _export_layers)
