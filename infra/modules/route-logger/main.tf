@@ -206,6 +206,10 @@ resource "aws_api_gateway_deployment" "route_logger" {
       aws_api_gateway_integration.s3_put,
       aws_api_gateway_method.options_log,
       aws_api_gateway_integration.options_log,
+      aws_api_gateway_method_response.ok,
+      aws_api_gateway_integration_response.ok,
+      aws_api_gateway_method_response.options_ok,
+      aws_api_gateway_integration_response.options_ok,
     ]))
   }
 
