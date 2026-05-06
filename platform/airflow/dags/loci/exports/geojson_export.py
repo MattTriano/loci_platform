@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/exports/geojson_export.py
 """
 Export mart tables to GeoJSON files for the bike map web app.
 
@@ -6,18 +7,15 @@ PostGIS geometry column or lat/lng columns), and which properties to
 include. The exporter queries PostGIS, builds a GeoJSON FeatureCollection,
 and writes it to disk.
 
-Per-city export configs are defined as builder functions
-(`build_<city>_bike_map_exports`) and registered in CITY_EXPORT_BUILDERS.
-The DAG looks up the right builder by city name at task-run time.
+Per-city export configs live on each city's CityBuildSpec; this module
+is city-agnostic.
 
 Usage from an Airflow task:
 
-    from loci.exports.geojson_export import GeoJsonExporter, CITY_EXPORT_BUILDERS
+    from loci.exports.geojson_export import GeoJsonExporter
 
-    builder = CITY_EXPORT_BUILDERS[city]
-    configs = builder(marts_schema=cfg.marts_schema)
-    exporter = GeoJsonExporter(engine, output_dir=...)
-    exporter.export_all(configs)
+    exporter = GeoJsonExporter(engine, schema=cfg.marts_schema, output_dir=...)
+    exporter.export_all(spec.geojson_exports)
 """
 
 from __future__ import annotations
@@ -36,13 +34,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GeoJSONExportConfig:
-    """Defines how to export a single mart table to GeoJSON."""
+    """Defines how to export a single mart table to GeoJSON.
+
+    The schema is not stored here; it's resolved by the exporter from
+    EnvConfig at run time so it can't drift between configs in a run.
+    """
 
     name: str
     """Output filename (without .geojson extension)."""
-
-    schema: str
-    """Database schema containing the mart table."""
 
     table: str
     """Mart table name."""
@@ -71,86 +70,10 @@ class GeoJSONExportConfig:
     """Optional row limit."""
 
 
-def build_chicago_bike_map_exports(marts_schema: str) -> list[GeoJSONExportConfig]:
-    """Build the export configs for the Chicago bike map."""
-    return [
-        GeoJSONExportConfig(
-            name="crashes",
-            schema=marts_schema,
-            table="chicago_bike_crash_hotspots",
-            geometry_column="geom",
-            properties=[
-                "crash_record_id",
-                "crash_date",
-                "local_crash_time",
-                "local_crash_day_of_week",
-                "first_crash_type",
-                "most_severe_injury",
-                "hit_and_run_i",
-                "dooring_i",
-                "weather_condition",
-                "lighting_condition",
-                "street_name",
-                "street_direction",
-                "prim_contributory_cause",
-                "injuries_total",
-                "injuries_fatal",
-                "injuries_incapacitating",
-                "severity_score",
-                "crash_year",
-            ],
-        ),
-        GeoJSONExportConfig(
-            name="thefts",
-            schema=marts_schema,
-            table="chicago_bike_theft_hotspots",
-            latitude_column="latitude",
-            longitude_column="longitude",
-            properties=[
-                "source",
-                "source_id",
-                "theft_date",
-                "theft_year",
-                "theft_hour",
-                "location_description",
-                "bike_description",
-                "theft_description",
-                "locking_description",
-            ],
-        ),
-        GeoJSONExportConfig(
-            name="parking",
-            schema=marts_schema,
-            table="chicago_bike_parking",
-            geometry_column="geom",
-            properties=[
-                "source",
-                "id",
-                "location",
-                "name",
-                "type",
-                "capacity",
-                "covered",
-                "indoor",
-                "fee",
-                "lit",
-                "operator",
-                "access",
-            ],
-        ),
-    ]
-
-
-# Registry of per-city export builders. When onboarding a new city, write
-# a build_<city>_bike_map_exports function above and add an entry here.
-CITY_EXPORT_BUILDERS = {
-    "chicago": build_chicago_bike_map_exports,
-}
-
-
 class GeoJsonExporter:
-    def __init__(self, engine: PostgresEngine, output_dir: Path):
+    def __init__(self, engine: PostgresEngine, schema: str, output_dir: Path):
         self.engine = engine
+        self.schema = schema
         self.output_dir = output_dir
         self.prep_output_dir()
 
@@ -183,7 +106,7 @@ class GeoJsonExporter:
         else:
             select_cols.append("*")
 
-        sql = f"SELECT {', '.join(select_cols)} FROM {cfg.schema}.{cfg.table}"
+        sql = f"SELECT {', '.join(select_cols)} FROM {self.schema}.{cfg.table}"
 
         if cfg.where:
             sql += f" WHERE {cfg.where}"
@@ -245,7 +168,7 @@ class GeoJsonExporter:
         output_path = self.output_dir / f"{cfg.name}.geojson"
 
         sql = self._build_query(cfg)
-        logger.info("Exporting %s.%s → %s", cfg.schema, cfg.table, output_path)
+        logger.info("Exporting %s.%s → %s", self.schema, cfg.table, output_path)
 
         df = self.engine.query(sql)
         rows = df.to_dict("records")
