@@ -108,50 +108,50 @@ select
     case
         when traffic_control = 'traffic_signals' then
             case max_road_class
-                when 'primary'   then 40.0
-                when 'secondary' then 20.0
-                when 'tertiary'  then 10.0
-                else                   5.0
+                when 'primary'   then 200.0
+                when 'secondary' then 100.0
+                when 'tertiary'  then 50.0
+                else                  25.0
             end
 
         when traffic_control = 'stop' then
             case max_road_class
-                when 'primary'   then 50.0
-                when 'secondary' then 30.0
-                when 'tertiary'  then 15.0
-                else                  10.0
+                when 'primary'   then 250.0
+                when 'secondary' then 150.0
+                when 'tertiary'  then 75.0
+                else                  50.0
             end
 
         when traffic_control = 'mini_roundabout' then
             case max_road_class
-                when 'primary'   then 50.0
-                when 'secondary' then 30.0
-                when 'tertiary'  then 15.0
-                else                  10.0
+                when 'primary'   then 250.0
+                when 'secondary' then 150.0
+                when 'tertiary'  then 75.0
+                else                  50.0
             end
 
         when traffic_control = 'give_way' then
             case max_road_class
-                when 'primary'   then 65.0
-                when 'secondary' then 35.0
-                when 'tertiary'  then 20.0
-                else                  15.0
+                when 'primary'   then 325.0
+                when 'secondary' then 175.0
+                when 'tertiary'  then 100.0
+                else                  75.0
             end
 
         when traffic_control = 'crossing' then
             case max_road_class
-                when 'primary'   then 70.0
-                when 'secondary' then 40.0
-                when 'tertiary'  then 25.0
-                else                  15.0
+                when 'primary'   then 350.0
+                when 'secondary' then 200.0
+                when 'tertiary'  then 125.0
+                else                  90.0
             end
 
         else
             case max_road_class
-                when 'primary'   then 90.0
-                when 'secondary' then 50.0
-                when 'tertiary'  then 30.0
-                else                  20.0
+                when 'primary'   then 450.0
+                when 'secondary' then 250.0
+                when 'tertiary'  then 150.0
+                else                  100.0
             end
     end as traffic_control_penalty
 

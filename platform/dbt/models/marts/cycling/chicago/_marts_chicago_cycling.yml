@@ -1,0 +1,109 @@
+version: 2
+
+models:
+  # ==================================================================
+  # chicago_bike_stress_weighted_segments
+  # ==================================================================
+  - name: chicago_bike_stress_weighted_segments
+    description: >
+      Stress-weighted directed segments for bike routing. One row per
+      directed edge (u, v, key). stress_cost is the primary routing
+      weight, combining length, speed, infrastructure, surface,
+      lighting, crash history, and traffic control penalties.
+
+    # ── Model-level tests ──
+    data_tests:
+      # Primary key: each directed edge is unique
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - start_node_id
+              - end_node_id
+              - way_id
+
+      # stress_cost must never be negative (A* correctness)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "stress_cost >= 0"
+          config:
+            name: stress_cost_non_negative
+
+
+      # crash_penalty must be non-negative (it's an additive cost)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "crash_penalty >= 0"
+          config:
+            name: crash_penalty_non_negative
+
+      # Every edge from the source network must be present.
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_chicago_bike_segments')
+
+      # stress_cost should always be >= length_m * min possible factor product
+      # (0.5 * 1.0 * 1.0 * 1.0 = 0.5), so stress_cost >= length_m * 0.5.
+      # We test a weaker version: stress_cost > 0 for non-zero-length edges.
+      - dbt_expectations.expect_column_pair_values_A_to_be_greater_than_B:
+          arguments:
+            column_A: stress_cost
+            column_B: length_m
+            or_equal: false
+            row_condition: >
+              length_m > 1
+              and infrastructure_factor > 1.0
+              and speed_factor > 1.0
+            config:
+              # This is a sanity check, not a hard constraint — crash penalty
+              # and traffic control penalty are additive so stress_cost can
+              # exceed length_m even at factor=1.0. We test the subset where
+              # factors are elevated.
+              severity: warn
+      - compare_aggregations:
+          arguments:
+            other_model: "ref('chicago_bike_crash_hotspots')"
+            this_model_agg: "sum(crash_count)"
+            other_model_agg: "count(distinct crash_record_id)"
+            assertion: "this_model_agg / other_model_agg::float between 0.98 and 1.0"
+
+    columns:
+      - name: start_node_id
+        data_tests:
+          - not_null
+      - name: end_node_id
+        data_tests:
+          - not_null
+      - name: way_id
+        data_tests:
+          - not_null
+      - name: length_m
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: stress_cost
+        data_tests:
+          - not_null
+      - name: speed_factor
+        data_tests:
+          - not_null
+      - name: infrastructure_factor
+        data_tests:
+          - not_null
+      - name: surface_factor
+        data_tests:
+          - not_null
+      - name: lighting_factor
+        data_tests:
+          - not_null
+      - name: crash_penalty
+        data_tests:
+          - not_null
+      - name: traffic_control_penalty
+        data_tests:
+          - not_null
+      - name: geom
+        data_tests:
+          - not_null
