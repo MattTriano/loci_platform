@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/tasks/task_utils.py
 from logging import Logger
 
 from airflow.models.taskinstance import TaskInstance
@@ -30,10 +31,15 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
     task_logger.info(f"Current week_number: {week_number}")
     task_logger.info(f"Current month:       {logical_date.month}")
     task_logger.info(f"Current day_of_week: {logical_date.day_of_week}")
+
+    day_matches = (
+        update_config.full_update_day_of_week is None
+        or logical_date.day_of_week == update_config.full_update_day_of_week
+    )
     is_full_update = (
         logical_date.month in update_config.full_update_months
         and week_number == update_config.full_update_week_of_month
-        and logical_date.day_of_week == update_config.full_update_day_of_week
+        and day_matches
     )
 
     if is_full_update:

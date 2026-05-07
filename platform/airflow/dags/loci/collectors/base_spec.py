@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/collectors/base_spec.py
 """
 Abstract base class for all dataset specs.
 
