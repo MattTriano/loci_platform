@@ -6,10 +6,45 @@ from loci.sources import dataset_specs as specs
 
 @dataclass
 class DatasetUpdateConfig:
+    """
+    Configuration for scheduling updates of a single dataset.
+
+    Parameters
+    ----------
+    spec : DatasetSpec
+        The dataset to collect.
+    update_cron : str
+        Cron expression controlling when the DAG runs.
+        Cron's day-of-week field uses Sunday=0, Monday=1, ..., Saturday=6.
+    full_update_week_of_month : int
+        Which week of the month (1-5) a full refresh should run in.
+        Weeks are calendar weeks within the month: days 1-7 are week 1,
+        days 8-14 are week 2, etc.
+    full_update_day_of_week : int | None
+        Which day of the week within `full_update_week_of_month` should
+        trigger a full refresh. Uses Pendulum's `day_of_week` convention,
+        which on Pendulum 3 (Airflow 3) is Monday=0, Tuesday=1, ...,
+        Sunday=6 -- this is OFFSET BY ONE from cron's day-of-week.
+
+        Example: to run a full refresh on the first Tuesday of the month,
+        set `update_cron="... * * 2"` (cron Tuesday=2) and
+        `full_update_day_of_week=1` (Pendulum Tuesday=1).
+
+        If None, any DAG run that falls in `full_update_week_of_month`
+        triggers a full refresh. This is useful when `update_cron`
+        already pins the DAG to a single weekday -- the cron's
+        day-of-week filter is doing the work, so there's no need to
+        specify it again here (and risk the cron/Pendulum off-by-one).
+    full_update_months : tuple[int, ...]
+        Which months full refreshes are allowed in. Defaults to all 12.
+    full_update_mode : str
+        "api" or "file_download".
+    """
+
     spec: DatasetSpec
     update_cron: str
     full_update_week_of_month: int
-    full_update_day_of_week: int
+    full_update_day_of_week: int | None = None
     full_update_months: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
     full_update_mode: str = "api"  # "api" or "file_download"
 
@@ -703,9 +738,29 @@ MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+# ------------------------------------------------------------------------------------#
+#    OSM: bike networks                                                               #
+# ------------------------------------------------------------------------------------#
+
+BOSTON_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.BOSTON_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="6 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+BOSTON_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.BOSTON_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="8 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
 CHICAGO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_OSM_BIKE_NETWORK_EDGES_SPEC,
-    update_cron="0 1 * * 3",
+    update_cron="10 0 * * 3",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
     full_update_mode="api",
@@ -713,7 +768,119 @@ CHICAGO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
 
 CHICAGO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_OSM_BIKE_NETWORK_NODES_SPEC,
-    update_cron="0 3 * * 3",
+    update_cron="12 0 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DENVER_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.DENVER_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="14 0 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DENVER_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.DENVER_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="16 0 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="2 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+DETROIT_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="4 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+MADISON_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.MADISON_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="10 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+MADISON_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.MADISON_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="12 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="14 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="16 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+PORTLAND_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.PORTLAND_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="18 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+PORTLAND_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.PORTLAND_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="20 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+TORONTO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="22 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+TORONTO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="24 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="26 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="28 1 * * 3",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
     full_update_mode="api",
