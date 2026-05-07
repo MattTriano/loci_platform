@@ -746,7 +746,6 @@ BOSTON_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.BOSTON_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="6 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -754,7 +753,6 @@ BOSTON_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.BOSTON_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="8 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -762,7 +760,6 @@ CHICAGO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="10 0 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -770,7 +767,6 @@ CHICAGO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="12 0 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -778,7 +774,6 @@ DENVER_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.DENVER_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="14 0 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -786,7 +781,6 @@ DENVER_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.DENVER_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="16 0 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -794,7 +788,6 @@ DETROIT_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="2 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -802,7 +795,6 @@ DETROIT_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="4 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -810,7 +802,6 @@ MADISON_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.MADISON_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="10 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -818,7 +809,6 @@ MADISON_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.MADISON_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="12 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -826,7 +816,6 @@ NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="14 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -842,7 +831,6 @@ PORTLAND_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="18 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -850,7 +838,20 @@ PORTLAND_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="20 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+SAN_FRANCISCO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.SAN_FRANCISCO_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="30 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+SAN_FRANCISCO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.SAN_FRANCISCO_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="32 1 * * 3",
+    full_update_week_of_month=1,
     full_update_mode="api",
 )
 
@@ -858,7 +859,6 @@ TORONTO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="22 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -866,7 +866,6 @@ TORONTO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="24 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -874,7 +873,6 @@ WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="26 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -882,7 +880,6 @@ WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="28 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 

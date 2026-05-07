@@ -21,11 +21,21 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
     context = get_current_context()
     tg_id_prefix = get_task_group_id_prefix(task_instance=context["ti"])
     logical_date = context["logical_date"]
+    run_type = context["dag_run"].run_type
+
+    task_logger.info(f"run_type={run_type!r}")
 
     force_full_refresh = context["params"].get("force_full_refresh", False)
     if force_full_refresh:
         task_logger.info("force_full_refresh=True in DAG run conf; routing to full update")
         return f"{tg_id_prefix}run_full_update"
+
+    if run_type != "scheduled":
+        task_logger.info(
+            f"run_type={run_type!r} (not 'scheduled'); routing to incremental update. "
+            "Pass force_full_refresh=True in DAG run conf to override."
+        )
+        return f"{tg_id_prefix}run_incremental_update"
 
     week_number = (logical_date.day - 1) // 7 + 1
     task_logger.info(f"Current week_number: {week_number}")

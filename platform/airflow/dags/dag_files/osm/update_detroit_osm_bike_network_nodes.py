@@ -17,7 +17,7 @@ CONN_ID = "gis_dwh_db"
     catchup=False,
     tags=["osm", "detroit", "biking", "network"],
 )
-def update_detroit_osm_bike_newtork_nodes():
+def update_detroit_osm_bike_network_nodes():
     update_osm_table(
         conn_id=CONN_ID,
         update_config=UPDATE_CONFIG,
@@ -25,4 +25,4 @@ def update_detroit_osm_bike_newtork_nodes():
     )
 
 
-update_detroit_osm_bike_newtork_nodes()
+update_detroit_osm_bike_network_nodes()

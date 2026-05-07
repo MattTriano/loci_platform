@@ -47,14 +47,18 @@ def _make_context(
     *,
     task_id: str = "tg.choose_update_mode",
     force_full_refresh: bool = False,
+    run_type: str = "scheduled",
 ) -> dict:
     """Build a fake Airflow context dict with the fields the task reads."""
     ti = MagicMock()
     ti.task_id = task_id
+    dag_run = MagicMock()
+    dag_run.run_type = run_type
     return {
         "ti": ti,
         "logical_date": logical_date,
         "params": {"force_full_refresh": force_full_refresh},
+        "dag_run": dag_run,
     }
 
 
@@ -313,6 +317,75 @@ class TestFullUpdateMonths:
         )
         # Pick a month-1 date that satisfies week and day.
         context = _make_context(pendulum.datetime(2026, 1, 6))
+
+        result = _run(config, context, task_logger)
+
+        assert result == "tg.run_full_update"
+
+
+# ---------------------------------------------------------------------------
+# Manual / non-scheduled runs
+# ---------------------------------------------------------------------------
+
+
+class TestNonScheduledRuns:
+    """Manually triggered, backfill, and asset-triggered runs should default to
+    incremental, regardless of the date. Only force_full_refresh overrides this."""
+
+    def test_manual_run_on_full_update_date_routes_incremental(self, spec, task_logger):
+        # Jan 6, 2026 would qualify for a full update on a scheduled run.
+        config = DatasetUpdateConfig(
+            spec=spec,
+            update_cron="7 3 * * 2",
+            full_update_week_of_month=1,
+            full_update_day_of_week=1,
+        )
+        context = _make_context(pendulum.datetime(2026, 1, 6), run_type="manual")
+
+        result = _run(config, context, task_logger)
+
+        assert result == "tg.run_incremental_update"
+
+    def test_manual_run_with_force_full_refresh_routes_full(self, spec, task_logger):
+        config = DatasetUpdateConfig(
+            spec=spec,
+            update_cron="7 3 * * 2",
+            full_update_week_of_month=1,
+            full_update_day_of_week=1,
+        )
+        # Date doesn't qualify, but force_full_refresh wins on manual runs too.
+        context = _make_context(
+            pendulum.datetime(2026, 1, 13),
+            run_type="manual",
+            force_full_refresh=True,
+        )
+
+        result = _run(config, context, task_logger)
+
+        assert result == "tg.run_full_update"
+
+    def test_backfill_run_routes_incremental(self, spec, task_logger):
+        config = DatasetUpdateConfig(
+            spec=spec,
+            update_cron="7 3 * * 2",
+            full_update_week_of_month=1,
+            full_update_day_of_week=1,
+        )
+        context = _make_context(pendulum.datetime(2026, 1, 6), run_type="backfill")
+
+        result = _run(config, context, task_logger)
+
+        assert result == "tg.run_incremental_update"
+
+    def test_scheduled_run_still_uses_date_logic(self, spec, task_logger):
+        """Sanity check that the default run_type='scheduled' still triggers full updates."""
+        config = DatasetUpdateConfig(
+            spec=spec,
+            update_cron="7 3 * * 2",
+            full_update_week_of_month=1,
+            full_update_day_of_week=1,
+        )
+        context = _make_context(pendulum.datetime(2026, 1, 6))  # default run_type='scheduled'
 
         result = _run(config, context, task_logger)
 

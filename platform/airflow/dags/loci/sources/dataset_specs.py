@@ -639,6 +639,13 @@ PORTLAND_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
     city="portland", bbox=PORTLAND_BBOX
 )
 
+SAN_FRANCISCO_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
+    city="sf", bbox=SAN_FRANCISCO_BBOX
+)
+SAN_FRANCISCO_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
+    city="sf", bbox=SAN_FRANCISCO_BBOX
+)
+
 TORONTO_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
     city="toronto", bbox=TORONTO_BBOX
 )
@@ -647,10 +654,10 @@ TORONTO_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
 )
 
 WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
-    city="washington_dc", bbox=WASHINGTON_DC_BBOX
+    city="dc", bbox=WASHINGTON_DC_BBOX
 )
 WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
-    city="washington_dc", bbox=WASHINGTON_DC_BBOX
+    city="dc", bbox=WASHINGTON_DC_BBOX
 )
 
 BOSTON_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(

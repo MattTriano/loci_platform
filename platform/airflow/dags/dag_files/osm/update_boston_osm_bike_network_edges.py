@@ -2,7 +2,7 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
-from loci.sources.update_configs import DETROIT_OSM_BIKE_NETWORK_EDGES_UC as UPDATE_CONFIG
+from loci.sources.update_configs import BOSTON_OSM_BIKE_NETWORK_EDGES_UC as UPDATE_CONFIG
 from loci.tasks.osm_tasks import update_osm_table
 
 task_logger = getLogger("airflow.task")
@@ -15,9 +15,9 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
-    tags=["osm", "detroit", "biking", "network"],
+    tags=["osm", "boston", "biking", "network"],
 )
-def update_detroit_osm_bike_newtork_edges():
+def update_boston_osm_bike_network_edges():
     update_osm_table(
         conn_id=CONN_ID,
         update_config=UPDATE_CONFIG,
@@ -25,4 +25,4 @@ def update_detroit_osm_bike_newtork_edges():
     )
 
 
-update_detroit_osm_bike_newtork_edges()
+update_boston_osm_bike_network_edges()
