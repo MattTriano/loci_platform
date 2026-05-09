@@ -29,12 +29,12 @@ models:
             name: stress_cost_non_negative
 
 
-      # crash_penalty must be non-negative (it's an additive cost)
+      # crash_cost must be non-negative (it's an additive cost)
       - dbt_utils.expression_is_true:
           arguments:
-            expression: "crash_penalty >= 0"
+            expression: "crash_cost >= 0"
           config:
-            name: crash_penalty_non_negative
+            name: crash_cost_non_negative
 
       # Every edge from the source network must be present.
       - dbt_utils.equal_rowcount:
@@ -98,10 +98,10 @@ models:
       - name: lighting_factor
         data_tests:
           - not_null
-      - name: crash_penalty
+      - name: crash_cost
         data_tests:
           - not_null
-      - name: traffic_control_penalty
+      - name: intersection_cost
         data_tests:
           - not_null
       - name: geom

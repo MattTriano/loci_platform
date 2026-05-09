@@ -899,7 +899,8 @@
 // ── Configuration ────────────────────────────────────────
 // Defaults are placeholders; real values come from config.json which is
 // uploaded by the deploy task per (env, city). When config.json is missing
-// or malformed, the page still renders with these generic defaults.
+// or malformed, the page still renders with these generic defaults and
+// no data layers (CONFIG.layers === []).
 const CONFIG = {
   city_name: 'Bike Map',
   log_endpoint: '',
@@ -907,86 +908,40 @@ const CONFIG = {
   routing_api_key: '',
   map_center: [-87.6298, 41.8781],
   map_zoom: 11,
-  layers: ['crashes', 'thefts', 'parking'],
+  layers: [],
   about_paragraphs: null,         // optional: array of HTML strings to replace #about-body content
   terms_what_is: null,            // optional: HTML to replace #terms-what
   terms_data_sources: null,       // optional: HTML to replace #terms-data-sources
   terms_liability: null,          // optional: HTML to replace #terms-liability
 };
 
-// ── Layer master list ────────────────────────────────────
-// All layers the codebase knows how to render. CONFIG.layers controls
-// which subset is actually shown for the current city. Layer ids must
-// match the export config name in geojson_export.py and the .geojson
-// file under /data.
-const LAYERS = {
-  crashes: {
-    label: 'Bike Crashes',
-    color: '#ef4444',
-    file: 'data/crashes.geojson',
-    clusterMaxZoom: 13,
-    clusterRadius: 45,
-    pointRadius: 5,
-    defaultVisible: true,
-    dateField: 'crash_date',
-    popupTitle: 'Bike Crash',
-    popupFields: [
-      { key: 'crash_date',              label: 'Date' },
-      { key: 'local_crash_time',        label: 'Time' },
-      { key: 'local_crash_day_of_week', label: 'Day' },
-      { key: 'street_direction',        label: 'Street', fmt: (v, p) => `${v || ''} ${p.street_name || ''}`.trim() },
-      { key: 'first_crash_type',        label: 'Type' },
-      { key: 'most_severe_injury',      label: 'Worst Injury' },
-      { key: 'severity_score',          label: 'Severity' },
-      { key: 'prim_contributory_cause', label: 'Cause' },
-      { key: 'weather_condition',       label: 'Weather' },
-      { key: 'lighting_condition',      label: 'Lighting' },
-      { key: 'hit_and_run_i',           label: 'Hit & Run', fmt: v => v === 'Y' ? 'Yes' : v === 'N' ? 'No' : null },
-      { key: 'dooring_i',              label: 'Dooring',   fmt: v => v === 'Y' ? 'Yes' : v === 'N' ? 'No' : null },
-    ],
+// ── Layer registry (built once from CONFIG.layers after config load) ─
+// LAYERS is keyed by layer id and holds normalized layer-config objects
+// so the rest of the code can keep doing LAYERS[id] lookups.
+const LAYERS = {};
+
+// ── Named popup formatters ───────────────────────────────
+// Keep this table small and explicit; any new entry needs a matching
+// name in loci.exports.bike_map_layers.ALLOWED_FORMATTERS.
+const FORMATTERS = {
+  yes_no_yn: (v) => (v === 'Y' ? 'Yes' : v === 'N' ? 'No' : null),
+  yes_no_bool: (v) => {
+    if (v === true || v === 'yes') return 'Yes';
+    if (v === false || v === 'no') return 'No';
+    return null;
   },
-  thefts: {
-    label: 'Bike Thefts',
-    color: '#f59e0b',
-    file: 'data/thefts.geojson',
-    clusterMaxZoom: 13,
-    clusterRadius: 45,
-    pointRadius: 5,
-    defaultVisible: true,
-    dateField: 'theft_date',
-    popupTitle: 'Bike Theft',
-    popupFields: [
-      { key: 'source',               label: 'Source' },
-      { key: 'theft_date',           label: 'Date' },
-      { key: 'theft_hour',           label: 'Hour', fmt: v => v != null ? `${v}:00` : null },
-      { key: 'location_description', label: 'Location' },
-      { key: 'bike_description',     label: 'Bike' },
-      { key: 'theft_description',    label: 'Details' },
-      { key: 'locking_description',  label: 'Locking' },
-    ],
-  },
-  parking: {
-    label: 'Bike Parking',
-    color: '#22c55e',
-    file: 'data/parking.geojson',
-    clusterMaxZoom: 13,
-    clusterRadius: 40,
-    pointRadius: 5,
-    defaultVisible: true,
-    popupTitle: 'Bike Parking',
-    popupFields: [
-      { key: 'name',     label: 'Name' },
-      { key: 'type',     label: 'Type' },
-      { key: 'capacity', label: 'Capacity' },
-      { key: 'covered',  label: 'Covered',  fmt: v => v === true || v === 'yes' ? 'Yes' : v === false || v === 'no' ? 'No' : null },
-      { key: 'indoor',   label: 'Indoor',   fmt: v => v === true || v === 'yes' ? 'Yes' : v === false || v === 'no' ? 'No' : null },
-      { key: 'lit',      label: 'Lit',      fmt: v => v === true || v === 'yes' ? 'Yes' : v === false || v === 'no' ? 'No' : null },
-      { key: 'fee',      label: 'Fee',      fmt: v => v === true || v === 'yes' ? 'Yes' : v === false || v === 'no' ? 'No' : null },
-      { key: 'operator', label: 'Operator' },
-      { key: 'access',   label: 'Access' },
-    ],
-  },
+  hour: (v) => (v != null ? `${v}:00` : null),
+  street_with_direction: (v, p) => `${p.street_direction || ''} ${v || ''}`.trim() || null,
 };
+
+function applyFormatter(name, val, props) {
+  const fn = FORMATTERS[name];
+  if (!fn) {
+    console.warn(`Unknown popup formatter: ${name}`);
+    return val;
+  }
+  return fn(val, props);
+}
 
 // ── Route segment color scale ────────────────────────────
 // Stops for stress-cost-per-meter. Used as a fallback when there are
@@ -1050,7 +1005,7 @@ async function loadConfig() {
 
 function initApp() {
   applyCityText();
-  filterLayers();
+  buildLayerRegistry();
   initMap();
   buildLayerControls();
   wireRouting();
@@ -1080,11 +1035,23 @@ function setHTMLIfPresent(elId, html) {
   if (el) el.innerHTML = html;
 }
 
-// ── Filter LAYERS to those listed in CONFIG.layers ───────
-function filterLayers() {
-  const allowed = new Set(CONFIG.layers || Object.keys(LAYERS));
-  for (const id of Object.keys(LAYERS)) {
-    if (!allowed.has(id)) delete LAYERS[id];
+// ── Build LAYERS registry from CONFIG.layers ─────────────
+// Each entry in CONFIG.layers is a normalized layer-config object
+// produced by LayerConfigHelper.format_for_app_config.
+function buildLayerRegistry() {
+  for (const cfg of CONFIG.layers || []) {
+    LAYERS[cfg.id] = {
+      label: cfg.label,
+      color: cfg.color,
+      file: cfg.file,
+      clusterMaxZoom: cfg.cluster_max_zoom,
+      clusterRadius: cfg.cluster_radius,
+      pointRadius: cfg.point_radius,
+      defaultVisible: cfg.default_visible,
+      dateField: cfg.date_field || null,
+      popupTitle: cfg.popup_title,
+      popupFields: cfg.popup_fields || [],
+    };
   }
 }
 
@@ -1763,8 +1730,8 @@ function buildRouteSegmentPopupHTML(props) {
   ];
 
   const penaltyRows = [
-    ['Crash penalty',     fmtMeters(cc.crash_penalty)],
-    ['Traffic control',   fmtMeters(cc.traffic_control_penalty)],
+    ['Crash penalty',     fmtMeters(cc.crash_cost)],
+    ['Intersection penalty',   fmtMeters(cc.intersection_cost)],
     ['Left-turn penalty', fmtMeters(cc.left_turn_penalty)],
   ].filter(([, v]) => v != null && parseFloat(v) > 0);
 
@@ -2131,11 +2098,9 @@ function buildPopupHTML(cfg, props, totalCount, currentIndex) {
 
   let rows = '';
   for (const f of cfg.popupFields) {
-    let val;
+    let val = props[f.key];
     if (f.fmt) {
-      val = f.fmt(props[f.key], props);
-    } else {
-      val = props[f.key];
+      val = applyFormatter(f.fmt, val, props);
     }
     if (val == null || val === '' || val === 'null') continue;
     rows += `<div class="popup-row"><span class="popup-key">${f.label}</span><span class="popup-val">${escHtml(String(val))}</span></div>`;

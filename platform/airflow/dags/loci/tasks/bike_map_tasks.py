@@ -19,6 +19,7 @@ from loci.aws import get_boto_session
 from loci.db.af_utils import get_postgres_engine
 from loci.deploy import upload_file_to_s3
 from loci.environments import VALID_ENVS, get_env
+from loci.exports.bike_map_layers import LayerDisplayConfig, validate_layer_displays
 from loci.exports.geojson_export import GeoJSONExportConfig
 from loci.exports.graph_export import RoutingGraphExporter
 from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda
@@ -27,7 +28,7 @@ from loci.tasks.testing.deployment_smoke_test import (
     site_url_for,
     smoke_test_deployed_routing,
 )
-from loci.tasks.testing.route_tests import run_route_tests
+from loci.tasks.testing.route_tests import RouteTestCase, run_route_tests
 from loci.tasks.transform_tasks import run_dbt
 
 CONN_ID = "gis_dwh_db"
@@ -45,6 +46,9 @@ class CityBuildSpec:
     bbox
         (south, west, north, east) in EPSG:4269 (NAD83 lon/lat) as the bounding box
         for geocoding and limiting to a bounding box around a city.
+    weights_dbt_select
+        dbt --select expression for the stress-weighted edges model that
+        feeds the routing graph.
     geocode
         A bool indicating whether geocoding should be used for the city.
     pre_export_dbt_selects
@@ -55,9 +59,14 @@ class CityBuildSpec:
     geojson_exports
         Per-mart-table export configs for the bike map. Each defines a
         mart table, geometry source, and properties to expose.
-    weights_dbt_select
-        dbt --select expression for the stress-weighted edges model that
-        feeds the routing graph.
+    layer_displays
+        Per-layer frontend display config (paired with geojson_exports
+        by name). Used by render_layers_config_json to produce the
+        layers block for apps/bike-map/config/{env}/{city}.json.
+    route_tests
+        City-specific route quality test cases run after the routing
+        graph is built. Empty list = no tests for this city (a warning
+        is logged at run time).
     """
 
     city: str
@@ -66,6 +75,14 @@ class CityBuildSpec:
     geocode: bool = False
     pre_export_dbt_selects: list[tuple[str, ...]] = field(default_factory=list)
     geojson_exports: list[GeoJSONExportConfig] = field(default_factory=list)
+    layer_displays: list[LayerDisplayConfig] = field(default_factory=list)
+    route_tests: list[RouteTestCase] = field(default_factory=list)
+
+    def __post_init__(self):
+        # Validate at DAG-parse time so typos in popup field formatters
+        # or mismatched export names fail loudly when Airflow imports
+        # the DAG, not silently in the browser.
+        validate_layer_displays(self.layer_displays, self.geojson_exports)
 
 
 @task
@@ -111,8 +128,12 @@ def build_routing_graph(
 
 
 @task
-def run_tests(graph_path: str, task_logger: logging.Logger) -> list:
-    results = run_route_tests(graph_path, logger=task_logger)
+def run_tests(
+    graph_path: str,
+    test_cases: list[RouteTestCase],
+    task_logger: logging.Logger,
+) -> list:
+    results = run_route_tests(graph_path, test_cases, logger=task_logger)
     task_logger.info("Test results %s", results)
     return results
 
@@ -206,7 +227,11 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
         task_logger=task_logger,
         graph_path=graph_path,
     )
-    _run_tests = run_tests(task_logger=task_logger, graph_path=graph_path)
+    _run_tests = run_tests(
+        task_logger=task_logger,
+        graph_path=graph_path,
+        test_cases=spec.route_tests,
+    )
     _deploy_graph = deploy_graph(
         env=ENV_TEMPLATE,
         graph_path=graph_path,
