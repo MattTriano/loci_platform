@@ -1,8 +1,9 @@
 """Tests for BikeIndexCollector."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from loci.collectors.bike_index.client import BikeIndexSearchParams
 from loci.collectors.bike_index.collector import BikeIndexCollector
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
@@ -131,13 +132,29 @@ class TestHighWaterMark:
         )
         assert hwm == collector.EPOCH_HWM
 
-    def test_returns_epoch_on_exception(self, collector, mock_engine):
-        mock_engine.query.side_effect = Exception("table does not exist")
+    def test_returns_epoch_when_table_does_not_exist(self, collector, mock_engine):
+        """When to_regclass returns NULL, the table doesn't exist yet —
+        return EPOCH_HWM so the first run captures everything."""
+        exists_df = MagicMock()
+        exists_df.__getitem__ = lambda self, key: MagicMock(iloc=[False])
+        mock_engine.query.return_value = exists_df
 
         hwm = collector._get_high_water_mark(
             BikeIndexDatasetSpec(name="t", target_table="t", target_schema="s")
         )
         assert hwm == collector.EPOCH_HWM
+
+    def test_propagates_unexpected_query_failures(self, collector, mock_engine):
+        """Unexpected query failures (connection issues, permissions, etc.)
+        must propagate — silently falling back to EPOCH would convert the
+        run into an unintended full refresh, which interacts badly with
+        SCD2's unique constraint."""
+        mock_engine.query.side_effect = Exception("connection reset")
+
+        with pytest.raises(Exception, match="connection reset"):
+            collector._get_high_water_mark(
+                BikeIndexDatasetSpec(name="t", target_table="t", target_schema="s")
+            )
 
 
 # ================================================================== #
@@ -312,20 +329,18 @@ class TestCollect:
     ):
         """The HWM should be captured once before collect_search runs,
         then passed to both phases."""
-        # First call is _get_high_water_mark query → returns 500
-        hwm_df = MagicMock()
-        hwm_df.empty = False
-        hwm_df.__getitem__ = lambda self, key: MagicMock(iloc=[500])
-
-        # Second call is _get_ids_needing_detail query → returns []
-        ids_df = MagicMock()
-        ids_df.__getitem__ = lambda self, key: MagicMock(tolist=MagicMock(return_value=[]))
-
-        mock_engine.query.side_effect = [hwm_df, ids_df]
         mock_client.search_all.return_value = iter([])
 
-        result = collector.collect(spec)
+        # Empty ids result for collect_detail's query
+        ids_df = MagicMock()
+        ids_df.__getitem__ = lambda self, key: MagicMock(tolist=MagicMock(return_value=[]))
+        mock_engine.query.return_value = ids_df
 
+        with patch.object(collector, "_get_high_water_mark", return_value=500) as mock_hwm:
+            result = collector.collect(spec)
+
+        # HWM resolved exactly once, at the top of collect()
+        assert mock_hwm.call_count == 1
         assert result["search"]["high_water_mark"] == 500
         assert result["detail"]["high_water_mark"] == 500
 

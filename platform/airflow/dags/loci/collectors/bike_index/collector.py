@@ -80,25 +80,40 @@ class BikeIndexCollector:
     # High water mark
     # ------------------------------------------------------------------
 
-    def _get_high_water_mark(self, spec: BikeIndexDatasetSpec) -> int:
-        """Query the target table for max(date_stolen) among current rows.
+    # def _get_high_water_mark(self, spec: BikeIndexDatasetSpec) -> int:
+    #     """Query the target table for max(date_stolen) among current rows.
 
-        Returns a unix timestamp, or EPOCH_HWM if the table is empty
-        or doesn't exist yet.
-        """
+    #     Returns a unix timestamp, or EPOCH_HWM if the table is empty
+    #     or doesn't exist yet.
+    #     """
+    #     fqn = f"{spec.target_schema}.{spec.target_table}"
+    #     try:
+    #         df = self.engine.query(
+    #             f"""
+    #             select max(date_stolen) as hwm
+    #             from {fqn}
+    #             where "valid_to" is null
+    #             """,
+    #         )
+    #         hwm = df["hwm"].iloc[0] if not df.empty else None
+    #         return int(hwm) if hwm is not None else self.EPOCH_HWM
+    #     except Exception:
+    #         return self.EPOCH_HWM
+
+    def _get_high_water_mark(self, spec):
         fqn = f"{spec.target_schema}.{spec.target_table}"
-        try:
-            df = self.engine.query(
-                f"""
-                select max(date_stolen) as hwm
-                from {fqn}
-                where "valid_to" is null
-                """,
-            )
-            hwm = df["hwm"].iloc[0] if not df.empty else None
-            return int(hwm) if hwm is not None else self.EPOCH_HWM
-        except Exception:
+        # check existence explicitly
+        exists_df = self.engine.query(
+            "select to_regclass(%(fqn)s) is not null as exists",
+            {"fqn": fqn},
+        )
+        if not exists_df["exists"].iloc[0]:
             return self.EPOCH_HWM
+        df = self.engine.query(
+            f'select max(date_stolen) as hwm from {fqn} where "valid_to" is null'
+        )
+        hwm = df["hwm"].iloc[0] if not df.empty else None
+        return int(hwm) if hwm is not None else self.EPOCH_HWM
 
     # ------------------------------------------------------------------
     # Flattening
