@@ -13,6 +13,15 @@ from loci.geo import BBox
 #    Bike Index                                                                       #
 #######################################################################################
 
+BIKEINDEX_BOSTON_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_boston_stolen_bikes",
+    target_table="bikeindex_boston_stolen_bikes",
+    entity_key=["id"],
+    location="42.3125,-71.11",
+    distance=12.5,
+    stolenness="proximity",
+)
+
 BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
     name="bikeindex_chicago_stolen_bikes",
     target_table="bikeindex_chicago_stolen_bikes",
@@ -21,6 +30,79 @@ BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
     distance=10,
     stolenness="proximity",
 )
+
+BIKEINDEX_DENVER_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_denver_stolen_bikes",
+    target_table="bikeindex_denver_stolen_bikes",
+    entity_key=["id"],
+    location="39.745,-104.875",
+    distance=12,
+    stolenness="proximity",
+)
+
+BIKEINDEX_DETROIT_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_detroit_stolen_bikes",
+    target_table="bikeindex_detroit_stolen_bikes",
+    entity_key=["id"],
+    location="42.380,-83.099",
+    distance=15,
+    stolenness="proximity",
+)
+
+BIKEINDEX_MADISON_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_madison_stolen_bikes",
+    target_table="bikeindex_madison_stolen_bikes",
+    entity_key=["id"],
+    location="Madison, WI",
+    distance=15,
+    stolenness="proximity",
+)
+
+BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_new_orleans_stolen_bikes",
+    target_table="bikeindex_new_orleans_stolen_bikes",
+    entity_key=["id"],
+    location="30.01,-89.91",
+    distance=10,
+    stolenness="proximity",
+)
+
+BIKEINDEX_PORTLAND_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_portland_stolen_bikes",
+    target_table="bikeindex_portland_stolen_bikes",
+    entity_key=["id"],
+    location="45.535,-122.66",
+    distance=12,
+    stolenness="proximity",
+)
+
+BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_sf_stolen_bikes",
+    target_table="bikeindex_sf_stolen_bikes",
+    entity_key=["id"],
+    location="San Francisco, CA",
+    distance=15,
+    stolenness="proximity",
+)
+
+BIKEINDEX_TORONTO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_toronto_stolen_bikes",
+    target_table="bikeindex_toronto_stolen_bikes",
+    entity_key=["id"],
+    location="43.715,-79.315",
+    distance=15,
+    stolenness="proximity",
+)
+
+BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
+    name="bikeindex_dc_stolen_bikes",
+    target_table="bikeindex_dc_stolen_bikes",
+    entity_key=["id"],
+    location="43.91,-77.01",
+    distance=5,
+    stolenness="proximity",
+)
+
 
 #######################################################################################
 #    Census TIGER Data                                                                #
@@ -427,6 +509,22 @@ def generate_osm_bike_network_nodes_spec(city: str, bbox: BBox) -> OSMDatasetSpe
     )
 
 
+def generate_osm_bike_parking_spec(city: str, bbox: BBox) -> OSMDatasetSpec:
+    """Build a bike-routing point-features spec for a given city."""
+    return OSMDatasetSpec(
+        name=f"{city}_osm_bike_parking",
+        target_table=f"{city}_osm_bike_parking",
+        target_schema="raw_data",
+        query=OverpassAPIQuery(
+            element_types=["node"],
+            tag_filters=[{"amenity": "bicycle_parking"}],
+            bbox=bbox,
+        ),
+        promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+        entity_key=["osm_type", "osm_id"],
+    )
+
+
 # ====================================================================================
 #    OSM Overpass Queries
 # ====================================================================================
@@ -657,6 +755,25 @@ WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec
     city="dc", bbox=WASHINGTON_DC_BBOX
 )
 WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
+    city="dc", bbox=WASHINGTON_DC_BBOX
+)
+
+
+DETROIT_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="detroit", bbox=DETROIT_BBOX)
+
+DENVER_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="denver", bbox=DENVER_BBOX)
+
+MADISON_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="madison", bbox=MADISON_BBOX)
+
+PORTLAND_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="portland", bbox=PORTLAND_BBOX)
+
+SAN_FRANCISCO_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(
+    city="sf", bbox=SAN_FRANCISCO_BBOX
+)
+
+TORONTO_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="toronto", bbox=TORONTO_BBOX)
+
+WASHINGTON_DC_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(
     city="dc", bbox=WASHINGTON_DC_BBOX
 )
 
@@ -910,17 +1027,17 @@ CHICAGO_OSM_TREES_SPEC = OSMDatasetSpec(
     ],
 )
 
-DETROIT_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
-    name="detroit_osm_bike_parking",
-    target_table="detroit_osm_bike_parking",
-    query=OverpassAPIQuery(
-        element_types=["node", "way", "relation"],
-        tag_filters=[{"amenity": "bicycle_parking"}],
-        bbox=DETROIT_BBOX,
-    ),
-    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
-    entity_key=["osm_type", "osm_id"],
-)
+# DETROIT_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
+#     name="detroit_osm_bike_parking",
+#     target_table="detroit_osm_bike_parking",
+#     query=OverpassAPIQuery(
+#         element_types=["node", "way", "relation"],
+#         tag_filters=[{"amenity": "bicycle_parking"}],
+#         bbox=DETROIT_BBOX,
+#     ),
+#     promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
+#     entity_key=["osm_type", "osm_id"],
+# )
 
 DETROIT_OSM_TRANSIT_SPEC = OSMDatasetSpec(
     name="detroit_osm_transit",
