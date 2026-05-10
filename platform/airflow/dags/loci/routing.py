@@ -382,10 +382,8 @@ def find_route(
                     "tunnel_factor": edge_data.get("tunnel_factor"),
                     "surface_factor": edge_data.get("surface_factor"),
                     "lighting_factor": edge_data.get("lighting_factor"),
-                    "crash_penalty": round(edge_data.get("crash_penalty", 0.0), 4),
-                    "traffic_control_penalty": round(
-                        edge_data.get("traffic_control_penalty", 0.0), 4
-                    ),
+                    "crash_cost": round(edge_data.get("crash_cost", 0.0), 4),
+                    "intersection_cost": round(edge_data.get("intersection_cost", 0.0), 4),
                     "left_turn_penalty": round(left_turn_penalty, 4),
                 },
             }

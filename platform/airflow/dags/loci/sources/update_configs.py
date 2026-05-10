@@ -53,11 +53,73 @@ class DatasetUpdateConfig:
 #    Bike Index                                                               #
 ###############################################################################
 
+BIKEINDEX_BOSTON_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_BOSTON_STOLEN_BIKES_SPEC,
+    update_cron="0 1 * * 0",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
 BIKEINDEX_CHICAGO_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC,
-    update_cron="0 4 * * 1,4",
+    update_cron="0 1 * * 1",
     full_update_week_of_month=1,
-    full_update_day_of_week=3,
+    full_update_mode="api",
+)
+
+BIKEINDEX_DENVER_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_DENVER_STOLEN_BIKES_SPEC,
+    update_cron="0 2 * * 0",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_DETROIT_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_DETROIT_STOLEN_BIKES_SPEC,
+    update_cron="0 2 * * 1",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_MADISON_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_MADISON_STOLEN_BIKES_SPEC,
+    update_cron="0 3 * * 0",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_SPEC,
+    update_cron="0 3 * * 1",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_PORTLAND_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_PORTLAND_STOLEN_BIKES_SPEC,
+    update_cron="0 4 * * 0",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_SPEC,
+    update_cron="0 4 * * 1",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_TORONTO_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_TORONTO_STOLEN_BIKES_SPEC,
+    update_cron="0 5 * * 0",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_UC = DatasetUpdateConfig(
+    spec=specs.BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_SPEC,
+    update_cron="0 5 * * 1",
+    full_update_week_of_month=1,
     full_update_mode="api",
 )
 
@@ -706,11 +768,17 @@ CHICAGO_OSM_TRANSIT_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+DENVER_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.DENVER_OSM_BIKE_PARKING_SPEC,
+    update_cron="35 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
 DETROIT_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_OSM_BIKE_PARKING_SPEC,
     update_cron="10 2 * * 2",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
     full_update_mode="api",
 )
 
@@ -737,6 +805,35 @@ MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
     full_update_day_of_week=4,
     full_update_mode="api",
 )
+
+PORTLAND_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.PORTLAND_OSM_BIKE_PARKING_SPEC,
+    update_cron="25 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+SAN_FRANCISCO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.SAN_FRANCISCO_OSM_BIKE_PARKING_SPEC,
+    update_cron="28 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+TORONTO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_OSM_BIKE_PARKING_SPEC,
+    update_cron="31 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+WASHINGTON_DC_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.WASHINGTON_DC_OSM_BIKE_PARKING_SPEC,
+    update_cron="34 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
 
 # ------------------------------------------------------------------------------------#
 #    OSM: bike networks                                                               #

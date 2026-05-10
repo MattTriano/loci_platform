@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 from urllib.parse import quote_plus
 
 import pandas as pd
@@ -21,8 +21,10 @@ def sample_creds():
 @pytest.fixture
 def mock_cursor():
     cur = MagicMock()
-    cur.description = [("col_a", 23, None, None, None, None, None),
-                       ("col_b", 25, None, None, None, None, None)]
+    cur.description = [
+        ("col_a", 23, None, None, None, None, None),
+        ("col_b", 25, None, None, None, None, None),
+    ]
     cur.fetchone.return_value = None
     cur.rowcount = 2
     cur.close.return_value = None
@@ -205,8 +207,10 @@ class TestPostgresEngineParameterizedQueries:
         assert len(matching) == 1
 
     def test_query_returns_dataframe(self, engine, mock_cursor):
-        mock_cursor.description = [("id", 23, None, None, None, None, None),
-                                   ("name", 25, None, None, None, None, None)]
+        mock_cursor.description = [
+            ("id", 23, None, None, None, None, None),
+            ("name", 25, None, None, None, None, None),
+        ]
         mock_cursor.fetchall.return_value = [(1, "alice"), (2, "bob")]
         df = engine.query("SELECT id, name FROM users WHERE active = %s", params=(True,))
         assert isinstance(df, pd.DataFrame)
@@ -473,6 +477,7 @@ class TestPostgresEngineConnectionManagement:
         eng = PostgresEngine(sample_creds, db_name="staging")
         assert eng.db_name == "staging"
 
+
 class TestGeometryDetectionByOid:
     """Regression tests for OID-based geometry detection.
 
@@ -563,3 +568,297 @@ class TestGeometryDetectionByOid:
 
         assert geom_col is None
         assert srid == 0
+
+
+def _setup_scd2_cursor(mock_cursor, columns, rowcounts):
+    """Configure a mock cursor for an SCD2 merge.
+
+    Args:
+        columns: list of target column names (excluding metadata).
+        rowcounts: dict with optional keys 'deduped', 'invalidated',
+                   'closed', 'merged'. Defaults to 0 each.
+    """
+    _set_table_columns(mock_cursor, columns)
+
+    rc_sequence = [
+        2,  # write_batch's rowcount read (unused but cursor.rowcount may be read)
+        rowcounts.get("deduped", 0),
+        rowcounts.get("invalidated", 0),
+        rowcounts.get("closed", 0),
+        rowcounts.get("merged", 0),
+    ]
+    type(mock_cursor).rowcount = PropertyMock(side_effect=rc_sequence + [0] * 10)
+
+
+class TestStagedIngestSCD2:
+    """SCD Type 2 merge behavior."""
+
+    def test_entity_key_and_conflict_column_together_raises(self, engine):
+        with pytest.raises(ValueError, match="entity_key.*conflict_column"):
+            engine.staged_ingest(
+                "t",
+                "s",
+                entity_key=["id"],
+                conflict_column=["id"],
+            )
+
+    def test_invalidate_missing_without_entity_key_raises(self, engine):
+        with pytest.raises(ValueError, match="invalidate_missing requires entity_key"):
+            engine.staged_ingest("t", "s", invalidate_missing=True)
+
+    def test_scd2_merge_runs_when_entity_key_set(self, engine, mock_cursor):
+        """An SCD2 merge runs the hash/close-out/insert sequence,
+        not the simple `on conflict` insert."""
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest(
+            "crimes",
+            "raw_data",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+        ) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        sqls = _get_execute_sql_strings(mock_cursor)
+
+        # SCD2-specific statements should appear
+        assert any('add column if not exists "record_hash"' in s for s in sqls)
+        assert any('set "record_hash" = md5(' in s for s in sqls)
+        assert any('set "valid_to" = now()' in s for s in sqls)
+
+        # Insert should target (entity_key, record_hash) conflict, not a
+        # simple conflict_column upsert
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into raw_data.crimes")
+        assert len(insert_stmts) == 1
+        assert '("id", "record_hash") do nothing' in insert_stmts[0]
+
+    def test_scd2_dedupes_staging_against_target_history(self, engine, mock_cursor):
+        """Regression: staging rows whose (entity_key, record_hash) already
+        exists anywhere in target history must be deleted from staging
+        before the close-out fires.
+
+        Without this dedupe, a replayed search-shaped row on a second
+        incremental run would close out the current detail-shaped row
+        with no replacement (the insert no-ops on the unique constraint),
+        leaving the entity with zero current versions. This was an
+        observed data-loss bug.
+        """
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest(
+            "t",
+            "s",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+        ) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        sqls = _get_execute_sql_strings(mock_cursor)
+
+        # The dedupe DELETE must run BEFORE the close-out UPDATE
+        dedupe_idx = next(
+            (i for i, s in enumerate(sqls) if "delete from" in s and stager._staging_table in s),
+            None,
+        )
+        closeout_idx = next(
+            (
+                i
+                for i, s in enumerate(sqls)
+                if 'set "valid_to" = now()' in s and "raw_data" not in s
+            ),
+            next(
+                (i for i, s in enumerate(sqls) if 'set "valid_to" = now()' in s),
+                None,
+            ),
+        )
+
+        assert dedupe_idx is not None, "dedupe DELETE was not emitted"
+        assert closeout_idx is not None, "close-out UPDATE was not emitted"
+        assert dedupe_idx < closeout_idx, (
+            "dedupe DELETE must run before close-out UPDATE; "
+            "otherwise a replayed historical hash will invalidate "
+            "the current version with no replacement landing."
+        )
+
+        # The dedupe should join staging to target on the entity key
+        dedupe_sql = sqls[dedupe_idx]
+        assert '"id"' in dedupe_sql
+        assert '"record_hash"' in dedupe_sql
+
+    def test_scd2_close_out_compares_hash(self, engine, mock_cursor):
+        """The close-out UPDATE should only invalidate current target rows
+        whose record_hash differs from the staging row for the same entity."""
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest(
+            "t",
+            "s",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+        ) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        update_stmts = [
+            s for s in _get_execute_sql_strings(mock_cursor) if 'set "valid_to" = now()' in s
+        ]
+        # At least the close-out (and possibly invalidate_missing) UPDATE
+        assert len(update_stmts) >= 1
+
+        close_out = next(s for s in update_stmts if 'record_hash" != t."record_hash"' in s)
+        assert 'where "valid_to" is null' in close_out
+
+    def test_scd2_invalidate_missing_emits_extra_update(self, engine, mock_cursor):
+        """With invalidate_missing=True, an additional UPDATE invalidates
+        current target rows whose entity_key is absent from staging."""
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest(
+            "t",
+            "s",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+            invalidate_missing=True,
+        ) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        update_stmts = [
+            s for s in _get_execute_sql_strings(mock_cursor) if 'set "valid_to" = now()' in s
+        ]
+        # Two UPDATEs: invalidate-missing + close-out-superseded
+        assert len(update_stmts) == 2
+
+        invalidate_missing = next(s for s in update_stmts if "not exists" in s)
+        assert 'where "valid_to" is null' in invalidate_missing
+
+    def test_scd2_invalidate_missing_default_off(self, engine, mock_cursor):
+        """Without invalidate_missing, only the close-out UPDATE runs."""
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest(
+            "t",
+            "s",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+        ) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        update_stmts = [
+            s for s in _get_execute_sql_strings(mock_cursor) if 'set "valid_to" = now()' in s
+        ]
+        assert len(update_stmts) == 1
+        assert "not exists" not in update_stmts[0]
+
+    def test_scd2_hash_excludes_entity_key_and_metadata(self, engine, mock_cursor):
+        """The MD5 hash must be computed over data columns only —
+        not entity_key (which is the identity) and not metadata (which
+        changes every run regardless of content)."""
+        _set_table_columns(
+            mock_cursor,
+            ["id", "name", "val"],  # _get_target_columns already strips metadata
+        )
+
+        with engine.staged_ingest(
+            "t",
+            "s",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+        ) as stager:
+            stager.write_batch([{"id": 1, "name": "x", "val": "a"}])
+
+        hash_stmts = _find_sql_containing(mock_cursor, 'set "record_hash" = md5(')
+        assert len(hash_stmts) == 1
+        hash_sql = hash_stmts[0]
+
+        # Data columns should appear in the hash expression
+        assert '"name"' in hash_sql
+        assert '"val"' in hash_sql
+
+        # Entity key should NOT — it's the identity, not the content
+        assert '"id"::text' not in hash_sql
+
+        # Metadata columns should NOT — they're filtered before hashing
+        for meta in ("ingested_at", "record_hash", "valid_from", "valid_to"):
+            assert f'"{meta}"::text' not in hash_sql
+
+    def test_scd2_composite_entity_key(self, engine, mock_cursor):
+        """SCD2 with a multi-column entity_key joins on all of them."""
+        _set_table_columns(mock_cursor, ["u", "v", "key", "weight"])
+
+        with engine.staged_ingest(
+            "edges",
+            "raw_data",
+            entity_key=["u", "v", "key"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+        ) as stager:
+            stager.write_batch([{"u": 1, "v": 2, "key": 0, "weight": 3.0}])
+
+        insert_stmts = _find_sql_containing(mock_cursor, "insert into raw_data.edges")
+        assert len(insert_stmts) == 1
+        assert '("u", "v", "key", "record_hash") do nothing' in insert_stmts[0]
+
+        # Close-out should join on all three entity columns
+        update_stmts = [
+            s for s in _get_execute_sql_strings(mock_cursor) if 'set "valid_to" = now()' in s
+        ]
+        close_out = next(s for s in update_stmts if "record_hash" in s)
+        assert 't."u" = s."u"' in close_out
+        assert 't."v" = s."v"' in close_out
+        assert 't."key" = s."key"' in close_out
+
+    def test_scd2_no_data_columns_to_hash_raises(self, engine, mock_cursor):
+        """If every non-entity_key column is excluded from hashing,
+        there's nothing left to hash and the merge cannot proceed."""
+        _set_table_columns(mock_cursor, ["id"])  # only the entity_key
+
+        with pytest.raises(ValueError, match="No columns to hash"):
+            with engine.staged_ingest(
+                "t",
+                "s",
+                entity_key=["id"],
+                metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+            ) as stager:
+                stager.write_batch([{"id": 1}])
+
+    def test_scd2_invalidate_missing_runs_before_dedupe(self, engine, mock_cursor):
+        """Regression: invalidate_missing must check staging before dedupe
+        removes unchanged-entity rows.
+
+        If dedupe runs first, every unchanged entity gets dropped from
+        staging (its (entity, hash) matches target history). Then
+        invalidate_missing's `not exists in staging` check fires for every
+        unchanged entity, closing out the entire current-version set.
+
+        This was an observed data-loss bug in full-refresh collectors:
+        a re-fetched graph identical to the previous run had every current
+        edge invalidated, leaving only the small fraction that actually
+        changed.
+        """
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest(
+            "edges",
+            "raw_data",
+            entity_key=["id"],
+            metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+            invalidate_missing=True,
+        ) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        sqls = _get_execute_sql_strings(mock_cursor)
+
+        invalidate_idx = next(
+            (i for i, s in enumerate(sqls) if 'set "valid_to" = now()' in s and "not exists" in s),
+            None,
+        )
+        dedupe_idx = next(
+            (i for i, s in enumerate(sqls) if "delete from" in s and stager._staging_table in s),
+            None,
+        )
+
+        assert invalidate_idx is not None, "invalidate_missing UPDATE was not emitted"
+        assert dedupe_idx is not None, "dedupe DELETE was not emitted"
+        assert invalidate_idx < dedupe_idx, (
+            "invalidate_missing must check staging BEFORE dedupe; "
+            "otherwise unchanged entities are dropped from staging and "
+            "then invalidated as 'missing'."
+        )

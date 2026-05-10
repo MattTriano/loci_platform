@@ -26,7 +26,10 @@ import os
 from dataclasses import dataclass
 
 VALID_ENVS = ("dev", "staging", "prod")
-VALID_CITIES = ("chicago",)  # extend as we onboard more cities
+VALID_CITIES = (
+    "chicago",
+    "detroit",
+)  # extend as we onboard more cities
 
 _MARTS_SCHEMA_BY_ENV = {
     "dev": "dbt_loci_marts",

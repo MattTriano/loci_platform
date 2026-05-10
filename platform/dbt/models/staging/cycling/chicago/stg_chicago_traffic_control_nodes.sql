@@ -153,6 +153,6 @@ select
                 when 'tertiary'  then 150.0
                 else                  100.0
             end
-    end as traffic_control_penalty
+    end as intersection_cost
 
 from nodes_with_control

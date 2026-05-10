@@ -7,22 +7,31 @@ sources:
     tables:
       - name: boston_osm_bike_network_edges
       - name: boston_osm_bike_network_nodes
+      - name: boston_osm_bike_parking
       - name: chicago_osm_bike_network_edges
       - name: chicago_osm_bike_network_nodes
+      - name: chicago_osm_bike_parking
       - name: dc_osm_bike_network_edges
       - name: dc_osm_bike_network_nodes
+      - name: dc_osm_bike_parking
       - name: denver_osm_bike_network_edges
       - name: denver_osm_bike_network_nodes
+      - name: denver_osm_bike_parking
       - name: detroit_osm_bike_network_edges
       - name: detroit_osm_bike_network_nodes
+      - name: detroit_osm_bike_parking
       - name: madison_osm_bike_network_edges
       - name: madison_osm_bike_network_nodes
+      - name: madison_osm_bike_parking
       - name: new_orleans_osm_bike_network_edges
       - name: new_orleans_osm_bike_network_nodes
+      - name: new_orleans_osm_bike_parking
       - name: portland_osm_bike_network_edges
       - name: portland_osm_bike_network_nodes
+      - name: portland_osm_bike_parking
       - name: sf_osm_bike_network_edges
       - name: sf_osm_bike_network_nodes
+      - name: sf_osm_bike_parking
       - name: toronto_osm_bike_network_edges
       - name: toronto_osm_bike_network_nodes
-
+      - name: toronto_osm_bike_parking

@@ -2,7 +2,7 @@
 """
 Export a stress-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
 
-Reads chicago_bike_stress_weighted_segments (one row per undirected segment)
+Reads <city>_bike_stress_weighted_segments (one row per undirected segment)
 and expands each segment into one or two directed edges based on its
 direction column.
 
@@ -33,15 +33,11 @@ class RoutingGraphExporter:
     engine : PostgresEngine
     city : str
     marts_schema : str
-        Schema where chicago_bike_stress_weighted_segments lives.
+        Schema where <city>_bike_stress_weighted_segments lives.
     batch_size : int
     min_component_size : int
         Weakly connected components smaller than this are dropped.
     """
-
-    # Must match crash_weight in chicago_bike_stress_weighted_segments.sql.
-    # Recomputed here because the SQL model doesn't expose crash_penalty as a column.
-    _CRASH_WEIGHT = 24.0
 
     _SEGMENT_QUERY = """
         select
@@ -60,8 +56,9 @@ class RoutingGraphExporter:
             tunnel_factor,
             surface_factor,
             lighting_factor,
-            traffic_control_penalty,
-            crash_score_per_meter,
+            physical_cost,
+            intersection_cost,
+            crash_cost,
             ST_AsGeoJSON(ST_Simplify(geom, 0.00005)) as geom_geojson,
             ST_X(ST_StartPoint(geom)) as start_lon,
             ST_Y(ST_StartPoint(geom)) as start_lat,
@@ -151,7 +148,7 @@ class RoutingGraphExporter:
         query = self._SEGMENT_QUERY.format(city=self.city, marts_schema=self.marts_schema)
 
         G = nx.DiGraph()
-        segment_geometry: dict[int, tuple] = {}
+        segment_geometry: dict[str, tuple] = {}
         G.graph["segment_geometry"] = segment_geometry
 
         segment_count = 0
@@ -195,12 +192,9 @@ class RoutingGraphExporter:
                     "tunnel_factor": _f(row["tunnel_factor"]),
                     "surface_factor": _f(row["surface_factor"]),
                     "lighting_factor": _f(row["lighting_factor"]),
-                    "traffic_control_penalty": _f(row["traffic_control_penalty"]),
-                    "crash_penalty": (
-                        float(row["crash_score_per_meter"] or 0.0)
-                        * float(row["length_m"] or 0.0)
-                        * self._CRASH_WEIGHT
-                    ),
+                    "physical_cost": _f(row["physical_cost"]),
+                    "intersection_cost": _f(row["intersection_cost"]),
+                    "crash_cost": _f(row["crash_cost"]),
                 }
 
                 # Forward edge: geometry runs start_node -> end_node

@@ -74,8 +74,8 @@ models:
               arguments:
                 min_value: 1
                 max_value: 4
-      - name: traffic_control_penalty
-        description: Stress cost added to a route for traversing this node.
+      - name: intersection_cost
+        description: Stress cost added to a route for traversing through this intersection.
         tests:
           - not_null
 
