@@ -190,10 +190,7 @@ CHICAGO_SPEC = CityBuildSpec(
     bbox=CHICAGO_BBOX,
     pre_export_dbt_selects=[
         # Bike theft hotspots — depends on geocoded address cache.
-        (
-            "--select",
-            "geocoded_address_cache+,stg__chicago_bikeindex_bike_thefts,+chicago_bike_theft_hotspots stg__chicago_cpd_bike_thefts",
-        ),
+        ("--select", "+chicago_bike_theft_hotspots"),
         # Bike parking.
         ("--select", "+chicago_bike_parking"),
         # Bike crash hotspots — must use cautious indirect selection to
