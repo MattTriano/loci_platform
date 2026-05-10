@@ -98,7 +98,7 @@ BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
     name="bikeindex_dc_stolen_bikes",
     target_table="bikeindex_dc_stolen_bikes",
     entity_key=["id"],
-    location="43.91,-77.01",
+    location="38.89,-77.01",
     distance=5,
     stolenness="proximity",
 )

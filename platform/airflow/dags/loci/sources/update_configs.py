@@ -55,70 +55,70 @@ class DatasetUpdateConfig:
 
 BIKEINDEX_BOSTON_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_BOSTON_STOLEN_BIKES_SPEC,
-    update_cron="0 1 * * 1",
+    update_cron="0 1 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_CHICAGO_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC,
-    update_cron="15 1 * * 1",
+    update_cron="0 1 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_DENVER_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_DENVER_STOLEN_BIKES_SPEC,
-    update_cron="30 1 * * 1",
+    update_cron="0 2 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_DETROIT_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_DETROIT_STOLEN_BIKES_SPEC,
-    update_cron="45 1 * * 1",
+    update_cron="0 2 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_MADISON_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_MADISON_STOLEN_BIKES_SPEC,
-    update_cron="0 2 * * 1",
+    update_cron="0 3 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_SPEC,
-    update_cron="15 2 * * 1",
+    update_cron="0 3 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_PORTLAND_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_PORTLAND_STOLEN_BIKES_SPEC,
-    update_cron="30 2 * * 1",
+    update_cron="0 4 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_SPEC,
-    update_cron="45 2 * * 1",
+    update_cron="0 4 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_TORONTO_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_TORONTO_STOLEN_BIKES_SPEC,
-    update_cron="0 3 * * 1",
+    update_cron="0 5 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
 BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_UC = DatasetUpdateConfig(
     spec=specs.BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_SPEC,
-    update_cron="15 3 * * 1",
+    update_cron="0 5 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )

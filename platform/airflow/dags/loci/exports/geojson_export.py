@@ -209,10 +209,14 @@ class GeoJsonExporter:
             List of paths to written files.
         """
         paths = []
+        errors = []
         for cfg in configs:
             try:
-                path = self.export_to_geojson(cfg)
-                paths.append(path)
-            except Exception:
+                paths.append(self.export_to_geojson(cfg))
+            except Exception as e:
                 logger.exception("Failed to export %s", cfg.name)
+                errors.append((cfg.name, e))
+        if errors:
+            names = ", ".join(name for name, _ in errors)
+            raise RuntimeError(f"Failed to export {len(errors)} layer(s): {names}")
         return paths
