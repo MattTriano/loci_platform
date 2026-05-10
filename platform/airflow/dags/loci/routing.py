@@ -109,14 +109,14 @@ def _is_left_turn(bearing_in: float, bearing_out: float) -> bool:
 
     Uses the cross-product sign of the direction vectors.  In a
     coordinate system where x = longitude, y = latitude (northern
-    hemisphere), a negative cross product means turning left.
+    hemisphere), a positive cross product means turning left.
     """
     dx_in = math.sin(bearing_in)
     dy_in = math.cos(bearing_in)
     dx_out = math.sin(bearing_out)
     dy_out = math.cos(bearing_out)
     cross = dx_in * dy_out - dy_in * dx_out
-    return cross < 0
+    return cross > 0
 
 
 def compute_left_turn_penalty(
