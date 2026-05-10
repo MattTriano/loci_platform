@@ -124,30 +124,6 @@ def _invalidate_cloudfront(cfg: EnvConfig, logger: Logger) -> str:
     return invalidation_id
 
 
-# def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
-#     """Upload the environment-specific config.json to S3.
-
-#     Reads config/{env}.json from the app directory and uploads it as
-#     config.json in the S3 bucket root, where index.html expects it.
-#     """
-#     config_path = Path(BIKE_MAP_APP_DIR) / "config" / f"{cfg.name}.json"
-#     if not config_path.exists():
-#         raise FileNotFoundError(
-#             f"Config file not found: {config_path}. "
-#             f"Expected one of: dev.json, staging.json, prod.json"
-#         )
-
-#     s3 = get_boto_session(cfg).client("s3")
-#     logger.info("Uploading %s → s3://%s/config.json", config_path, cfg.app_file_bucket)
-#     s3.upload_file(
-#         str(config_path),
-#         cfg.app_file_bucket,
-#         "config.json",
-#         ExtraArgs={"ContentType": "application/json"},
-#     )
-#     return {"bucket": cfg.app_file_bucket, "environment": cfg.name, "source": str(config_path)}
-
-
 def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
     """Upload the environment-specific config.json to S3.
 

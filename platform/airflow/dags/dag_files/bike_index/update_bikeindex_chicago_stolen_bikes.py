@@ -17,7 +17,7 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
-    tags=["census", "update", "housing", "tract"],
+    tags=["bikeindex", "chicago", "theft", "biking"],
 )
 def update_bikeindex_chicago_stolen_bikes():
     update_bike_index_table(

@@ -3,10 +3,10 @@ loci:
   outputs:
     dev:
       type: postgres
-      host: postgis
+      host: "{{ env_var('DBT_PG_HOST', 'postgis') }}"
       user: loci
       password: loci
-      port: 5432
+      port: "{{ env_var('DBT_PG_PORT', '5432') | int }}"
       dbname: loci
       schema: staging
       threads: 12

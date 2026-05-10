@@ -331,13 +331,23 @@ class StagedIngest:
 
     def _scd2_merge(self) -> None:
         """
-        SCD Type 2 merge:
-        1. Compute record_hash on staging rows
+        SCD Type 2 merge. Order matters:
+
+        1. Compute record_hash on staging rows.
         2. If invalidate_missing is True, invalidate current target rows
-           whose entity key is absent from staging
-        3. Close out current versions in target whose hash differs
-        4. Insert new versions (new entities + changed entities)
-        Skips rows whose (entity_key, record_hash) already exists in target.
+           whose entity_key is absent from staging. This step must run
+           BEFORE the dedupe in step 3, because dedupe removes rows from
+           staging that would otherwise prove an entity is still present.
+        3. Drop staging rows whose (entity_key, record_hash) already
+           exists anywhere in target history. These are not new versions
+           — they're either duplicates of the current row or replays of
+           a previously-seen historical version. Keeping them would
+           cause the close-out in step 4 to invalidate the current row
+           without a replacement landing, since the insert in step 5
+           would no-op on the unique constraint.
+        4. Close out current versions in target whose hash differs from
+           staging (entity exists in both, but content changed).
+        5. Insert new versions (new entities + changed entities).
         """
         hash_columns = self._get_hash_columns()
         hash_expr = self._build_hash_expression(hash_columns)
@@ -351,8 +361,9 @@ class StagedIngest:
             )
             cur.execute(f'update {self._staging_table} set "record_hash" = {hash_expr}')
 
-            # 2. Invalidate current target rows whose entity key is absent
-            #    from staging (e.g. edges removed or split into new keys)
+            # 2. Invalidate current target rows whose entity_key is absent
+            #    from staging. Must run before dedupe so staging still
+            #    contains evidence that unchanged entities are present.
             if self._invalidate_missing:
                 cur.execute(f"""
                     update {self._fqn} t
@@ -370,7 +381,25 @@ class StagedIngest:
                     self._fqn,
                 )
 
-            # 3. Close out current versions that have a new incoming version
+            # 3. Dedupe staging against target history. Any (entity_key,
+            #    record_hash) that already exists in target — current or
+            #    closed — is not a new version and should not drive the
+            #    close-out below.
+            cur.execute(f"""
+                delete from {self._staging_table} s
+                using {self._fqn} t
+                where {entity_join}
+                  and t."record_hash" = s."record_hash"
+            """)
+            rows_deduped = cur.rowcount
+            self._engine.logger.info(
+                "SCD2: dropped %d staging rows whose (entity_key, record_hash) "
+                "already exists in %s",
+                rows_deduped,
+                self._fqn,
+            )
+
+            # 4. Close out current versions that have a new incoming version
             #    (entity exists in both, but hash differs)
             cur.execute(f"""
                 update {self._fqn} t
@@ -389,8 +418,10 @@ class StagedIngest:
                 self._fqn,
             )
 
-            # 4. Insert new versions, skipping any (entity_key, record_hash)
-            #    that already exists in the target
+            # 5. Insert new versions. The on conflict clause is
+            #    belt-and-suspenders — step 3 already removed any staging
+            #    rows that would conflict — but it's cheap and guards
+            #    against any future code path that might bypass dedupe.
             select_cols = ", ".join(f's."{c}"' for c in self._columns)
             insert_col_list = f'{self._col_list}, "record_hash"'
 
@@ -403,10 +434,12 @@ class StagedIngest:
             self.rows_merged = cur.rowcount
 
         self._engine.logger.info(
-            "SCD2: inserted %d new versions into %s (staged %d, invalidated %d, closed %d)",
+            "SCD2: inserted %d new versions into %s "
+            "(staged %d, deduped %d, invalidated %d, closed %d)",
             self.rows_merged,
             self._fqn,
             self.rows_staged,
+            rows_deduped,
             self.rows_invalidated,
             rows_closed,
         )

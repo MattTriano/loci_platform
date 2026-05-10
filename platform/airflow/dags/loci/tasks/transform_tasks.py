@@ -66,8 +66,8 @@ def build_post_geocode(env: str, city: str) -> str:
 def dbt_build_with_geocoding(
     env: str, conn_id: str, task_logger: Logger, restrict_region: tuple[float, float, float, float]
 ) -> None:
-    _pre_build = build_pre_geocode(env=env)
+    _pre_build = build_pre_geocode(env=env, city="{{ params.city }}")
     _geocode = geocode(conn_id=conn_id, task_logger=task_logger, restrict_region=restrict_region)
-    _post_build = build_post_geocode(env=env)
+    _post_build = build_post_geocode(env=env, city="{{ params.city }}")
 
     chain(_pre_build, _geocode, _post_build)

@@ -109,14 +109,14 @@ def _is_left_turn(bearing_in: float, bearing_out: float) -> bool:
 
     Uses the cross-product sign of the direction vectors.  In a
     coordinate system where x = longitude, y = latitude (northern
-    hemisphere), a negative cross product means turning left.
+    hemisphere), a positive cross product means turning left.
     """
     dx_in = math.sin(bearing_in)
     dy_in = math.cos(bearing_in)
     dx_out = math.sin(bearing_out)
     dy_out = math.cos(bearing_out)
     cross = dx_in * dy_out - dy_in * dx_out
-    return cross < 0
+    return cross > 0
 
 
 def compute_left_turn_penalty(
@@ -382,10 +382,8 @@ def find_route(
                     "tunnel_factor": edge_data.get("tunnel_factor"),
                     "surface_factor": edge_data.get("surface_factor"),
                     "lighting_factor": edge_data.get("lighting_factor"),
-                    "crash_penalty": round(edge_data.get("crash_penalty", 0.0), 4),
-                    "traffic_control_penalty": round(
-                        edge_data.get("traffic_control_penalty", 0.0), 4
-                    ),
+                    "crash_cost": round(edge_data.get("crash_cost", 0.0), 4),
+                    "intersection_cost": round(edge_data.get("intersection_cost", 0.0), 4),
                     "left_turn_penalty": round(left_turn_penalty, 4),
                 },
             }
