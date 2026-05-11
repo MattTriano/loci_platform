@@ -23,4 +23,4 @@
 ) }}
 
 
-{{ generate_stg_city_bike_segments_model('Chicago') }}
+{{ generate_stg_city_bike_segments_model('chicago') }}

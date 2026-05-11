@@ -59,13 +59,10 @@ CHICAGO_GEOJSON_EXPORTS = [
     ),
     GeoJSONExportConfig(
         name="parking",
-        table="chicago_bike_parking",
+        table="chicago_osm_bike_parking",
         geometry_column="geom",
         properties=[
-            "source",
-            "id",
-            "location",
-            "name",
+            "osm_id",
             "type",
             "capacity",
             "covered",
@@ -126,7 +123,6 @@ CHICAGO_LAYER_DISPLAYS: list[LayerDisplayConfig] = [
         # Was 40 in the original hardcoded JS; others used 45.
         cluster_radius=40,
         popup_fields=[
-            PopupField(key="name", label="Name"),
             PopupField(key="type", label="Type"),
             PopupField(key="capacity", label="Capacity"),
             PopupField(key="covered", label="Covered", fmt="yes_no_bool"),
@@ -192,7 +188,7 @@ CHICAGO_SPEC = CityBuildSpec(
         # Bike theft hotspots — depends on geocoded address cache.
         ("--select", "+chicago_bike_theft_hotspots"),
         # Bike parking.
-        ("--select", "+chicago_bike_parking"),
+        ("--select", "+chicago_osm_bike_parking"),
         # Bike crash hotspots — must use cautious indirect selection to
         # skip the compare_aggregations test on chicago_bike_stress_weighted_edges,
         # which references chicago_bike_crash_hotspots but isn't built yet.
