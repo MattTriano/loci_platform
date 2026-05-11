@@ -44,7 +44,7 @@ with crashes_with_severity as (
             else 1
         end as severity_score,
         extract(year from crash_date) as crash_year
-    from {{ ref('stg__chicago_bike_involved_crashes') }}
+    from {{ ref('stg_chicago_bike_involved_crashes') }}
     where geom is not null
 ),
 deduplication as (
