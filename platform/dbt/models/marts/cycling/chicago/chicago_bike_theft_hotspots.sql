@@ -27,7 +27,7 @@ with cpd_thefts as (
         latitude,
         longitude,
         location
-    from {{ ref('stg__chicago_cpd_crimes_bike_thefts') }}
+    from {{ ref('stg_chicago_cpd_crimes_bike_thefts') }}
 ),
 bike_index_thefts as (
     select
@@ -43,7 +43,7 @@ bike_index_thefts as (
         latitude,
         longitude,
         geom as location
-    from {{ ref('stg__chicago_bikeindex_bike_thefts') }}
+    from {{ ref('stg_chicago_bikeindex_bike_thefts') }}
 ),
 all_thefts as (
     select * from cpd_thefts

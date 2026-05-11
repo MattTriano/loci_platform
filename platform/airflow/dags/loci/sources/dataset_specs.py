@@ -759,6 +759,8 @@ WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec
 )
 
 
+CHICAGO_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="chicago", bbox=CHICAGO_BBOX)
+
 DETROIT_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="detroit", bbox=DETROIT_BBOX)
 
 DENVER_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="denver", bbox=DENVER_BBOX)
@@ -836,17 +838,6 @@ CHICAGO_OSM_BARS_SPEC = OSMDatasetSpec(
     ],
 )
 
-CHICAGO_OSM_BIKE_PARKING_SPEC = OSMDatasetSpec(
-    name="chicago_osm_bike_parking",
-    target_table="chicago_osm_bike_parking",
-    query=OverpassAPIQuery(
-        element_types=["node", "way", "relation"],
-        tag_filters=[{"amenity": "bicycle_parking"}],
-        bbox=CHICAGO_BBOX,
-    ),
-    promoted_tags=["name", "bicycle_parking", "capacity", "covered", "access"],
-    entity_key=["osm_type", "osm_id"],
-)
 
 CHICAGO_OSM_CAFES_SPEC = OSMDatasetSpec(
     name="chicago_osm_cafes",
