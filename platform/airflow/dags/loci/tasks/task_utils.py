@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/tasks/task_utils.py
 from logging import Logger
 
 from airflow.models.taskinstance import TaskInstance
@@ -20,20 +21,35 @@ def choose_update_mode(update_config: DatasetUpdateConfig, task_logger: Logger) 
     context = get_current_context()
     tg_id_prefix = get_task_group_id_prefix(task_instance=context["ti"])
     logical_date = context["logical_date"]
+    run_type = context["dag_run"].run_type
+
+    task_logger.info(f"run_type={run_type!r}")
 
     force_full_refresh = context["params"].get("force_full_refresh", False)
     if force_full_refresh:
         task_logger.info("force_full_refresh=True in DAG run conf; routing to full update")
         return f"{tg_id_prefix}run_full_update"
 
+    if run_type != "scheduled":
+        task_logger.info(
+            f"run_type={run_type!r} (not 'scheduled'); routing to incremental update. "
+            "Pass force_full_refresh=True in DAG run conf to override."
+        )
+        return f"{tg_id_prefix}run_incremental_update"
+
     week_number = (logical_date.day - 1) // 7 + 1
     task_logger.info(f"Current week_number: {week_number}")
     task_logger.info(f"Current month:       {logical_date.month}")
     task_logger.info(f"Current day_of_week: {logical_date.day_of_week}")
+
+    day_matches = (
+        update_config.full_update_day_of_week is None
+        or logical_date.day_of_week == update_config.full_update_day_of_week
+    )
     is_full_update = (
         logical_date.month in update_config.full_update_months
         and week_number == update_config.full_update_week_of_month
-        and logical_date.day_of_week == update_config.full_update_day_of_week
+        and day_matches
     )
 
     if is_full_update:

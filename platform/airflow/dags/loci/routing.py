@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/routing.py
 """
 Core bike-stress routing logic.
 
@@ -59,7 +60,7 @@ _DEFAULT_ROAD_MULTIPLIER = 1.0
 
 
 # =====================================================================
-# KD-tree helpers (unchanged)
+# KD-tree helpers
 # =====================================================================
 def build_kdtree(G: nx.DiGraph) -> tuple[KDTree, list]:
     """Build a KD-tree over node coordinates for fast nearest-node lookup.
@@ -108,14 +109,14 @@ def _is_left_turn(bearing_in: float, bearing_out: float) -> bool:
 
     Uses the cross-product sign of the direction vectors.  In a
     coordinate system where x = longitude, y = latitude (northern
-    hemisphere), a negative cross product means turning left.
+    hemisphere), a positive cross product means turning left.
     """
     dx_in = math.sin(bearing_in)
     dy_in = math.cos(bearing_in)
     dx_out = math.sin(bearing_out)
     dy_out = math.cos(bearing_out)
     cross = dx_in * dy_out - dy_in * dx_out
-    return cross < 0
+    return cross > 0
 
 
 def compute_left_turn_penalty(
@@ -124,6 +125,7 @@ def compute_left_turn_penalty(
     curr: int,
     next_node: int,
     next_edge_data: dict,
+    intersection_nodes: set[int],
 ) -> float:
     """Return the left-turn penalty (in virtual stress-cost meters) for
     the transition prev → curr → next_node.
@@ -135,7 +137,7 @@ def compute_left_turn_penalty(
       - the target road has no oncoming motor traffic
     """
     # Only penalize actual intersections, not road bends
-    if G.degree(curr) < 3:
+    if curr not in intersection_nodes:
         return 0.0
 
     bearing_in = _bearing(G, prev, curr)
@@ -160,6 +162,24 @@ def compute_left_turn_penalty(
         return 0.0
 
     return _LEFT_TURN_BASE_PENALTY * multiplier
+
+
+# =====================================================================
+# Efficiency helpers
+# =====================================================================
+def get_intersection_nodes(G: nx.DiGraph) -> set[int]:
+    """Return the set of node IDs that are intersections (degree >= 3).
+
+    Cached on G.graph after first call so subsequent routing calls are
+    free. Centralized here so both routing and turn-cost code use the
+    same definition.
+    """
+    cached = G.graph.get("intersection_nodes")
+    if cached is not None:
+        return cached
+    intersections = {n for n in G.nodes if G.degree(n) >= 3}
+    G.graph["intersection_nodes"] = intersections
+    return intersections
 
 
 # =====================================================================
@@ -202,18 +222,14 @@ def _astar_with_turn_costs(
     """
     # Priority queue entries: (f_score, counter, current_node, prev_node)
     # prev_node is None for the source.
+    intersection_nodes = get_intersection_nodes(G)
+
     counter = 0
     open_set: list[tuple[float, int, int, int | None]] = []
     heapq.heappush(open_set, (heuristic(source, target), counter, source, None))
 
-    # Best known g_score for (node, prev_node) states.
-    # For non-intersection nodes we collapse prev to None to save memory.
     g_score: dict[tuple[int, int | None], float] = {(source, None): 0.0}
-
-    # Track predecessors for path reconstruction.
     came_from: dict[tuple[int, int | None], tuple[int, int | None]] = {}
-
-    # Track which (node, prev) states have been fully processed.
     closed: set[tuple[int, int | None]] = set()
 
     while open_set:
@@ -221,7 +237,6 @@ def _astar_with_turn_costs(
 
         state = (curr, prev)
         if curr == target:
-            # Reconstruct path
             path = [curr]
             s = state
             while s in came_from:
@@ -237,9 +252,8 @@ def _astar_with_turn_costs(
         curr_g = g_score[state]
 
         for _, next_node, edge_data in G.edges(curr, data=True):
-            edge_cost = edge_data.get("stress_cost", 0.0)
+            edge_cost = edge_data["stress_cost"]  # always present, drop .get
 
-            # Compute turn penalty if we have a predecessor
             turn_penalty = 0.0
             if prev is not None:
                 turn_penalty = compute_left_turn_penalty(
@@ -248,12 +262,13 @@ def _astar_with_turn_costs(
                     curr,
                     next_node,
                     edge_data,
+                    intersection_nodes,
                 )
 
             tentative_g = curr_g + edge_cost + turn_penalty
 
-            # State key for the next node: track prev only at intersections
-            next_prev = curr if G.degree(next_node) >= 3 else None
+            next_is_intersection = next_node in intersection_nodes
+            next_prev = curr if next_is_intersection else None
             next_state = (next_node, next_prev)
 
             if next_state in closed:
@@ -264,10 +279,7 @@ def _astar_with_turn_costs(
                 came_from[next_state] = state
                 f_score = tentative_g + heuristic(next_node, target)
                 counter += 1
-                heapq.heappush(
-                    open_set,
-                    (f_score, counter, next_node, curr if G.degree(next_node) >= 3 else None),
-                )
+                heapq.heappush(open_set, (f_score, counter, next_node, next_prev))
 
     raise ValueError(f"No route found between {source} and {target}")
 
@@ -303,61 +315,131 @@ def find_route(
             "coordinates": [[node_data["x"], node_data["y"]]],
         }
 
+    floor = G.graph.get("heuristic_floor", 0.0)
+
     def heuristic(u, v):
         u_data = G.nodes[u]
         v_data = G.nodes[v]
-        return haversine_m(u_data["y"], u_data["x"], v_data["y"], v_data["x"])
+        return floor * haversine_m(u_data["y"], u_data["x"], v_data["y"], v_data["x"])
 
     path = _astar_with_turn_costs(G, origin_node, dest_node, heuristic)
 
+    intersection_nodes = get_intersection_nodes(G)
+    segment_geometry = G.graph.get("segment_geometry", {})
+    segments = []
     total_cost = 0.0
     total_length_m = 0.0
-    coordinates = []
 
     prev_node = None
     for u, v in zip(path[:-1], path[1:], strict=True):
         edge_data = G[u][v]
         edge_cost = edge_data.get("stress_cost", 0.0)
-        total_length_m += edge_data.get("length_m", 0.0)
+        edge_length = edge_data.get("length_m", 0.0)
 
-        # Include turn penalty in the reported total_cost
-        turn_penalty = 0.0
+        left_turn_penalty = 0.0
         if prev_node is not None:
-            turn_penalty = compute_left_turn_penalty(
+            left_turn_penalty = compute_left_turn_penalty(
                 G,
                 prev_node,
                 u,
                 v,
                 edge_data,
+                intersection_nodes,
             )
-        total_cost += edge_cost + turn_penalty
-        prev_node = u
 
-        edge_coords = edge_data.get("geometry_coords")
-        if edge_coords:
-            u_data = G.nodes[u]
-            first = edge_coords[0]
-            last = edge_coords[-1]
-            dist_to_first = (first[0] - u_data["x"]) ** 2 + (first[1] - u_data["y"]) ** 2
-            dist_to_last = (last[0] - u_data["x"]) ** 2 + (last[1] - u_data["y"]) ** 2
-            oriented = edge_coords if dist_to_first <= dist_to_last else list(reversed(edge_coords))
+        total_cost += edge_cost + left_turn_penalty
+        total_length_m += edge_length
 
-            if coordinates:
-                oriented = oriented[1:]
-            coordinates.extend(oriented)
+        # Reconstruct geometry: stored once per undirected segment, reversed
+        # if this is the backward direction.
+        sid = edge_data.get("segment_id")
+        base_geom = segment_geometry.get(sid) if sid is not None else None
+        if base_geom:
+            coords = (
+                list(base_geom) if edge_data.get("forward", True) else list(reversed(base_geom))
+            )
+            # Convert tuple pairs back to list pairs for JSON.
+            coords = [[c[0], c[1]] for c in coords]
         else:
-            if coordinates:
-                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
-            else:
-                coordinates.append([G.nodes[u]["x"], G.nodes[u]["y"]])
-                coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+            coords = [
+                [G.nodes[u]["x"], G.nodes[u]["y"]],
+                [G.nodes[v]["x"], G.nodes[v]["y"]],
+            ]
+
+        segments.append(
+            {
+                "coordinates": coords,
+                "length_m": round(edge_length, 1),
+                "stress_cost": round(edge_cost, 4),
+                "name": edge_data.get("name"),
+                "highway": edge_data.get("highway"),
+                "infra_type": edge_data.get("infra_type"),
+                "cost_components": {
+                    "length_m": round(edge_length, 1),
+                    "speed_factor": edge_data.get("speed_factor"),
+                    "road_type_factor": edge_data.get("road_type_factor"),
+                    "infrastructure_factor": edge_data.get("infrastructure_factor"),
+                    "tunnel_factor": edge_data.get("tunnel_factor"),
+                    "surface_factor": edge_data.get("surface_factor"),
+                    "lighting_factor": edge_data.get("lighting_factor"),
+                    "crash_cost": round(edge_data.get("crash_cost", 0.0), 4),
+                    "intersection_cost": round(edge_data.get("intersection_cost", 0.0), 4),
+                    "left_turn_penalty": round(left_turn_penalty, 4),
+                },
+            }
+        )
+
+        prev_node = u
 
     return {
         "total_cost": round(total_cost, 4),
         "total_length_m": round(total_length_m, 1),
         "nodes": path,
-        "coordinates": coordinates,
+        "segments": segments,
     }
+    # total_cost = 0.0
+    # total_length_m = 0.0
+    # coordinates = []
+
+    # prev_node = None
+    # for u, v in zip(path[:-1], path[1:], strict=True):
+    #     edge_data = G[u][v]
+    #     edge_cost = edge_data.get("stress_cost", 0.0)
+    #     total_length_m += edge_data.get("length_m", 0.0)
+
+    #     turn_penalty = 0.0
+    #     if prev_node is not None:
+    #         turn_penalty = compute_left_turn_penalty(
+    #             G,
+    #             prev_node,
+    #             u,
+    #             v,
+    #             edge_data,
+    #         )
+    #     total_cost += edge_cost + turn_penalty
+    #     prev_node = u
+
+    #     edge_coords = edge_data.get("geometry_coords")
+    #     if edge_coords:
+    #         # Geometry is pre-oriented at export time: coords[0] is at u,
+    #         # coords[-1] is at v. No runtime reorientation needed.
+    #         if coordinates:
+    #             coordinates.extend(edge_coords[1:])
+    #         else:
+    #             coordinates.extend(edge_coords)
+    #     else:
+    #         if coordinates:
+    #             coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+    #         else:
+    #             coordinates.append([G.nodes[u]["x"], G.nodes[u]["y"]])
+    #             coordinates.append([G.nodes[v]["x"], G.nodes[v]["y"]])
+
+    # return {
+    #     "total_cost": round(total_cost, 4),
+    #     "total_length_m": round(total_length_m, 1),
+    #     "nodes": path,
+    #     "coordinates": coordinates,
+    # }
 
 
 def get_route_street_names(G: nx.DiGraph, nodes: list) -> set[str]:

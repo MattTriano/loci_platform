@@ -26,14 +26,16 @@ Response:
     }
 """
 
+import decimal
 import gzip
 import json
 import logging
 import os
 import pickle
+import time
 
 import boto3
-from routing import build_kdtree, find_route
+from routing import build_kdtree, find_route, get_intersection_nodes
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -46,6 +48,13 @@ _graph = None
 _kdtree = None
 _node_ids = None
 _api_key = None
+
+
+class _DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, decimal.Decimal):
+            return float(o)
+        return super().default(o)
 
 
 def _load_graph():
@@ -64,6 +73,12 @@ def _load_graph():
 
     kdtree, node_ids = build_kdtree(G)
     log.info("KD-tree built over %d nodes", len(node_ids))
+
+    # Pre-compute intersections so the first routing request doesn't pay
+    # the cost. get_intersection_nodes caches on G.graph, so subsequent
+    # find_route calls just hit the cache.
+    intersections = get_intersection_nodes(G)
+    log.info("Intersection set computed: %d intersections", len(intersections))
 
     return G, kdtree, node_ids
 
@@ -141,7 +156,7 @@ def lambda_handler(event: dict, context) -> dict:
             "body": json.dumps({"error": f"Invalid request: {e}"}),
         }
 
-    # Route
+    t0 = time.perf_counter()
     try:
         result = find_route(
             _graph,
@@ -164,8 +179,15 @@ def lambda_handler(event: dict, context) -> dict:
             "body": json.dumps({"error": "Routing failed"}),
         }
 
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    log.info(
+        "Routed %.0fm in %.0fms (%d segments)",
+        result["total_length_m"],
+        elapsed_ms,
+        len(result["segments"]),
+    )
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(result),
+        "body": json.dumps(result, cls=_DecimalEncoder),
     }

@@ -59,54 +59,11 @@ class RouteTestCase:
     max_cost: float | None = None
 
 
-# ---------------------------------------------------------------------------
-# Test cases — add new ones here as you discover bad routes
-# ---------------------------------------------------------------------------
-
-TEST_CASES = [
-    # -- Lakefront Trail should be preferred over Lake Shore Drive --
-    RouteTestCase(
-        name="Uptown to Museum Campus should use Lakefront Trail, not LSD",
-        origin=(41.9660, -87.6465),  # Montrose Harbor area
-        destination=(41.8665, -87.6070),  # Museum Campus / Shedd area
-        must_use=["Lakefront Trail"],
-        must_avoid=["Lake Shore Drive", "DuSable Lake Shore Drive"],
-    ),
-    RouteTestCase(
-        name="Edgewater to Hyde Park along lake should use Lakefront Trail",
-        origin=(41.9835, -87.6500),  # Edgewater, near the lake
-        destination=(41.7945, -87.5805),  # Hyde Park, near the lake
-        must_use=["Lakefront Trail"],
-        must_avoid=["Lake Shore Drive", "DuSable Lake Shore Drive"],
-    ),
-    # -- Bloomingdale Trail (the 606) --
-    RouteTestCase(
-        name="Humboldt Park to Bucktown along 606 corridor should use Bloomingdale Trail",
-        origin=(41.9155, -87.7198),  # west end of 606
-        destination=(41.9140, -87.6680),  # east end of 606
-        must_use=["Bloomingdale Trail"],
-    ),
-    # -- General: never route onto high-speed arterials --
-    RouteTestCase(
-        name="Wicker Park to Logan Square should avoid Western Ave",
-        origin=(41.9085, -87.6796),  # Wicker Park
-        destination=(41.9295, -87.7080),  # Logan Square monument
-        must_avoid=["Western Avenue", "North Western Avenue"],
-    ),
-    # RouteTestCase(
-    #     name="Belmont under the Kennedy should just use the cycleway",
-    #     origin=(41.9394, -87.7117),  # West of Kennedy
-    #     destination=(41.9393, -87.7051),  # East of Kennedy
-    #     must_use=["Belmont Avenue Bikeway"],
-    #     must_avoid=["North Avondale Avenue", "North Kedzie Avenue"],
-    # ),
-    RouteTestCase(
-        name="Avoid the northbound underpass on Ashland above Cortland",
-        origin=(41.9157, -87.6678),  # South of the underpass
-        destination=(41.9189, -87.6682),  # North of the underpass
-        must_use=["West Cortland Street", "North Elston Avenue"],
-    ),
-]
+@dataclass
+class TestResult:
+    case_name: str
+    passed: bool
+    message: str
 
 
 # ---------------------------------------------------------------------------
@@ -118,13 +75,6 @@ def _street_name_matches(route_names: set[str], pattern: str) -> bool:
     """Check if any street name in the route contains the pattern (case-insensitive)."""
     pattern_lower = pattern.lower()
     return any(pattern_lower in name.lower() for name in route_names)
-
-
-@dataclass
-class TestResult:
-    case_name: str
-    passed: bool
-    message: str
 
 
 def run_single_test(G: nx.DiGraph, kdtree, node_ids, case: RouteTestCase) -> TestResult:
@@ -168,14 +118,23 @@ def run_single_test(G: nx.DiGraph, kdtree, node_ids, case: RouteTestCase) -> Tes
     return TestResult(case.name, passed=True, message="OK")
 
 
-def run_route_tests(graph_path: str, logger: logging.Logger = logger) -> list[TestResult]:
-    """Load the graph and run all route quality tests.
+def run_route_tests(
+    graph_path: str,
+    test_cases: list[RouteTestCase],
+    logger: logging.Logger = logger,
+) -> list[TestResult]:
+    """Load the graph and run the given route quality tests.
 
-    This is the function you call from an Airflow PythonOperator.
     Raises RuntimeError if any test fails, so the Airflow task fails too.
-
     Returns the list of TestResults for logging/inspection.
+
+    If test_cases is empty, logs a warning and returns an empty list. This
+    lets cities adopt the bike-map DAG without route tests on day one.
     """
+    if not test_cases:
+        logger.warning("No route test cases provided; skipping route quality tests")
+        return []
+
     graph_path = Path(graph_path)
     logger.info("Loading graph from %s", graph_path)
 
@@ -187,11 +146,11 @@ def run_route_tests(graph_path: str, logger: logging.Logger = logger) -> list[Te
         "Graph loaded: %d nodes, %d edges. Running %d test cases.",
         G.number_of_nodes(),
         G.number_of_edges(),
-        len(TEST_CASES),
+        len(test_cases),
     )
 
     results = []
-    for case in TEST_CASES:
+    for case in test_cases:
         result = run_single_test(G, kdtree, node_ids, case)
         status = "PASS" if result.passed else "FAIL"
         logger.info("[%s] %s — %s", status, result.case_name, result.message)
