@@ -29,6 +29,7 @@ VALID_ENVS = ("dev", "staging", "prod")
 VALID_CITIES = (
     "chicago",
     "detroit",
+    "sf",
 )  # extend as we onboard more cities
 
 _MARTS_SCHEMA_BY_ENV = {

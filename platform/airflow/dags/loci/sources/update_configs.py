@@ -53,71 +53,71 @@ class DatasetUpdateConfig:
 #    Bike Index                                                               #
 ###############################################################################
 
-BIKEINDEX_BOSTON_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_BOSTON_STOLEN_BIKES_SPEC,
+BOSTON_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.BOSTON_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 1 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_CHICAGO_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC,
+CHICAGO_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 1 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_DENVER_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_DENVER_STOLEN_BIKES_SPEC,
+DENVER_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.DENVER_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 2 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_DETROIT_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_DETROIT_STOLEN_BIKES_SPEC,
+DETROIT_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 2 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_MADISON_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_MADISON_STOLEN_BIKES_SPEC,
+MADISON_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.MADISON_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 3 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_SPEC,
+NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 3 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_PORTLAND_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_PORTLAND_STOLEN_BIKES_SPEC,
+PORTLAND_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.PORTLAND_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 4 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_SPEC,
+SAN_FRANCISCO_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.SAN_FRANCISCO_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 4 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_TORONTO_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_TORONTO_STOLEN_BIKES_SPEC,
+TORONTO_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.TORONTO_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 5 * * 0",
     full_update_week_of_month=1,
     full_update_mode="api",
 )
 
-BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_UC = DatasetUpdateConfig(
-    spec=specs.BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_SPEC,
+WASHINGTON_DC_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.WASHINGTON_DC_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 5 * * 1",
     full_update_week_of_month=1,
     full_update_mode="api",
