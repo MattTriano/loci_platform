@@ -13,90 +13,90 @@ from loci.geo import BBox
 #    Bike Index                                                                       #
 #######################################################################################
 
-BIKEINDEX_BOSTON_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_boston_stolen_bikes",
-    target_table="bikeindex_boston_stolen_bikes",
+BOSTON_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="boston_bikeindex_bike_thefts",
+    target_table="boston_bikeindex_bike_thefts",
     entity_key=["id"],
     location="42.3125,-71.11",
     distance=12.5,
     stolenness="proximity",
 )
 
-BIKEINDEX_CHICAGO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_chicago_stolen_bikes",
-    target_table="bikeindex_chicago_stolen_bikes",
+CHICAGO_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="chicago_bikeindex_bike_thefts",
+    target_table="chicago_bikeindex_bike_thefts",
     entity_key=["id"],
     location="Chicago, IL",
     distance=10,
     stolenness="proximity",
 )
 
-BIKEINDEX_DENVER_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_denver_stolen_bikes",
-    target_table="bikeindex_denver_stolen_bikes",
+DENVER_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="denver_bikeindex_bike_thefts",
+    target_table="denver_bikeindex_bike_thefts",
     entity_key=["id"],
     location="39.745,-104.875",
     distance=12,
     stolenness="proximity",
 )
 
-BIKEINDEX_DETROIT_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_detroit_stolen_bikes",
-    target_table="bikeindex_detroit_stolen_bikes",
+DETROIT_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="detroit_bikeindex_bike_thefts",
+    target_table="detroit_bikeindex_bike_thefts",
     entity_key=["id"],
     location="42.380,-83.099",
     distance=15,
     stolenness="proximity",
 )
 
-BIKEINDEX_MADISON_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_madison_stolen_bikes",
-    target_table="bikeindex_madison_stolen_bikes",
+MADISON_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="madison_bikeindex_bike_thefts",
+    target_table="madison_bikeindex_bike_thefts",
     entity_key=["id"],
     location="Madison, WI",
     distance=15,
     stolenness="proximity",
 )
 
-BIKEINDEX_NEW_ORLEANS_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_new_orleans_stolen_bikes",
-    target_table="bikeindex_new_orleans_stolen_bikes",
+NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="new_orleans_bikeindex_bike_thefts",
+    target_table="new_orleans_bikeindex_bike_thefts",
     entity_key=["id"],
     location="30.01,-89.91",
     distance=10,
     stolenness="proximity",
 )
 
-BIKEINDEX_PORTLAND_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_portland_stolen_bikes",
-    target_table="bikeindex_portland_stolen_bikes",
+PORTLAND_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="portland_bikeindex_bike_thefts",
+    target_table="portland_bikeindex_bike_thefts",
     entity_key=["id"],
     location="45.535,-122.66",
     distance=12,
     stolenness="proximity",
 )
 
-BIKEINDEX_SAN_FRANCISCO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_sf_stolen_bikes",
-    target_table="bikeindex_sf_stolen_bikes",
+SAN_FRANCISCO_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="sf_bikeindex_bike_thefts",
+    target_table="sf_bikeindex_bike_thefts",
     entity_key=["id"],
     location="San Francisco, CA",
     distance=15,
     stolenness="proximity",
 )
 
-BIKEINDEX_TORONTO_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_toronto_stolen_bikes",
-    target_table="bikeindex_toronto_stolen_bikes",
+TORONTO_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="toronto_bikeindex_bike_thefts",
+    target_table="toronto_bikeindex_bike_thefts",
     entity_key=["id"],
     location="43.715,-79.315",
     distance=15,
     stolenness="proximity",
 )
 
-BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_SPEC = BikeIndexDatasetSpec(
-    name="bikeindex_dc_stolen_bikes",
-    target_table="bikeindex_dc_stolen_bikes",
+WASHINGTON_DC_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="dc_bikeindex_bike_thefts",
+    target_table="dc_bikeindex_bike_thefts",
     entity_key=["id"],
     location="38.89,-77.01",
     distance=5,

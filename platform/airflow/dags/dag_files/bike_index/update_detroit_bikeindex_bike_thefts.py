@@ -3,7 +3,7 @@ from logging import getLogger
 
 from airflow.sdk import dag
 from loci.sources.update_configs import (
-    BIKEINDEX_WASHINGTON_DC_STOLEN_BIKES_UC as UPDATE_CONFIG,
+    DETROIT_BIKEINDEX_BIKE_THEFTS_UC as UPDATE_CONFIG,
 )
 from loci.tasks.bike_index_tasks import update_bike_index_table
 
@@ -17,9 +17,9 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
-    tags=["bikeindex", "washington_dc", "theft", "biking"],
+    tags=["bikeindex", "detroit", "theft", "biking"],
 )
-def update_bikeindex_dc_stolen_bikes():
+def update_detroit_bikeindex_bike_thefts():
     update_bike_index_table(
         conn_id=CONN_ID,
         update_config=UPDATE_CONFIG,
@@ -27,4 +27,4 @@ def update_bikeindex_dc_stolen_bikes():
     )
 
 
-update_bikeindex_dc_stolen_bikes()
+update_detroit_bikeindex_bike_thefts()
