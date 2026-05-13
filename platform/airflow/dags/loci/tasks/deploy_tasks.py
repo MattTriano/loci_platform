@@ -18,6 +18,7 @@ Usage in a DAG:
         export_bike_map_geojson(env="dev", conn_id="gis_dwh_db") >> deploy_bike_map(env="dev")
 """
 
+import json
 import subprocess
 import tempfile
 import time
@@ -125,22 +126,36 @@ def _invalidate_cloudfront(cfg: EnvConfig, logger: Logger) -> str:
 
 
 def _sync_bike_map_config(cfg: EnvConfig, logger: Logger) -> dict:
-    """Upload the environment-specific config.json to S3.
+    """Upload the environment-specific config.json to S3 with deploy-time values injected.
 
-    Reads config/{env}/{city}.json from the app directory and uploads it as
-    config.json in the S3 bucket root, where index.html expects it.
+    Reads config/{env}/{city}.json from the app directory, fills in the
+    routing API URL, routing API key, and route-logger endpoint from cfg
+    (all of which were sourced from SSM), and uploads the result as
+    config.json in the S3 bucket root.
+
+    The committed config file has these three fields as named placeholders
+    ("<routing_api_url>", "<routing_api_key>", "<log_endpoint>"); the real
+    values are never on disk.
     """
     config_path = Path(BIKE_MAP_APP_DIR) / "config" / cfg.name / f"{cfg.city}.json"
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
+    with config_path.open() as f:
+        config = json.load(f)
+    config["routing_api_key"] = cfg.routing_api_key
+    config["routing_api_url"] = cfg.routing_api_url
+    config["log_endpoint"] = cfg.log_endpoint
+
     s3 = get_boto_session(cfg).client("s3")
-    logger.info("Uploading %s → s3://%s/config.json", config_path, cfg.app_file_bucket)
-    s3.upload_file(
-        str(config_path),
-        cfg.app_file_bucket,
-        "config.json",
-        ExtraArgs={"ContentType": "application/json"},
+    logger.info(
+        "Uploading config → s3://%s/config.json (from %s)", cfg.app_file_bucket, config_path
+    )
+    s3.put_object(
+        Bucket=cfg.app_file_bucket,
+        Key="config.json",
+        Body=json.dumps(config, indent=2).encode("utf-8"),
+        ContentType="application/json",
     )
     return {
         "bucket": cfg.app_file_bucket,
