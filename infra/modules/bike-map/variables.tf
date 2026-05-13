@@ -46,12 +46,6 @@ variable "api_throttle_burst" {
   default     = 10
 }
 
-variable "bike_map_routing_api_key" {
-  description = "API key required on all routing requests (sent as X-Api-Key header)."
-  type        = string
-  sensitive   = true
-}
-
 variable "extra_cors_origins" {
   description = "Additional CORS origins for the bike map routing API (e.g. local dev)"
   type        = list(string)

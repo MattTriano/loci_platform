@@ -62,6 +62,12 @@ resource "aws_iam_role_policy" "apigw_s3_put" {
   })
 }
 
+resource "aws_ssm_parameter" "log_endpoint" {
+  name  = "/${var.basename}/${var.environment}/${var.city}/route-logger/log-endpoint"
+  type  = "String"
+  value = "${aws_api_gateway_stage.v1.invoke_url}/log"
+}
+
 # ── API Gateway REST API ──────────────────────────────────
 resource "aws_api_gateway_rest_api" "route_logger" {
   name        = local.resource_prefix

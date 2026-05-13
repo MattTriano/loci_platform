@@ -34,12 +34,12 @@ module "dns_zone" {
 
 locals {
   zone_id   = var.environment == "prod" ? var.admin_mgmt_zone_id : module.dns_zone[0].zone_id
-  zone_name = var.environment == "prod" ? var.base_domain      : module.dns_zone[0].zone_name
+  zone_name = var.environment == "prod" ? var.base_domain : module.dns_zone[0].zone_name
 }
 
 module "bike_map" {
   source   = "./modules/bike-map"
-  for_each = var.cities
+  for_each = toset(var.cities)
 
   providers = {
     aws           = aws
@@ -47,18 +47,17 @@ module "bike_map" {
     aws.dns       = aws.admin_mgmt
   }
 
-  basename                 = var.basename
-  environment              = var.environment
-  city                     = each.key
-  zone_id                  = local.zone_id
-  zone_name                = local.zone_name
-  bike_map_routing_api_key = each.value.routing_api_key
-  extra_cors_origins       = var.extra_cors_origins
+  basename           = var.basename
+  environment        = var.environment
+  city               = each.key
+  zone_id            = local.zone_id
+  zone_name          = local.zone_name
+  extra_cors_origins = var.extra_cors_origins
 }
 
 module "route_logger" {
   source   = "./modules/route-logger"
-  for_each = var.cities
+  for_each = toset(var.cities)
 
   basename           = var.basename
   environment        = var.environment

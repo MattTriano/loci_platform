@@ -20,10 +20,8 @@ variable "base_domain" {
 }
 
 variable "cities" {
-  description = "Map of city identifier to per-city config. One entry per city deployed in this env."
-  type = map(object({
-    routing_api_key = string
-  }))
+  type        = list(string)
+  description = "Cities to deploy. Each must have a corresponding module configuration."
 }
 
 variable "admin_mgmt_dns_role_arn" {
