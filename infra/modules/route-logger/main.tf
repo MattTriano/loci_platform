@@ -7,8 +7,19 @@
 # Each request is stored as a JSON object in S3 keyed by timestamp + request ID.
 # The IP address is injected server-side via the mapping template.
 
+resource "random_string" "route_logs_suffix" {
+  length  = 6
+  lower   = true
+  upper   = false
+  numeric = true
+  special = false
+}
+
 locals {
-  log_bucket_name = coalesce(var.log_bucket_name, "${var.basename}-${var.environment}-${var.city}-route-logs")
+  log_bucket_name = coalesce(
+    var.log_bucket_name,
+    "${var.basename}-${var.environment}-${var.city}-route-logs-${random_string.route_logs_suffix.result}"
+  )
   resource_prefix = "${var.basename}-${var.environment}-${var.city}-route-logger"
 }
 
