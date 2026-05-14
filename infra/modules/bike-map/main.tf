@@ -9,8 +9,17 @@ locals {
 # S3 — static site bucket
 # -----------------------------------------------------------------------------
 
+resource "random_string" "site_suffix" {
+  length  = 6
+  lower   = true
+  upper   = false
+  numeric = true
+  special = false
+}
+
+# Update the two bucket declarations:
 resource "aws_s3_bucket" "site" {
-  bucket = local.resource_name
+  bucket = "${local.resource_name}-${random_string.site_suffix.result}"
 }
 
 resource "aws_s3_bucket_public_access_block" "site" {
@@ -26,8 +35,16 @@ resource "aws_s3_bucket_public_access_block" "site" {
 # S3 — routing graph bucket (Parquet export for Lambda)
 # -----------------------------------------------------------------------------
 
+resource "random_string" "routing_graph_suffix" {
+  length  = 6
+  lower   = true
+  upper   = false
+  numeric = true
+  special = false
+}
+
 resource "aws_s3_bucket" "routing_graph" {
-  bucket = "${local.resource_name}-routing-graph"
+  bucket = "${local.resource_name}-routing-graph-${random_string.routing_graph_suffix.result}"
 }
 
 resource "aws_s3_bucket_public_access_block" "routing_graph" {
