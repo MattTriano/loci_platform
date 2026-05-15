@@ -1,0 +1,25 @@
+# Build environment for the bike-map routing service.
+#
+# To pin to a specific digest (recommended for reproducibility), replace
+# the tag below with @sha256:<digest>. Get the current digest with:
+#
+#   podman pull ghcr.io/cargo-lambda/cargo-lambda:1.9.1
+#   podman inspect --format='{{.Digest}}' ghcr.io/cargo-lambda/cargo-lambda:1.9.1
+#
+FROM ghcr.io/cargo-lambda/cargo-lambda:1.9.1
+
+# Persist cargo's registry/index/build cache across container runs via a
+# named volume mount on /var/cache/cargo. Without this, every build
+# would redownload and recompile every dependency.
+ENV CARGO_HOME=/var/cache/cargo
+
+# Source is mounted read-only at /workspace by the caller. Output goes
+# to /build-output so artifacts are visible on the host without an
+# explicit copy step. CARGO_TARGET_DIR sits inside the output mount so
+# both target/lambda/... and target/release/... land on the host.
+WORKDIR /workspace
+ENV CARGO_TARGET_DIR=/build-output/target
+
+# No ENTRYPOINT. The caller passes the build command explicitly so build
+# steps are inspectable from the orchestration layer (the Airflow task
+# that drives this container) without indirection through a script.

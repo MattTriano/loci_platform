@@ -430,11 +430,34 @@ resource "aws_iam_role_policy" "routing_lambda" {
 # -----------------------------------------------------------------------------
 
 data "archive_file" "lambda_dummy" {
-  type        = "zip"
-  output_path = "${path.module}/dummy.zip"
+  type             = "zip"
+  output_path      = "${path.module}/dummy.zip"
+  output_file_mode = "0755"   # bootstrap must be executable for provided.al2023
+
   source {
-    content  = "def lambda_handler(e, c): return {'statusCode': 503, 'body': 'Not deployed yet'}"
-    filename = "handler.py"
+    # Bootstrap for provided.al2023 — the runtime expects an executable
+    # at the zip root named `bootstrap`. This dummy implementation polls
+    # the Lambda Runtime API and returns a 503 for every invocation; it
+    # exists only so `tofu apply` can create the function on a fresh
+    # environment. The Airflow refresh DAG replaces this with the real
+    # Rust binary on every run.
+    content  = <<-EOT
+      #!/bin/sh
+      set -e
+      while true; do
+        HEADERS=$(mktemp)
+        curl -sS -LD "$HEADERS" \
+          "http://$${AWS_LAMBDA_RUNTIME_API}/2018-06-01/runtime/invocation/next" > /dev/null
+        REQUEST_ID=$(awk 'BEGIN{IGNORECASE=1} /^lambda-runtime-aws-request-id:/{print $2}' "$HEADERS" | tr -d '[:space:][:cntrl:]')
+        curl -sS -X POST \
+          "http://$${AWS_LAMBDA_RUNTIME_API}/2018-06-01/runtime/invocation/$${REQUEST_ID}/response" \
+          -H 'Content-Type: application/json' \
+          -d '{"statusCode":503,"headers":{"Content-Type":"application/json"},"body":"{\"error\":\"Not deployed yet\"}"}' \
+          > /dev/null
+        rm -f "$HEADERS"
+      done
+    EOT
+    filename = "bootstrap"
   }
 }
 
@@ -444,15 +467,16 @@ resource "aws_lambda_function" "routing_api" {
   package_type     = "Zip"
   filename         = data.archive_file.lambda_dummy.output_path
   source_code_hash = data.archive_file.lambda_dummy.output_base64sha256
-  runtime          = "python3.12"
-  handler          = "handler.lambda_handler"
+  runtime          = "provided.al2023"
+  handler          = "bootstrap"
+  architectures    = ["arm64"]
   timeout          = 30
   memory_size      = 2048
 
   environment {
     variables = {
       BIKE_MAP_GRAPH_BUCKET    = aws_s3_bucket.routing_graph.bucket
-      BIKE_MAP_GRAPH_KEY       = "graph/routing_graph.pkl.gz"
+      BIKE_MAP_GRAPH_KEY       = "graph/routing_graph.bin.gz"
       BIKE_MAP_API_KEY_SSM_ARN = aws_ssm_parameter.routing_api_key.name
     }
   }

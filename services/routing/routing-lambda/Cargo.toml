@@ -1,0 +1,33 @@
+[package]
+name = "routing-lambda"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+routing-core = { path = "../routing-core" }
+# AWS SDK — `behavior-version-latest` pins per-service defaults at
+# compile time so we don't get surprised by silent behavior changes.
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+# aws-sdk-s3 is pinned to 1.85.0 because 1.86+ pulls in crc-fast which
+# fails to compile under cargo-lambda's Zig-based cross-compile to
+# aarch64. See https://github.com/awslabs/aws-sdk-rust/issues/1291
+# This pin can be removed once cargo-lambda's zig toolchain handles
+# AVX-512 intrinsics correctly.
+aws-sdk-s3 = "=1.85.0"
+aws-sdk-ssm = "1"
+# Lambda runtime and request/response types.
+lambda_runtime = "0.13"
+# Async + serde + observability.
+tokio = { version = "1", features = ["macros", "rt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+flate2 = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[lints]
+workspace = true

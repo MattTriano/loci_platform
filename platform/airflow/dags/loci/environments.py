@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from functools import cache
 
 import boto3
+from loci.exports.graph_export import GRAPH_S3_KEY
 
 VALID_ENVS = ("dev", "staging", "prod")
 VALID_CITIES = (
@@ -100,8 +101,6 @@ def load_parameters_by_path(session, path: str) -> dict[str, str]:
         resp = ssm.get_parameters_by_path(**kwargs)
 
         for p in resp["Parameters"]:
-            # Name looks like "/loci/dev/chicago/bike-map/routing-api-key";
-            # we want just "routing-api-key".
             key = p["Name"].rsplit("/", 1)[-1]
             result[key] = p["Value"]
 
@@ -146,7 +145,10 @@ def get_env(env: str, city: str) -> EnvConfig:
         app_file_bucket=_require_ssm(bike_map, "app-file-bucket", bike_map_path),
         cloudfront_dist_id=_require_ssm(bike_map, "cloudfront-dist-id", bike_map_path),
         routing_graph_bucket=_require_ssm(bike_map, "routing-graph-bucket", bike_map_path),
-        routing_graph_key="graph/routing_graph.pkl.gz",
+        # The S3 key is defined alongside the exporter, since the writer
+        # and the Lambda's environment variable need to agree on the same
+        # path. Updating GRAPH_S3_KEY is a single-source change.
+        routing_graph_key=GRAPH_S3_KEY,
         routing_lambda_arn=_require_ssm(bike_map, "routing-lambda-arn", bike_map_path),
         routing_api_key=_require_ssm(bike_map, "routing-api-key", bike_map_path),
         routing_api_url=_require_ssm(bike_map, "routing-api-url", bike_map_path),
