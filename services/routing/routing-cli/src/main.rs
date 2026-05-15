@@ -6,7 +6,6 @@
 //!     prints JSONL results. Used by Airflow's run_route_tests to validate
 //!     the routing implementation against a freshly built graph.
 
-mod output;
 mod run;
 
 use std::process::ExitCode;

@@ -4,12 +4,11 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 use routing_core::{
-    find_route::find_route as core_find_route, format::read_from_path, FindRouteError, IndexedGraph,
+    find_route::find_route as core_find_route, format::read_from_path, route_result_to_json,
+    FindRouteError, IndexedGraph,
 };
 use serde_json::{json, Value};
 use thiserror::Error;
-
-use crate::output::route_result_to_json;
 
 #[derive(Error, Debug)]
 pub enum RunError {

@@ -452,7 +452,7 @@ resource "aws_lambda_function" "routing_api" {
   environment {
     variables = {
       BIKE_MAP_GRAPH_BUCKET    = aws_s3_bucket.routing_graph.bucket
-      BIKE_MAP_GRAPH_KEY       = "graph/routing_graph.pkl.gz"
+      BIKE_MAP_GRAPH_KEY       = "graph/routing_graph.bin.gz"
       BIKE_MAP_API_KEY_SSM_ARN = aws_ssm_parameter.routing_api_key.name
     }
   }

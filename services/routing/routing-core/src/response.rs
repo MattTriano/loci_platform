@@ -1,45 +1,49 @@
-//! JSON output shaping for the CLI.
+//! JSON shaping for route responses.
 //!
-//! Converts `routing_core::RouteResult` into a `serde_json::Value`
-//! whose shape matches the existing Lambda's response. Centralized
-//! here so the Lambda binary (chunk 6) can reuse the same shaper.
+//! Centralized here so both `routing-lambda` (chunk 6) and
+//! `routing-cli` (chunk 4) emit byte-identical responses. The shape
+//! matches the existing Python Lambda's output exactly, so the
+//! frontend (`apps/bike-map/index.html`) and the route logger don't
+//! need to change.
 //!
-//! Response shape (matches what apps/bike-map/index.html expects):
+//! Response shape:
 //!   {
-//!     "total_cost": f32,
-//!     "total_length_m": f32,
-//!     "nodes": [osm_id, ...],
+//!     "total_cost":      f32,
+//!     "total_length_m":  f32,
+//!     "nodes":           [osm_id, ...],
 //!     "segments": [
 //!       {
-//!         "coordinates": [[lon, lat], ...],
-//!         "length_m": f32,
-//!         "stress_cost": f32,
-//!         "name": "..." | null,
-//!         "highway": "..." | null,
-//!         "infra_type": "..." | null,
+//!         "coordinates":  [[lon, lat], ...],
+//!         "length_m":     f32,
+//!         "stress_cost":  f32,
+//!         "name":         "..." | null,
+//!         "highway":      "..." | null,
+//!         "infra_type":   "..." | null,
 //!         "cost_components": {
-//!           "length_m": f32,
-//!           "speed_factor": f32 | null,
-//!           "road_type_factor": f32 | null,
-//!           "infrastructure_factor": f32 | null,
-//!           "tunnel_factor": f32 | null,
-//!           "surface_factor": f32 | null,
-//!           "lighting_factor": f32 | null,
-//!           "crash_cost": f32,
-//!           "intersection_cost": f32,
-//!           "left_turn_penalty": f32
+//!           "length_m":               f32,
+//!           "speed_factor":           f32 | null,
+//!           "road_type_factor":       f32 | null,
+//!           "infrastructure_factor":  f32 | null,
+//!           "tunnel_factor":          f32 | null,
+//!           "surface_factor":         f32 | null,
+//!           "lighting_factor":        f32 | null,
+//!           "crash_cost":             f32,
+//!           "intersection_cost":      f32,
+//!           "left_turn_penalty":      f32
 //!         }
 //!       },
 //!       ...
 //!     ]
 //!   }
 
-use routing_core::{CostComponents, RouteResult, RouteSegment};
 use serde_json::{json, Value};
+
+use crate::find_route::{CostComponents, RouteResult, RouteSegment};
 
 const COST_ROUND_DECIMALS: u32 = 4;
 const LENGTH_ROUND_DECIMALS: u32 = 1;
 
+/// Render a RouteResult as the JSON shape the frontend expects.
 pub fn route_result_to_json(r: &RouteResult) -> Value {
     json!({
         "total_cost": round(r.total_cost, COST_ROUND_DECIMALS),
@@ -77,8 +81,9 @@ fn cost_components_to_json(c: &CostComponents) -> Value {
 }
 
 /// Round to N decimal places, matching the Python implementation's
-/// `round(x, N)` calls in find_route. Keeps the JSON output stable
-/// across A/B comparisons with the existing Lambda.
+/// `round(x, N)` calls in find_route. Returned as f64 because that's
+/// what serde_json's Number can represent without precision loss after
+/// the rounding multiply.
 fn round(value: f32, decimals: u32) -> f64 {
     let factor = 10f64.powi(decimals as i32);
     (value as f64 * factor).round() / factor

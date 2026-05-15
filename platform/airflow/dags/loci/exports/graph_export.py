@@ -1,14 +1,18 @@
 # loci_platform/platform/airflow/dags/loci/exports/graph_export.py
 """
-Export a stress-weighted routing graph to a gzip-pickled NetworkX DiGraph file.
+Export a stress-weighted routing graph to a gzip-compressed binary file.
 
 Reads <city>_bike_stress_weighted_segments (one row per undirected segment)
 and expands each segment into one or two directed edges based on its
 direction column.
 
-The graph stores only what the Lambda routing function needs:
-    - Node attributes: lat (y), lon (x)
-    - Edge attributes: length_m, stress_cost, name, highway, geometry_coords
+The output format is documented in services/routing/docs/graph-format.md
+and consumed by the Rust routing-core library (Lambda + CLI).
+
+This module previously emitted a gzip-pickled NetworkX DiGraph; the
+Rust reimplementation introduced its own binary format that doesn't
+require Python on the read side. The query, component filtering, and
+heuristic floor computation are unchanged.
 """
 
 from __future__ import annotations
@@ -16,13 +20,25 @@ from __future__ import annotations
 import gzip
 import json
 import logging
-import pickle
 from pathlib import Path
 
 import networkx as nx
 from loci.db.core import PostgresEngine
+from loci.exports.graph_format import (
+    NULL_STR_IDX,
+    WriteEdge,
+    WriteNode,
+    WriteSegmentGeometry,
+    f32_or_nan,
+    write_graph,
+)
 
 logger = logging.getLogger(__name__)
+
+# Output S3 key for the new format. Kept here so callers
+# (loci.environments, the Airflow deploy task, tofu env vars) can
+# import a single constant rather than duplicating the path string.
+GRAPH_S3_KEY = "graph/routing_graph.bin.gz"
 
 
 class RoutingGraphExporter:
@@ -69,17 +85,6 @@ class RoutingGraphExporter:
         order by way_id, start_position
     """
 
-    _CRS_QUERY = """
-        select srtext
-        from spatial_ref_sys
-        where srid = (
-            select ST_SRID(geom) as srid
-            from {marts_schema}.{city}_bike_stress_weighted_segments
-            where geom is not null
-            limit 1
-        )
-    """
-
     _HEURISTIC_FLOOR_QUERY = """
         select min(stress_cost / length_m) as floor
         from {marts_schema}.{city}_bike_stress_weighted_segments
@@ -108,24 +113,23 @@ class RoutingGraphExporter:
         G = self._filter_small_components(G)
 
         logger.info(
-            "Serializing graph (%d nodes, %d edges)",
+            "Serializing graph to binary format (%d nodes, %d edges)",
             G.number_of_nodes(),
             G.number_of_edges(),
         )
-        compressed = gzip.compress(pickle.dumps(G, protocol=pickle.HIGHEST_PROTOCOL))
-        output_path.write_bytes(compressed)
+        self._write_binary(G, output_path)
+
         size_mb = output_path.stat().st_size / 1_048_576
         logger.info("Wrote %s (%.1f MB compressed)", output_path, size_mb)
-
         return output_path
+
+    # ------------------------------------------------------------------
+    # Graph construction (unchanged from the gzip-pickle implementation)
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_geojson_coords(geom_geojson: str | None) -> tuple | None:
-        """Parse a GeoJSON LineString's coordinates as a tuple of (lon, lat) tuples.
-
-        Tuples are used instead of lists for memory efficiency: each tuple is
-        smaller than a list of equal length and uses no over-allocation.
-        """
+        """Parse a GeoJSON LineString's coordinates as a tuple of (lon, lat) tuples."""
         if not geom_geojson:
             return None
         try:
@@ -137,13 +141,37 @@ class RoutingGraphExporter:
         except (json.JSONDecodeError, TypeError, IndexError):
             return None
 
+    @staticmethod
+    def _normalize_highway(highway: str | None) -> str | None:
+        """Normalize the OSM highway value.
+
+        Historically the value sometimes arrived as a stringified list
+        (e.g. "['residential', 'tertiary']") for ways with multiple tags.
+        The current OSM collector should produce a single string per
+        segment; this normalization is defensive and logs a warning if
+        it ever fires, so we can confirm whether the upstream fix held
+        and the helper can be retired.
+        """
+        if highway is None or not highway.startswith("["):
+            return highway
+
+        logger.warning(
+            "highway value arrived as stringified list, normalizing: %r", highway
+        )
+        # Strip "[", "]", quotes, then take the first comma-separated value.
+        cleaned = highway.strip("[]'\" ").split("'")[0].split(",")[0].strip()
+        return cleaned or None
+
     def _build_graph(self) -> nx.DiGraph:
         """Stream segments and expand into directed edges.
 
-        To save memory in the routing Lambda, geometry is stored once per
-        undirected segment in G.graph['segment_geometry'] (keyed by
-        segment_id). Edges carry segment_id + a 'forward' bool so the
-        routing layer can look up and orient geometry at response time.
+        Builds a NetworkX DiGraph as scratch storage so the existing
+        component-filtering step (which uses
+        nx.weakly_connected_components) can run unchanged. The final
+        serialization walks this graph and emits the binary format.
+
+        Geometry is stored once per undirected segment in
+        G.graph['segment_geometry'] keyed by segment_id (string).
         """
         query = self._SEGMENT_QUERY.format(city=self.city, marts_schema=self.marts_schema)
 
@@ -170,21 +198,12 @@ class RoutingGraphExporter:
                 if end_node not in G:
                     G.add_node(end_node, x=row["end_lon"], y=row["end_lat"])
 
-                def _f(v):
-                    """Coerce numeric DB values (Decimal/None) to native float.
-
-                    Decimal values from psycopg are ~4x larger than floats and
-                    aren't JSON-serializable. Floats are also faster to compare in
-                    A* edge relaxation.
-                    """
-                    return float(v) if v is not None else None
-
                 base_attrs = {
                     "segment_id": segment_id,
                     "length_m": _f(row["length_m"]),
                     "stress_cost": _f(row["stress_cost"]),
                     "name": row["name"],
-                    "highway": row["highway"],
+                    "highway": self._normalize_highway(row["highway"]),
                     "infra_type": row["infra_type"],
                     "speed_factor": _f(row["speed_factor"]),
                     "road_type_factor": _f(row["road_type_factor"]),
@@ -197,12 +216,9 @@ class RoutingGraphExporter:
                     "crash_cost": _f(row["crash_cost"]),
                 }
 
-                # Forward edge: geometry runs start_node -> end_node
                 if direction in ("forward", "bidirectional"):
                     G.add_edge(start_node, end_node, forward=True, **base_attrs)
                     edge_count += 1
-
-                # Backward edge: orientation flag tells routing to reverse
                 if direction in ("backward", "bidirectional"):
                     G.add_edge(end_node, start_node, forward=False, **base_attrs)
                     edge_count += 1
@@ -214,16 +230,6 @@ class RoutingGraphExporter:
                 segment_count,
                 edge_count,
             )
-
-        crs_row = self.engine.query(
-            self._CRS_QUERY.format(city=self.city, marts_schema=self.marts_schema)
-        )
-        if crs_row.empty:
-            logger.warning(
-                "Could not look up CRS srtext; graph will be exported without CRS metadata"
-            )
-        else:
-            G.graph["crs"] = crs_row["srtext"].iloc[0]
 
         floor_row = self.engine.query(
             self._HEURISTIC_FLOOR_QUERY.format(
@@ -238,9 +244,9 @@ class RoutingGraphExporter:
             )
             G.graph["heuristic_floor"] = 0.0
         else:
-            # Multiply by 0.95 for a small safety margin so the heuristic
-            # stays admissible even if the cost formula changes slightly
-            # (e.g. dbt rebuild between graph export and lambda load).
+            # 0.95 safety margin so the heuristic stays admissible even
+            # if the cost formula changes slightly between graph export
+            # and Lambda load.
             raw_floor = float(floor_row["floor"].iloc[0])
             G.graph["heuristic_floor"] = raw_floor * 0.95
             logger.info(
@@ -287,3 +293,113 @@ class RoutingGraphExporter:
             G.number_of_edges(),
         )
         return G
+
+    # ------------------------------------------------------------------
+    # Binary serialization
+    # ------------------------------------------------------------------
+
+    def _write_binary(self, G: nx.DiGraph, output_path: Path) -> None:
+        """Walk the NetworkX graph and emit the binary format.
+
+        Steps:
+          1. Assign a contiguous NodeIdx (0..N-1) to each NetworkX node.
+             OSM node IDs become the `osm_id` field on each node record.
+          2. Build a deduplicated string table from all segment_ids,
+             names, highway values, and infra_type values.
+          3. Build WriteEdge records ordered by source NodeIdx (CSR order).
+             A backward edge in NetworkX is identified by its `forward=False`
+             attribute; the writer sets the EDGE_FLAG_FORWARD bit accordingly.
+          4. Build WriteSegmentGeometry records from G.graph['segment_geometry'].
+          5. Write everything via write_graph, gzipping the output.
+        """
+        # 1. NodeIdx assignment
+        osm_to_idx: dict[int, int] = {}
+        nodes: list[WriteNode] = []
+        for osm_id, attrs in G.nodes(data=True):
+            osm_to_idx[osm_id] = len(nodes)
+            nodes.append(WriteNode(osm_id=osm_id, lon=attrs["x"], lat=attrs["y"]))
+
+        # 2. String table — deduplicated. We use a dict to preserve
+        # first-insertion order, which makes the output deterministic
+        # for a given input. Index 0 goes to whatever string is seen first.
+        strings: dict[str, int] = {}
+
+        def intern(s: str | None, *, nullable: bool) -> int:
+            if s is None:
+                if not nullable:
+                    raise ValueError("non-nullable string field had None value")
+                return NULL_STR_IDX
+            existing = strings.get(s)
+            if existing is not None:
+                return existing
+            idx = len(strings)
+            strings[s] = idx
+            return idx
+
+        # 3. Edges — collect with source NodeIdx, then sort by it.
+        # NetworkX's edge iteration order is insertion order, which is
+        # whatever order rows came back from the SELECT. We re-sort
+        # explicitly here to enforce the CSR invariant the writer
+        # validates.
+        edge_records: list[WriteEdge] = []
+        for u_osm, v_osm, data in G.edges(data=True):
+            edge_records.append(
+                WriteEdge(
+                    source_node_idx=osm_to_idx[u_osm],
+                    target_node_idx=osm_to_idx[v_osm],
+                    segment_id_str_idx=intern(data["segment_id"], nullable=False),
+                    name_str_idx=intern(data.get("name"), nullable=True),
+                    highway_str_idx=intern(data.get("highway"), nullable=True),
+                    infra_type_str_idx=intern(data.get("infra_type"), nullable=True),
+                    forward=bool(data.get("forward", True)),
+                    length_m=f32_or_nan(data.get("length_m")),
+                    stress_cost=f32_or_nan(data.get("stress_cost")),
+                    speed_factor=f32_or_nan(data.get("speed_factor")),
+                    road_type_factor=f32_or_nan(data.get("road_type_factor")),
+                    infrastructure_factor=f32_or_nan(data.get("infrastructure_factor")),
+                    tunnel_factor=f32_or_nan(data.get("tunnel_factor")),
+                    surface_factor=f32_or_nan(data.get("surface_factor")),
+                    lighting_factor=f32_or_nan(data.get("lighting_factor")),
+                    physical_cost=f32_or_nan(data.get("physical_cost")),
+                    intersection_cost=f32_or_nan(data.get("intersection_cost")),
+                    crash_cost=f32_or_nan(data.get("crash_cost")),
+                )
+            )
+        edge_records.sort(key=lambda e: e.source_node_idx)
+
+        # 4. Segment geometries
+        geom_records: list[WriteSegmentGeometry] = []
+        for seg_id, coords in G.graph.get("segment_geometry", {}).items():
+            seg_idx = strings.get(seg_id)
+            if seg_idx is None:
+                # The segment had geometry but no edge referenced it —
+                # shouldn't happen after component pruning, but skip
+                # safely rather than emit a dangling geometry.
+                continue
+            geom_records.append(
+                WriteSegmentGeometry(
+                    segment_id_str_idx=seg_idx,
+                    coords=[(float(lon), float(lat)) for lon, lat in coords],
+                )
+            )
+
+        # 5. Write — strings dict is ordered, so list(strings) is the
+        # canonical order matching the assigned indices.
+        with gzip.open(output_path, "wb") as gz:
+            write_graph(
+                gz,
+                heuristic_floor=G.graph.get("heuristic_floor", 0.0),
+                strings=list(strings),
+                nodes=nodes,
+                edges=edge_records,
+                segment_geometries=geom_records,
+            )
+
+
+def _f(value):
+    """Coerce numeric DB values (Decimal/None) to native float.
+
+    Decimal values from psycopg are larger than floats and aren't
+    JSON-serializable. None passes through so f32_or_nan can map it to NaN.
+    """
+    return float(value) if value is not None else None
