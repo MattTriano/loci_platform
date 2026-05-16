@@ -41,3 +41,13 @@ variable "extra_cors_origins" {
   type        = list(string)
   default     = []
 }
+
+variable "routing_lambda_memory_by_city" {
+  description = "Per-city memory (MB) for the routing Lambda. Must include every city in var.cities."
+  type        = map(number)
+  default = {
+    chicago = 512
+    detroit = 512
+    sf      = 1024
+  }
+}

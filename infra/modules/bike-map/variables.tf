@@ -51,3 +51,12 @@ variable "extra_cors_origins" {
   type        = list(string)
   default     = []
 }
+
+variable "routing_lambda_memory_mb" {
+  description = "Memory (in MB) allocated to the routing Lambda. Lambda accepts 128–10240 in 1 MB increments."
+  type        = number
+  validation {
+    condition     = var.routing_lambda_memory_mb >= 128 && var.routing_lambda_memory_mb <= 10240
+    error_message = "routing_lambda_memory_mb must be between 128 and 10240."
+  }
+}
