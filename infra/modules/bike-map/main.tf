@@ -311,7 +311,7 @@ locals {
 
 resource "aws_ssm_parameter" "routing_api_key" {
   name  = "${local.ssm_prefix}/routing-api-key"
-  type  = "SecureString"
+  type  = "String"
   value = random_password.routing_api_key.result
 
   lifecycle {
