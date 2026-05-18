@@ -18,6 +18,7 @@ Usage in a DAG:
         export_bike_map_geojson(env="dev", conn_id="gis_dwh_db") >> deploy_bike_map(env="dev")
 """
 
+import gzip
 import json
 import time
 from logging import Logger
@@ -47,6 +48,12 @@ CONTENT_TYPES = {
 def _get_content_type(path: Path) -> str:
     """Return the Content-Type for a file based on its extension."""
     return CONTENT_TYPES.get(path.suffix, "application/octet-stream")
+
+
+def _gzip_file_bytes(path: Path) -> bytes:
+    """Read a file and return its gzip-compressed bytes."""
+    with open(path, "rb") as f:
+        return gzip.compress(f.read(), compresslevel=6)
 
 
 def _sync_to_s3(local_dirs: list[str], cfg: EnvConfig, logger: Logger) -> int:
@@ -80,19 +87,38 @@ def _sync_to_s3(local_dirs: list[str], cfg: EnvConfig, logger: Logger) -> int:
             key = str(rel)
             content_type = _get_content_type(file_path)
 
-            logger.info(
-                "Uploading %s → s3://%s/%s (%s)",
-                file_path,
-                cfg.app_file_bucket,
-                key,
-                content_type,
-            )
-            s3.upload_file(
-                str(file_path),
-                cfg.app_file_bucket,
-                key,
-                ExtraArgs={"ContentType": content_type},
-            )
+            if file_path.suffix == ".geojson":
+                body = _gzip_file_bytes(file_path)
+                logger.info(
+                    "Uploading %s → s3://%s/%s (%s, gzip: %.1f MB → %.1f MB)",
+                    file_path,
+                    cfg.app_file_bucket,
+                    key,
+                    content_type,
+                    file_path.stat().st_size / 1_048_576,
+                    len(body) / 1_048_576,
+                )
+                s3.put_object(
+                    Bucket=cfg.app_file_bucket,
+                    Key=key,
+                    Body=body,
+                    ContentType=content_type,
+                    ContentEncoding="gzip",
+                )
+            else:
+                logger.info(
+                    "Uploading %s → s3://%s/%s (%s)",
+                    file_path,
+                    cfg.app_file_bucket,
+                    key,
+                    content_type,
+                )
+                s3.upload_file(
+                    str(file_path),
+                    cfg.app_file_bucket,
+                    key,
+                    ExtraArgs={"ContentType": content_type},
+                )
             count += 1
 
     return count
