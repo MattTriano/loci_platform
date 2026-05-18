@@ -1,0 +1,6 @@
+[toolchain]
+# 1.91.1 is the minimum supported by the AWS SDK for Rust. Edition
+# 2024 (needed by clap 4.6+, etc.) is supported since 1.85.
+channel = "1.91.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
