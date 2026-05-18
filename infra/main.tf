@@ -47,12 +47,13 @@ module "bike_map" {
     aws.dns       = aws.admin_mgmt
   }
 
-  basename           = var.basename
-  environment        = var.environment
-  city               = each.key
-  zone_id            = local.zone_id
-  zone_name          = local.zone_name
-  extra_cors_origins = var.extra_cors_origins
+  basename                 = var.basename
+  environment              = var.environment
+  city                     = each.key
+  zone_id                  = local.zone_id
+  zone_name                = local.zone_name
+  extra_cors_origins       = var.extra_cors_origins
+  routing_lambda_memory_mb = var.routing_lambda_memory_by_city[each.key]
 }
 
 module "route_logger" {

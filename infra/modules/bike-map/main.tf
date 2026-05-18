@@ -471,7 +471,7 @@ resource "aws_lambda_function" "routing_api" {
   handler          = "bootstrap"
   architectures    = ["arm64"]
   timeout          = 30
-  memory_size      = 2048
+  memory_size      = var.routing_lambda_memory_mb
 
   environment {
     variables = {
