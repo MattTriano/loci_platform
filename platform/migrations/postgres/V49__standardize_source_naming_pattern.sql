@@ -1,0 +1,10 @@
+alter table raw_data.bikeindex_boston_stolen_bikes rename to boston_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_chicago_stolen_bikes rename to chicago_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_dc_stolen_bikes rename to dc_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_denver_stolen_bikes rename to denver_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_detroit_stolen_bikes rename to detroit_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_madison_stolen_bikes rename to madison_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_new_orleans_stolen_bikes rename to new_orleans_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_portland_stolen_bikes rename to portland_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_sf_stolen_bikes rename to sf_bikeindex_bike_thefts;
+alter table raw_data.bikeindex_toronto_stolen_bikes rename to toronto_bikeindex_bike_thefts;

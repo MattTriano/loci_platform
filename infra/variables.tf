@@ -20,10 +20,8 @@ variable "base_domain" {
 }
 
 variable "cities" {
-  description = "Map of city identifier to per-city config. One entry per city deployed in this env."
-  type = map(object({
-    routing_api_key = string
-  }))
+  type        = list(string)
+  description = "Cities to deploy. Each must have a corresponding module configuration."
 }
 
 variable "admin_mgmt_dns_role_arn" {
@@ -42,4 +40,14 @@ variable "extra_cors_origins" {
   description = "Additional CORS origins for routing APIs (e.g. local dev). Applied to all cities."
   type        = list(string)
   default     = []
+}
+
+variable "routing_lambda_memory_by_city" {
+  description = "Per-city memory (MB) for the routing Lambda. Must include every city in var.cities."
+  type        = map(number)
+  default = {
+    chicago = 512
+    detroit = 512
+    sf      = 1024
+  }
 }

@@ -46,7 +46,7 @@ select
     ingested_at,
     record_hash,
     valid_from
-from {{ source('bikeindex', 'bikeindex_' ~ city ~ '_stolen_bikes') }}
+from {{ source('bikeindex', city ~ '_bikeindex_bike_thefts') }}
 where valid_to is null
 
 {% endmacro %}

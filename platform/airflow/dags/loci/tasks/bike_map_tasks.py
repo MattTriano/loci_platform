@@ -95,8 +95,6 @@ def _city_from_context() -> str:
     """Helper for tasks that need city without it being a param.
 
     Reads from a context variable set by the per-city DAG factory.
-    Required because install_dependencies is shared but get_env now
-    requires city. Each per-city DAG sets the city via dag_params.
     """
     from airflow.sdk import get_current_context
 
@@ -114,7 +112,12 @@ def run_dbt_select(env: str, select_args: tuple[str, ...]) -> str:
 def build_routing_graph(
     env: str, conn_id: str, graph_path: str, task_logger: logging.Logger
 ) -> str:
-    """Build the stress-weighted routing graph for testing."""
+    """Build the stress-weighted routing graph for testing.
+
+    Writes a gzip-compressed binary graph file to the given local path.
+    The same file is later uploaded to S3 by `deploy_graph` and consumed by
+    the Rust Lambda on cold start.
+    """
     cfg = get_env(env, _city_from_context())
     engine = get_postgres_engine(conn_id=conn_id, logger=task_logger)
     exporter = RoutingGraphExporter(engine, city=cfg.city, marts_schema=cfg.marts_schema)
@@ -133,6 +136,12 @@ def run_tests(
     test_cases: list[RouteTestCase],
     task_logger: logging.Logger,
 ) -> list:
+    """Runs tests that guard against regressions in routes between specified endpoints.
+
+    Raises RuntimeError on any test failure so the task fails and the
+    downstream deploy tasks are skipped. See loci.tasks.testing.route_tests
+    for the assertion details.
+    """
     results = run_route_tests(graph_path, test_cases, logger=task_logger)
     task_logger.info("Test results %s", results)
     return results
@@ -173,9 +182,13 @@ def smoke_test_deployment(
 def build_refresh_task_graph(spec: CityBuildSpec) -> None:
     """Build the standard refresh task graph for one city.
 
-    Called inside an @dag function. Returns nothing; just wires tasks.
+    The Rust routing Lambda and CLI are pre-built outside Airflow by
+    `make build` in services/routing/, then mounted into the worker
+    via the build-output compose volume. Deploy tasks just upload the
+    pre-built artifacts; the route-tests task drives the pre-built
+    CLI as a subprocess.
     """
-    graph_path = f"/tmp/routing_graph_{{{{ params.env }}}}_{spec.city}.pkl.gz"
+    graph_path = f"/tmp/routing_graph_{{{{ params.env }}}}_{spec.city}.bin.gz"
 
     _deps = install_dependencies(env=ENV_TEMPLATE)
 
@@ -193,8 +206,7 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
     else:
         _pre_export_root = _deps
 
-    # Per-city dbt selects (each runs as a separate build to allow flags
-    # like --indirect-selection=cautious to vary)
+    # Per-city dbt selects.
     pre_export_tasks = []
     for i, select_args in enumerate(spec.pre_export_dbt_selects):
         t = run_dbt_select.override(task_id=f"build_pre_export_{i}")(
@@ -203,7 +215,7 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
         chain(_pre_export_root, t)
         pre_export_tasks.append(t)
 
-    # Geojson export depends on all pre-export builds
+    # Geojson export depends on all pre-export builds.
     _export_layers = export_bike_map_geojson(
         env=ENV_TEMPLATE,
         city=spec.city,
@@ -216,7 +228,9 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
     _deploy_map = deploy_bike_map(env=ENV_TEMPLATE, city=spec.city, task_logger=task_logger)
     chain(_export_layers, _deploy_map)
 
-    # Routing graph + lambda (parallel branch from deps)
+    # Routing graph: build → test → deploy. Linear chain — a test
+    # failure short-circuits the deploys, preserving the safeguard
+    # the original DAG provided.
     _build_weights = run_dbt_select.override(task_id="build_stress_weighted_edges")(
         env=ENV_TEMPLATE,
         select_args=("--select", spec.weights_dbt_select),
@@ -246,7 +260,7 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
 
     _smoke_test = smoke_test_deployment(
         env=ENV_TEMPLATE,
-        bbox=spec.bbox,  # tuple, not SQL string
+        bbox=spec.bbox,
         task_logger=task_logger,
     )
     chain([_deploy_lambda, _deploy_map], _smoke_test)
@@ -262,7 +276,5 @@ def standard_dag_params(city: str) -> dict:
             title="Target environment",
             description="Which AWS account + dbt target to build and deploy to.",
         ),
-        # city is fixed per-DAG but kept as a param so _city_from_context
-        # can read it from the DAG run context. Not user-editable.
         "city": Param(city, type="string", const=city),
     }

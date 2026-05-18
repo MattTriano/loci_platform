@@ -7,8 +7,19 @@
 # Each request is stored as a JSON object in S3 keyed by timestamp + request ID.
 # The IP address is injected server-side via the mapping template.
 
+resource "random_string" "route_logs_suffix" {
+  length  = 6
+  lower   = true
+  upper   = false
+  numeric = true
+  special = false
+}
+
 locals {
-  log_bucket_name = coalesce(var.log_bucket_name, "${var.basename}-${var.environment}-${var.city}-route-logs")
+  log_bucket_name = coalesce(
+    var.log_bucket_name,
+    "${var.basename}-${var.environment}-${var.city}-route-logs-${random_string.route_logs_suffix.result}"
+  )
   resource_prefix = "${var.basename}-${var.environment}-${var.city}-route-logger"
 }
 
@@ -60,6 +71,12 @@ resource "aws_iam_role_policy" "apigw_s3_put" {
       Resource = "${aws_s3_bucket.route_logs.arn}/*"
     }]
   })
+}
+
+resource "aws_ssm_parameter" "log_endpoint" {
+  name  = "/${var.basename}/${var.environment}/${var.city}/route-logger/log-endpoint"
+  type  = "String"
+  value = "${aws_api_gateway_stage.v1.invoke_url}/log"
 }
 
 # ── API Gateway REST API ──────────────────────────────────

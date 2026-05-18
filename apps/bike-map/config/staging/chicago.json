@@ -1,0 +1,87 @@
+{
+  "city_name": "Chicago",
+  "log_endpoint": "<log_endpoint>",
+  "routing_api_url": "<routing_api_url>",
+  "routing_api_key": "<routing_api_key>",
+  "map_center": [-87.6298, 41.8781],
+  "map_zoom": 11,
+  "layers": [
+    {
+      "id": "crashes",
+      "label": "Bike Crashes",
+      "color": "#ef4444",
+      "file": "data/crashes.geojson",
+      "popup_title": "Bike Crash",
+      "popup_fields": [
+        {"key": "crash_date", "label": "Date"},
+        {"key": "local_crash_time", "label": "Time"},
+        {"key": "local_crash_day_of_week", "label": "Day"},
+        {"key": "street_name", "label": "Street", "fmt": "street_with_direction"},
+        {"key": "first_crash_type", "label": "Type"},
+        {"key": "most_severe_injury", "label": "Worst Injury"},
+        {"key": "severity_score", "label": "Severity"},
+        {"key": "prim_contributory_cause", "label": "Cause"},
+        {"key": "weather_condition", "label": "Weather"},
+        {"key": "lighting_condition", "label": "Lighting"},
+        {"key": "hit_and_run_i", "label": "Hit & Run", "fmt": "yes_no_yn"},
+        {"key": "dooring_i", "label": "Dooring", "fmt": "yes_no_yn"}
+      ],
+      "default_visible": true,
+      "cluster_max_zoom": 13,
+      "cluster_radius": 45,
+      "point_radius": 5,
+      "date_field": "crash_date"
+    },
+    {
+      "id": "thefts",
+      "label": "Bike Thefts",
+      "color": "#f59e0b",
+      "file": "data/thefts.geojson",
+      "popup_title": "Bike Theft",
+      "popup_fields": [
+        {"key": "source", "label": "Source"},
+        {"key": "theft_date", "label": "Date"},
+        {"key": "theft_hour", "label": "Hour", "fmt": "hour"},
+        {"key": "location_description", "label": "Location"},
+        {"key": "bike_description", "label": "Bike"},
+        {"key": "theft_description", "label": "Details"},
+        {"key": "locking_description", "label": "Locking"}
+      ],
+      "default_visible": true,
+      "cluster_max_zoom": 13,
+      "cluster_radius": 45,
+      "point_radius": 5,
+      "date_field": "theft_date"
+    },
+    {
+      "id": "parking",
+      "label": "Bike Parking",
+      "color": "#22c55e",
+      "file": "data/parking.geojson",
+      "popup_title": "Bike Parking",
+      "popup_fields": [
+        {"key": "name", "label": "Name"},
+        {"key": "type", "label": "Type"},
+        {"key": "capacity", "label": "Capacity"},
+        {"key": "covered", "label": "Covered", "fmt": "yes_no_bool"},
+        {"key": "indoor", "label": "Indoor", "fmt": "yes_no_bool"},
+        {"key": "lit", "label": "Lit", "fmt": "yes_no_bool"},
+        {"key": "fee", "label": "Fee", "fmt": "yes_no_bool"},
+        {"key": "operator", "label": "Operator"},
+        {"key": "access", "label": "Access"}
+      ],
+      "default_visible": true,
+      "cluster_max_zoom": 13,
+      "cluster_radius": 40,
+      "point_radius": 5
+    }
+  ],
+  "about_paragraphs": [
+    "Chicago Bike Map helps you explore cycling conditions around the city. The map layers show where crashes, thefts, and bike parking are concentrated based on recent city data, so you can get a sense of patterns in the areas you ride.",
+    "Routes prefer streets with better bike infrastructure, lower speed limits, and less severe recent crash history, even if that means a slightly longer ride. We recommend always wearing a helmet while riding.",
+    "Routes are generated using OpenStreetMap and City of Chicago data that may be incomplete or outdated. Route suggestions are informational and are no substitute for your own judgment while riding."
+  ],
+  "terms_what_is": "Chicago Bike Map is a personal project that displays cycling-related data for the Chicago area and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.",
+  "terms_data_sources": "Map data comes from OpenStreetMap contributors and is subject to the <a href=\"https://opendatacommons.org/licenses/odbl/\" target=\"_blank\" rel=\"noopener\">ODbL license</a>. Crash, theft, and infrastructure data come from the City of Chicago open data portal and other public sources. This project does not independently verify the accuracy or completeness of any of these sources.",
+  "terms_liability": "This project is provided \"as is\" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of Chicago Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss."
+}

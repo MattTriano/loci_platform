@@ -5,13 +5,13 @@ sources:
     tags:
       - raw
     tables:
-      - name: bikeindex_boston_stolen_bikes
-      - name: bikeindex_chicago_stolen_bikes
-      - name: bikeindex_dc_stolen_bikes
-      - name: bikeindex_denver_stolen_bikes
-      - name: bikeindex_detroit_stolen_bikes
-      - name: bikeindex_madison_stolen_bikes
-      - name: bikeindex_new_orleans_stolen_bikes
-      - name: bikeindex_portland_stolen_bikes
-      - name: bikeindex_sf_stolen_bikes
-      - name: bikeindex_toronto_stolen_bikes
+      - name: boston_bikeindex_bike_thefts
+      - name: chicago_bikeindex_bike_thefts
+      - name: dc_bikeindex_bike_thefts
+      - name: denver_bikeindex_bike_thefts
+      - name: detroit_bikeindex_bike_thefts
+      - name: madison_bikeindex_bike_thefts
+      - name: new_orleans_bikeindex_bike_thefts
+      - name: portland_bikeindex_bike_thefts
+      - name: sf_bikeindex_bike_thefts
+      - name: toronto_bikeindex_bike_thefts

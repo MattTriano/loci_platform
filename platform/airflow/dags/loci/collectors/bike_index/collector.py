@@ -20,8 +20,8 @@ Usage:
     from loci.collectors.bike_index.collector import BikeIndexCollector
 
     spec = BikeIndexDatasetSpec(
-        name="chicago_stolen_bikes",
-        target_table="stolen_bikes",
+        name="chicago_bikeindex_bike_thefts",
+        target_table="chicago_bikeindex_bike_thefts",
         location="Chicago, IL",
         distance=10,
         entity_key=["id"],
