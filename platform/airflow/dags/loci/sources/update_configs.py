@@ -127,7 +127,7 @@ WASHINGTON_DC_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
 #    Census TIGER Data                                                        #
 ###############################################################################
 
-STATE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+STATE_TIGER_UC = DatasetUpdateConfig(
     spec=specs.STATE_TIGER_SPEC,
     update_cron="0 2 22 10 *",
     full_update_week_of_month=4,
@@ -135,7 +135,7 @@ STATE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-COUNTY_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+COUNTY_TIGER_UC = DatasetUpdateConfig(
     spec=specs.COUNTY_TIGER_SPEC,
     update_cron="5 2 22 10 2",
     full_update_week_of_month=4,
@@ -143,7 +143,7 @@ COUNTY_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-ZCTA_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+ZCTA_TIGER_UC = DatasetUpdateConfig(
     spec=specs.ZCTA_TIGER_SPEC,
     update_cron="10 2 22 10 *",
     full_update_week_of_month=4,
@@ -151,7 +151,7 @@ ZCTA_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-TRACT_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+TRACT_TIGER_UC = DatasetUpdateConfig(
     spec=specs.TRACT_TIGER_SPEC,
     update_cron="15 2 22 10 *",
     full_update_week_of_month=4,
@@ -159,7 +159,7 @@ TRACT_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-BLOCK_GROUP_UPDATE_CONFIG = DatasetUpdateConfig(
+BLOCK_GROUP_UC = DatasetUpdateConfig(
     spec=specs.BLOCK_GROUP_TIGER_SPEC,
     update_cron="25 2 22 10 *",
     full_update_week_of_month=4,
@@ -167,7 +167,7 @@ BLOCK_GROUP_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-ADDR_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+ADDR_TIGER_UC = DatasetUpdateConfig(
     spec=specs.ADDR_TIGER_SPEC,
     update_cron="20 2 22 10 *",
     full_update_week_of_month=4,
@@ -175,7 +175,7 @@ ADDR_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-COASTLINE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+COASTLINE_TIGER_UC = DatasetUpdateConfig(
     spec=specs.COASTLINE_TIGER_SPEC,
     update_cron="40 2 22 10 *",
     full_update_week_of_month=4,
@@ -183,7 +183,7 @@ COASTLINE_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-RAILS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+RAILS_TIGER_UC = DatasetUpdateConfig(
     spec=specs.RAILS_TIGER_SPEC,
     update_cron="0 3 22 10 *",
     full_update_week_of_month=4,
@@ -191,7 +191,7 @@ RAILS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-PRIMARY_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+PRIMARY_ROADS_TIGER_UC = DatasetUpdateConfig(
     spec=specs.PRIMARY_ROADS_TIGER_SPEC,
     update_cron="20 3 22 10 *",
     full_update_week_of_month=4,
@@ -199,7 +199,7 @@ PRIMARY_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-PRIMARY_SECONDARY_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+PRIMARY_SECONDARY_ROADS_TIGER_UC = DatasetUpdateConfig(
     spec=specs.PRIMARY_SECONDARY_ROADS_TIGER_SPEC,
     update_cron="40 3 22 10 *",
     full_update_week_of_month=4,
@@ -207,7 +207,7 @@ PRIMARY_SECONDARY_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-ALL_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+ALL_ROADS_TIGER_UC = DatasetUpdateConfig(
     spec=specs.ALL_ROADS_TIGER_SPEC,
     update_cron="0 4 22 10 *",
     full_update_week_of_month=4,
@@ -215,7 +215,7 @@ ALL_ROADS_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-AREAWATER_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+AREAWATER_TIGER_UC = DatasetUpdateConfig(
     spec=specs.AREAWATER_TIGER_SPEC,
     update_cron="20 4 22 10 *",
     full_update_week_of_month=4,
@@ -223,7 +223,7 @@ AREAWATER_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-LINEARWATER_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
+LINEARWATER_TIGER_UC = DatasetUpdateConfig(
     spec=specs.LINEARWATER_TIGER_SPEC,
     update_cron="40 4 22 10 *",
     full_update_week_of_month=4,
@@ -235,7 +235,7 @@ LINEARWATER_TIGER_UPDATE_CONFIG = DatasetUpdateConfig(
 #                                 CENSUS                                      #
 ###############################################################################
 
-ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UC = DatasetUpdateConfig(
     spec=specs.ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_SPEC,
     update_cron="0 10 21-28 * *",
     full_update_week_of_month=4,
@@ -244,7 +244,7 @@ ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UC = DatasetUpdateConfig(
     spec=specs.ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_SPEC,
     update_cron="5 10 21-28 * *",
     full_update_week_of_month=4,
@@ -253,7 +253,7 @@ ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UC = DatasetUpdateConfig(
     spec=specs.ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_SPEC,
     update_cron="10 10 21-28 * *",
     full_update_week_of_month=4,
@@ -262,7 +262,7 @@ ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UPDATE_CONFIG = DatasetU
     full_update_mode="api",
 )
 
-ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_UC = DatasetUpdateConfig(
     spec=specs.ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_SPEC,
     update_cron="15 10 21-28 * *",
     full_update_week_of_month=4,
@@ -271,7 +271,7 @@ ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_UPDATE_CONFIG = DatasetUpd
     full_update_mode="api",
 )
 
-ACS5__INTERNET_UTILIZATION_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+ACS5__INTERNET_UTILIZATION_BY_TRACT_UC = DatasetUpdateConfig(
     spec=specs.ACS5__INTERNET_UTILIZATION_BY_TRACT_SPEC,
     update_cron="25 10 21-28 * *",
     full_update_week_of_month=4,
@@ -280,7 +280,7 @@ ACS5__INTERNET_UTILIZATION_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UPDATE_CONFIG = DatasetUpdateConfig(
+ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UC = DatasetUpdateConfig(
     spec=specs.ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT,
     update_cron="35 10 21-28 * *",
     full_update_week_of_month=4,
@@ -469,7 +469,7 @@ CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_BUILDING_PERMITS = DatasetUpdateConfig(
+CHICAGO_BUILDING_PERMITS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_BUILDING_PERMITS_SPEC,
     update_cron="0 6 * * 2,5",
     full_update_week_of_month=1,
@@ -477,7 +477,7 @@ CHICAGO_BUILDING_PERMITS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_FOOD_INSPECTIONS = DatasetUpdateConfig(
+CHICAGO_FOOD_INSPECTIONS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_FOOD_INSPECTIONS_SPEC,
     update_cron="0 5 * * *",
     full_update_week_of_month=1,
@@ -485,7 +485,7 @@ CHICAGO_FOOD_INSPECTIONS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_SIDEWALK_CAFE_PERMITS = DatasetUpdateConfig(
+CHICAGO_SIDEWALK_CAFE_PERMITS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_SIDEWALK_CAFE_PERMITS_SPEC,
     update_cron="5 5 * * *",
     full_update_week_of_month=1,
@@ -493,14 +493,14 @@ CHICAGO_SIDEWALK_CAFE_PERMITS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_SPEED_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
+CHICAGO_SPEED_CAMERA_VIOLATION_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_SPEED_CAMERA_VIOLATIONS_SPEC,
     update_cron="5 4 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
 )
 
-CHICAGO_DIVVY_BICYCLE_STATIONS = DatasetUpdateConfig(
+CHICAGO_DIVVY_BICYCLE_STATIONS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_DIVVY_BICYCLE_STATIONS_SPEC,
     update_cron="15 4 * * 1,4",
     full_update_week_of_month=1,
@@ -508,7 +508,7 @@ CHICAGO_DIVVY_BICYCLE_STATIONS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_RED_LIGHT_CAMERA_VIOLATION_CONFIG = DatasetUpdateConfig(
+CHICAGO_RED_LIGHT_CAMERA_VIOLATION_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_RED_LIGHT_CAMERA_VIOLATIONS_SPEC,
     update_cron="20 4 * * 1,4",
     full_update_week_of_month=1,
@@ -524,7 +524,7 @@ OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_311_SERVICE_REQUESTS = DatasetUpdateConfig(
+CHICAGO_311_SERVICE_REQUESTS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_311_SERVICE_REQUESTS_SPEC,
     update_cron="30 4 * * 1,4",
     full_update_week_of_month=1,
@@ -532,7 +532,7 @@ CHICAGO_311_SERVICE_REQUESTS = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-CHICAGO_TOWED_VEHICLES = DatasetUpdateConfig(
+CHICAGO_TOWED_VEHICLES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_TOWED_VEHICLES_SPEC,
     update_cron="0 4 * * 1,4",
     full_update_week_of_month=1,
@@ -540,7 +540,7 @@ CHICAGO_TOWED_VEHICLES = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_TRAFFIC_CRASHES_CRASHES = DatasetUpdateConfig(
+CHICAGO_TRAFFIC_CRASHES_CRASHES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_TRAFFIC_CRASHES_CRASHES_SPEC,
     update_cron="10 3 * * 1,4",
     full_update_week_of_month=1,
@@ -548,7 +548,7 @@ CHICAGO_TRAFFIC_CRASHES_CRASHES = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_TRAFFIC_CRASHES_PEOPLE = DatasetUpdateConfig(
+CHICAGO_TRAFFIC_CRASHES_PEOPLE_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_TRAFFIC_CRASHES_PEOPLE_SPEC,
     update_cron="40 2 * * 1,4",
     full_update_week_of_month=1,
@@ -556,7 +556,7 @@ CHICAGO_TRAFFIC_CRASHES_PEOPLE = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_TRAFFIC_CRASHES_VEHICLES = DatasetUpdateConfig(
+CHICAGO_TRAFFIC_CRASHES_VEHICLES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_TRAFFIC_CRASHES_VEHICLES_SPEC,
     update_cron="50 2 * * 1,4",
     full_update_week_of_month=1,
@@ -564,7 +564,7 @@ CHICAGO_TRAFFIC_CRASHES_VEHICLES = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CTA_RIDERSHIP_DAILY_BOARDING_TOTALS = DatasetUpdateConfig(
+CTA_RIDERSHIP_DAILY_BOARDING_TOTALS_UC = DatasetUpdateConfig(
     spec=specs.CTA_RIDERSHIP_DAILY_BOARDING_TOTALS_SPEC,
     update_cron="30 22 * * *",
     full_update_week_of_month=1,
@@ -572,7 +572,7 @@ CTA_RIDERSHIP_DAILY_BOARDING_TOTALS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING = DatasetUpdateConfig(
+CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING_SPEC,
     update_cron="40 4 * * *",
     full_update_week_of_month=1,
@@ -580,7 +580,7 @@ CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS = DatasetUpdateConfig(
+CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS_SPEC,
     update_cron="50 4 * * *",
     full_update_week_of_month=1,
@@ -588,7 +588,7 @@ CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS = DatasetUpdateConfig(
+COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS_SPEC,
     update_cron="10 5 * * *",
     full_update_week_of_month=1,
@@ -596,7 +596,7 @@ COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS = DatasetUpdateConfig(
+COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS_SPEC,
     update_cron="20 5 * * *",
     full_update_week_of_month=1,
@@ -604,7 +604,7 @@ COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS = DatasetUpdateC
     full_update_mode="file_download",
 )
 
-COOK_COUNTY_COMMERCIAL_VALUATION_DATA = DatasetUpdateConfig(
+COOK_COUNTY_COMMERCIAL_VALUATION_DATA_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_COMMERCIAL_VALUATION_DATA_SPEC,
     update_cron="30 5 * * *",
     full_update_week_of_month=1,
@@ -612,7 +612,7 @@ COOK_COUNTY_COMMERCIAL_VALUATION_DATA = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-COOK_COUNTY_PARCEL_SALES = DatasetUpdateConfig(
+COOK_COUNTY_PARCEL_SALES_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_PARCEL_SALES_SPEC,
     update_cron="40 5 * * *",
     full_update_week_of_month=1,
@@ -628,7 +628,7 @@ COOK_COUNTY_ASSESSED_PARCEL_VALUES_UC = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES = DatasetUpdateConfig(
+COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_SPEC,
     update_cron="50 5 * * *",
     full_update_week_of_month=1,
@@ -636,7 +636,7 @@ COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-COOK_COUNTY_PARCEL_ADDRESSES = DatasetUpdateConfig(
+COOK_COUNTY_PARCEL_ADDRESSES_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_PARCEL_ADDRESSES_SPEC,
     update_cron="50 5 * * *",
     full_update_week_of_month=1,
@@ -644,7 +644,7 @@ COOK_COUNTY_PARCEL_ADDRESSES = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-CHICAGO_ARRESTS = DatasetUpdateConfig(
+CHICAGO_ARRESTS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_ARRESTS_SPEC,
     update_cron="20 1 * * *",
     full_update_week_of_month=1,
@@ -652,7 +652,7 @@ CHICAGO_ARRESTS = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
-CHICAGO_CRIMES = DatasetUpdateConfig(
+CHICAGO_CRIMES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_CRIMES_SPEC,
     update_cron="10 1 * * 1",
     full_update_week_of_month=1,
@@ -660,7 +660,7 @@ CHICAGO_CRIMES = DatasetUpdateConfig(
     full_update_mode="file_download",
 )
 
-CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS = DatasetUpdateConfig(
+CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_SPEC,
     update_cron="0 1 * * *",
     full_update_week_of_month=1,

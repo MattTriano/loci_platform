@@ -2,8 +2,8 @@ import datetime as dt
 import logging
 
 from airflow.sdk import dag
+from loci.collectors.arcgishub.taskflow import update_arcgishub_table
 from loci.sources.update_configs import DETROIT_BIKE_PARKING_UC as UPDATE_CONFIG
-from loci.tasks.arcgishub_tasks import update_arcgishub_table
 
 task_logger = logging.getLogger("airflow.task")
 
