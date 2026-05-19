@@ -80,8 +80,8 @@ SAN_FRANCISCO_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
     name="sf_bikeindex_bike_thefts",
     target_table="sf_bikeindex_bike_thefts",
     entity_key=["id"],
-    location="San Francisco, CA",
-    distance=15,
+    location="37.59,-122.16",
+    distance=35,
     stolenness="proximity",
 )
 
@@ -411,8 +411,7 @@ MADISON_BBOX = BBox(42.96, -89.60, 43.21, -89.21)
 NEW_ORLEANS_BBOX = BBox(29.83, -90.22, 30.19, -89.60)
 NEW_YORK_CITY_BBOX = BBox(40.52, -74.05, 40.93, -73.67)
 PORTLAND_BBOX = BBox(45.41, -122.86, 45.66, -122.46)
-SAN_FRANCISCO_BBOX = BBox(37.61, -122.53, 37.84, -122.35)
-SF_BAY_AREA_BBOX = BBox(37.18, -122.59, 37.88, -121.73)
+SAN_FRANCISCO_BBOX = BBox(37.18, -122.59, 38.00, -121.73)
 SEATTLE_BBOX = BBox(47.47, -122.48, 47.78, -122.04)
 TORONTO_BBOX = BBox(43.48, -79.79, 43.95, -78.84)
 WASHINGTON_DC_BBOX = BBox(38.85, -77.09, 38.97, -76.93)
