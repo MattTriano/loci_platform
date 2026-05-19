@@ -37,6 +37,22 @@ locals {
   zone_name = var.environment == "prod" ? var.base_domain : module.dns_zone[0].zone_name
 }
 
+module "bike_map_landing" {
+  source = "./modules/bike-map-landing"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+    aws.dns       = aws.admin_mgmt
+  }
+
+  basename    = var.basename
+  environment = var.environment
+  zone_id     = local.zone_id
+  zone_name   = local.zone_name
+  cities      = var.cities
+}
+
 module "bike_map" {
   source   = "./modules/bike-map"
   for_each = toset(var.cities)
