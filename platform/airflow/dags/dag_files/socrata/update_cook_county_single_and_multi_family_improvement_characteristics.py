@@ -2,10 +2,10 @@ import datetime as dt
 import logging
 
 from airflow.sdk import dag
+from loci.collectors.socrata.taskflow import update_socrata_table
 from loci.sources.update_configs import (
-    COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS as UPDATE_CONFIG,
+    COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS_UC as UPDATE_CONFIG,
 )
-from loci.tasks.socrata_tasks import update_socrata_table
 
 task_logger = logging.getLogger("airflow.task")
 

@@ -2,8 +2,8 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
+from loci.collectors.osmnx.taskflow import update_osmnx_table
 from loci.sources.update_configs import OSMNX_DETROIT_BIKE_NETWORK_UC as UPDATE_CONFIG
-from loci.tasks.osmnx_tasks import update_osmnx_table
 
 task_logger = getLogger("airflow.task")
 
