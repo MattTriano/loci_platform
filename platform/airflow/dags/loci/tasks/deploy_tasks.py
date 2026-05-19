@@ -274,10 +274,15 @@ def _build_cities_array(
     """Build the cities array for the landing page config.
 
     For each city in city_ids, reads its per-city config from the bike-map
-    app dir to pick up city_name and map_center. The URL is constructed
-    from zone_name. Raises if any per-city config is missing or malformed
-    — running the landing deploy with a city in the SSM list but no
-    config on disk is a deployment-ordering bug we want to fail loudly.
+    app dir to pick up city_name, map_center, and map_bbox. The URL is
+    constructed from zone_name. Raises if any per-city config is missing
+    or malformed — running the landing deploy with a city in the SSM
+    list but no config on disk is a deployment-ordering bug we want to
+    fail loudly.
+
+    map_bbox is expected as an object {"south", "west", "north", "east"}
+    mirroring the loci.geometry.BBox dataclass, so the field meanings
+    are unambiguous wherever this shape shows up.
     """
     cities = []
     for city_id in city_ids:
@@ -295,11 +300,15 @@ def _build_cities_array(
                     "id": city_id,
                     "name": city_config["city_name"],
                     "center": city_config["map_center"],
+                    "bbox": city_config["map_bbox"],
                     "url": f"https://{city_id}.{zone_name}",
                 }
             )
         except KeyError as e:
-            raise KeyError(f"Per-city config {config_path} is missing required field {e}") from e
+            raise KeyError(
+                f"Per-city config {config_path} is missing required field {e}. "
+                f"Landing page needs city_name, map_center, and map_bbox."
+            ) from e
     logger.info("Built cities array with %d entries", len(cities))
     return cities
 
@@ -340,9 +349,6 @@ def _sync_bike_map_landing_config(cfg: "LandingEnvConfig", logger: Logger) -> di
         "cities_count": len(cities),
         "source": str(config_path),
     }
-
-
-# ── New Airflow task ───────────────────────────────────────────────────────
 
 
 @task

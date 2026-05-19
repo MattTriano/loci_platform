@@ -1,5 +1,5 @@
 {
-  "title": "Bike Map",
+  "title": "Bike Infrastructure Maps",
   "tagline": "Cycling data, route suggestions, and infrastructure maps for the cities below.",
   "about_paragraphs": [
     "Bike Map is a personal project that publishes cycling-focused maps and route suggestions for the cities below. Each city map shows where crashes, thefts, and bike parking are concentrated based on recent public data, and the routing engine prefers streets with better bike infrastructure, lower speed limits, and less severe recent crash history.",
