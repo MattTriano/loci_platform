@@ -47,7 +47,10 @@ variable "routing_lambda_memory_by_city" {
   type        = map(number)
   default = {
     chicago = 1024
+    dc      = 512
     detroit = 1024
+    madison = 512
+    nola    = 512
     sf      = 1536
   }
 }

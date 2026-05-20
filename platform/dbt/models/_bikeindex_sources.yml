@@ -12,6 +12,8 @@ sources:
       - name: detroit_bikeindex_bike_thefts
       - name: madison_bikeindex_bike_thefts
       - name: new_orleans_bikeindex_bike_thefts
+      - name: nola_bikeindex_bike_thefts
+      - name: nyc_bikeindex_bike_thefts
       - name: portland_bikeindex_bike_thefts
       - name: sf_bikeindex_bike_thefts
       - name: toronto_bikeindex_bike_thefts

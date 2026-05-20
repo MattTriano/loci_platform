@@ -59,11 +59,20 @@ MADISON_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
 )
 
 NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
-    name="new_orleans_bikeindex_bike_thefts",
-    target_table="new_orleans_bikeindex_bike_thefts",
+    name="nola_bikeindex_bike_thefts",
+    target_table="nola_bikeindex_bike_thefts",
     entity_key=["id"],
     location="30.01,-89.91",
     distance=10,
+    stolenness="proximity",
+)
+
+NYC_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
+    name="nyc_bikeindex_bike_thefts",
+    target_table="nyc_bikeindex_bike_thefts",
+    entity_key=["id"],
+    location="40.67,-74.00",
+    distance=18,
     stolenness="proximity",
 )
 
@@ -409,7 +418,7 @@ DETROIT_BBOX = BBox(42.18, -83.40, 42.56, -82.84)
 LOS_ANGELES_BBOX = BBox(33.69, -118.72, 34.38, -118.02)
 MADISON_BBOX = BBox(42.96, -89.60, 43.21, -89.21)
 NEW_ORLEANS_BBOX = BBox(29.83, -90.22, 30.19, -89.60)
-NEW_YORK_CITY_BBOX = BBox(40.52, -74.05, 40.93, -73.67)
+NEW_YORK_CITY_BBOX = BBox(40.48, -74.26, 40.93, -73.70)
 PORTLAND_BBOX = BBox(45.41, -122.86, 45.66, -122.46)
 SAN_FRANCISCO_BBOX = BBox(37.18, -122.59, 38.00, -121.73)
 SEATTLE_BBOX = BBox(47.47, -122.48, 47.78, -122.04)
@@ -723,10 +732,17 @@ MADISON_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
 )
 
 NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
-    city="new_orleans", bbox=NEW_ORLEANS_BBOX
+    city="nola", bbox=NEW_ORLEANS_BBOX
 )
 NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
-    city="new_orleans", bbox=NEW_ORLEANS_BBOX
+    city="nola", bbox=NEW_ORLEANS_BBOX
+)
+
+NYC_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
+    city="nyc", bbox=NEW_YORK_CITY_BBOX
+)
+NYC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
+    city="nyc", bbox=NEW_YORK_CITY_BBOX
 )
 
 PORTLAND_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
@@ -765,6 +781,12 @@ DETROIT_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="detroit", b
 DENVER_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="denver", bbox=DENVER_BBOX)
 
 MADISON_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="madison", bbox=MADISON_BBOX)
+
+NEW_ORLEANS_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(
+    city="nola", bbox=NEW_ORLEANS_BBOX
+)
+
+NYC_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="nyc", bbox=NEW_YORK_CITY_BBOX)
 
 PORTLAND_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="portland", bbox=PORTLAND_BBOX)
 

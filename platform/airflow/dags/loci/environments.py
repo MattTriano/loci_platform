@@ -37,7 +37,10 @@ from loci.exports.graph_export import GRAPH_S3_KEY
 VALID_ENVS = ("dev", "staging", "prod")
 VALID_CITIES = (
     "chicago",
+    "dc",
     "detroit",
+    "madison",
+    "nola",
     "sf",
 )  # extend as we onboard more cities
 

@@ -1,0 +1,1 @@
+alter table raw_data.new_orleans_bikeindex_bike_thefts rename to nola_bikeindex_bike_thefts;

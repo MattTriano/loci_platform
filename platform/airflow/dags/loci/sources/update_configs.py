@@ -95,6 +95,13 @@ NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+NYC_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
+    spec=specs.NYC_BIKEINDEX_BIKE_THEFTS_SPEC,
+    update_cron="0 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
 PORTLAND_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 4 * * 0",
@@ -806,6 +813,20 @@ MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
     full_update_mode="api",
 )
 
+NEW_ORLEANS_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.NEW_ORLEANS_OSM_BIKE_PARKING_SPEC,
+    update_cron="41 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+NYC_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
+    spec=specs.NYC_OSM_BIKE_PARKING_SPEC,
+    update_cron="37 2 * * 2",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
 PORTLAND_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_OSM_BIKE_PARKING_SPEC,
     update_cron="25 2 * * 2",
@@ -920,7 +941,20 @@ NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="16 1 * * 3",
     full_update_week_of_month=1,
-    full_update_day_of_week=4,
+    full_update_mode="api",
+)
+
+NYC_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
+    spec=specs.NYC_OSM_BIKE_NETWORK_EDGES_SPEC,
+    update_cron="32 1 * * 3",
+    full_update_week_of_month=1,
+    full_update_mode="api",
+)
+
+NYC_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
+    spec=specs.NYC_OSM_BIKE_NETWORK_NODES_SPEC,
+    update_cron="35 1 * * 3",
+    full_update_week_of_month=1,
     full_update_mode="api",
 )
 
