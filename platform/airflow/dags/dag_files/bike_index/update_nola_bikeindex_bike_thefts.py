@@ -2,8 +2,10 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
-from loci.collectors.osm.taskflow import update_osm_table
-from loci.sources.update_configs import NEW_ORLEANS_OSM_BIKE_PARKING_UC as UPDATE_CONFIG
+from loci.collectors.bike_index.taskflow import update_bike_index_table
+from loci.sources.update_configs import (
+    NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_UC as UPDATE_CONFIG,
+)
 
 task_logger = getLogger("airflow.task")
 
@@ -15,14 +17,14 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
-    tags=["osm", "new_orleans", "biking"],
+    tags=["bikeindex", "new_orleans", "nola", "theft", "biking"],
 )
-def update_new_orleans_osm_bike_parking():
-    update_osm_table(
+def update_nola_bikeindex_bike_thefts():
+    update_bike_index_table(
         conn_id=CONN_ID,
         update_config=UPDATE_CONFIG,
         task_logger=task_logger,
     )
 
 
-update_new_orleans_osm_bike_parking()
+update_nola_bikeindex_bike_thefts()

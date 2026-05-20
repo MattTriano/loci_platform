@@ -15,9 +15,9 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
-    tags=["osm", "new_orleans", "biking", "network"],
+    tags=["osm", "new_orleans", "nola", "biking", "network"],
 )
-def update_new_orleans_osm_bike_network_nodes():
+def update_nola_osm_bike_network_nodes():
     update_osm_table(
         conn_id=CONN_ID,
         update_config=UPDATE_CONFIG,
@@ -25,4 +25,4 @@ def update_new_orleans_osm_bike_network_nodes():
     )
 
 
-update_new_orleans_osm_bike_network_nodes()
+update_nola_osm_bike_network_nodes()

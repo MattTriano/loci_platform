@@ -23,9 +23,6 @@ sources:
       - name: madison_osm_bike_network_edges
       - name: madison_osm_bike_network_nodes
       - name: madison_osm_bike_parking
-      - name: new_orleans_osm_bike_network_edges
-      - name: new_orleans_osm_bike_network_nodes
-      - name: new_orleans_osm_bike_parking
       - name: nola_osm_bike_network_edges
       - name: nola_osm_bike_network_nodes
       - name: nola_osm_bike_parking
