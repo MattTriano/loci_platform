@@ -3,11 +3,11 @@
   "log_endpoint": "<log_endpoint>",
   "routing_api_url": "<routing_api_url>",
   "routing_api_key": "<routing_api_key>",
-  "map_center": [-89.91, 30.01],
+  "map_center": [-90.08, 29.96],
   "map_zoom": 11,
   "map_bbox": {
-    "south": 29.83,
-    "west": -90.22,
+    "south": 29.79,
+    "west": -90.34,
     "north": 30.19,
     "east": -89.60
   },
