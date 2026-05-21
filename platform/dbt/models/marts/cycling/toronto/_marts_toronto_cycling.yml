@@ -1,0 +1,217 @@
+version: 2
+models:
+  - name: toronto_segment_costs
+    description: Per-segment intrinsic stress costs from OSM physical attributes (highway
+      class, infrastructure, surface, lighting, tunnel).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - segment_id
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: physical_cost >= 0
+          config:
+            name: toronto_segment_costs_physical_cost_non_negative
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_toronto_bike_segments')
+    columns:
+      - name: segment_id
+        data_tests:
+          - not_null
+          - unique
+      - name: way_id
+        data_tests:
+          - not_null
+      - name: start_node_id
+        data_tests:
+          - not_null
+      - name: end_node_id
+        data_tests:
+          - not_null
+      - name: length_m
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: geom
+        data_tests:
+          - not_null
+      - name: speed_factor
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: road_type_factor
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: infrastructure_factor
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: tunnel_factor
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: surface_factor
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: lighting_factor
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: physical_cost
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: infra_category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - separated
+                  - on_road
+                  - shared
+                  - path
+              config:
+                where: infra_category is not null
+  - name: toronto_intersection_costs
+    description: Logical bike-network intersections with stress penalties. A row exists
+      for each node where >= 2 distinct OSM ways meet AND >= 1 of those ways carries
+      cars. Joined into toronto_bike_stress_weighted_segments on end_node_id.
+    columns:
+      - name: osmid
+        description: OSM node id (unique).
+        data_tests:
+          - not_null
+          - unique
+          - dbt_utils.relationships_where:
+              arguments:
+                to: source('osm', 'toronto_osm_bike_network_nodes')
+                field: osm_id
+                from_condition: traffic_control is not null
+                to_condition: osm_type = 'node' and valid_to is null
+              config:
+                severity: warn
+      - name: traffic_control
+        description: Raw OSM 'highway' tag value on the node, or NULL for uncontrolled
+          intersections.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - traffic_signals
+                  - stop
+                  - crossing
+                  - mini_roundabout
+                  - give_way
+                  - turning_circle
+                  - turning_loop
+                quote: true
+      - name: max_road_class
+        description: Worst road class among car-carrying ways at this node.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - primary
+                  - secondary
+                  - tertiary
+                  - minor
+      - name: max_road_rank
+        description: Numeric form of max_road_class (1-4).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 4
+      - name: intersection_cost
+        description: Stress cost added to a route for traversing through this intersection.
+        data_tests:
+          - not_null
+  - name: toronto_bike_stress_weighted_segments
+    description: Stress-weighted directed segments for bike routing. One row per directed
+      edge (u, v, key). stress_cost is the primary routing weight, combining length,
+      speed, infrastructure, surface, lighting, crash history, and traffic control
+      penalties.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - start_node_id
+              - end_node_id
+              - way_id
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: stress_cost >= 0
+          config:
+            name: toronto_stress_cost_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: crash_cost >= 0
+          config:
+            name: toronto_crash_cost_non_negative
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_toronto_bike_segments')
+    columns:
+      - name: start_node_id
+        data_tests:
+          - not_null
+      - name: end_node_id
+        data_tests:
+          - not_null
+      - name: way_id
+        data_tests:
+          - not_null
+      - name: length_m
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: stress_cost
+        data_tests:
+          - not_null
+      - name: speed_factor
+        data_tests:
+          - not_null
+      - name: infrastructure_factor
+        data_tests:
+          - not_null
+      - name: surface_factor
+        data_tests:
+          - not_null
+      - name: lighting_factor
+        data_tests:
+          - not_null
+      - name: crash_cost
+        data_tests:
+          - not_null
+      - name: intersection_cost
+        data_tests:
+          - not_null
+      - name: geom
+        data_tests:
+          - not_null

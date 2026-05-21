@@ -4,6 +4,11 @@ output "dns_zone_name_servers" {
   value       = var.environment == "prod" ? null : module.dns_zone[0].name_servers
 }
 
+output "bike_map_landing_url" {
+  description = "Public URL of the bike-map landing page."
+  value       = module.bike_map_landing.site_url
+}
+
 output "bike_map_urls" {
   description = "Public URLs of the bike map, per city."
   value       = { for c, m in module.bike_map : c => m.site_url }

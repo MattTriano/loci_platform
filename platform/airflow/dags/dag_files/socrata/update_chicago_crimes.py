@@ -2,8 +2,8 @@ import datetime as dt
 import logging
 
 from airflow.sdk import dag
-from loci.sources.update_configs import CHICAGO_CRIMES as UPDATE_CONFIG
-from loci.tasks.socrata_tasks import update_socrata_table
+from loci.collectors.socrata.taskflow import update_socrata_table
+from loci.sources.update_configs import CHICAGO_CRIMES_UC as UPDATE_CONFIG
 
 task_logger = logging.getLogger("airflow.task")
 

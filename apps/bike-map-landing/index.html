@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bike Infrastructure Maps</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.20.0/dist/maplibre-gl.css" />
+<script src="https://unpkg.com/maplibre-gl@5.20.0/dist/maplibre-gl.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #0a0a0a;
+    color: #e8e4df;
+  }
+
+  /* ── Top nav bar ──────────────────────────────────────── */
+  #nav {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    z-index: 50;
+    background: rgba(18, 18, 20, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+
+  .nav-brand {
+    font-size: 16px;
+    font-weight: 700;
+    color: #e8e4df;
+    letter-spacing: -0.01em;
+  }
+
+  .nav-menu-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .nav-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  .nav-menu-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* ── Map ──────────────────────────────────────────────── */
+  #map {
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  /* Nudge MapLibre controls below the nav bar so they don't fight it. */
+  .maplibregl-ctrl-top-right { top: 12px; }
+
+  /* ── Empty state ─────────────────────────────────────── */
+  .empty-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    background: rgba(18, 18, 20, 0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 20px 28px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+    text-align: center;
+    display: none;
+  }
+
+  .empty-state.visible { display: block; }
+
+  /* ── Overlay (welcome + info) ────────────────────────── */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .overlay-card {
+    background: rgba(18, 18, 20, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 28px 28px 24px;
+    max-width: 440px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    width: calc(100% - 32px);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  }
+
+  .overlay-card h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e8e4df;
+    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .overlay-card p {
+    font-size: 14px;
+    line-height: 1.65;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 10px;
+  }
+
+  .overlay-card p:last-of-type { margin-bottom: 0; }
+
+  .overlay-card a {
+    color: #6366f1;
+    text-decoration: none;
+  }
+
+  .overlay-card a:hover { color: #818cf8; }
+
+  /* CTA sits visually separate from the welcome paragraphs */
+  .welcome-cta {
+    margin-top: 14px !important;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: #e8e4df !important;
+    font-weight: 500 !important;
+  }
+
+  .overlay-close {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 9px 0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .overlay-close:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+  }
+
+  .overlay-links {
+    display: flex;
+    gap: 16px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .overlay-links a {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.35);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .overlay-links a:hover { color: rgba(255, 255, 255, 0.7); }
+
+  /* ── GitHub link ─────────────────────────────────────── */
+  .github-link {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(18, 18, 20, 0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: rgba(255, 255, 255, 0.6);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    transition: color 0.2s, background 0.2s;
+  }
+
+  .github-link:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(18, 18, 20, 0.88);
+  }
+
+  .github-link svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+</style>
+</head>
+<body>
+
+<header id="nav">
+  <div class="nav-brand" id="nav-brand">Bike Infrastructure Maps</div>
+  <button class="nav-menu-btn" id="info-btn" aria-label="About this project" title="About">
+    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="3" y1="5"  x2="15" y2="5"/>
+      <line x1="3" y1="9"  x2="15" y2="9"/>
+      <line x1="3" y1="13" x2="15" y2="13"/>
+    </svg>
+  </button>
+</header>
+
+<div id="map"></div>
+
+<div class="empty-state" id="empty-state">No cities are deployed in this environment yet.</div>
+
+<!-- ── Welcome overlay (auto-shown on load) ────────────── -->
+<div class="overlay visible" id="welcome-overlay">
+  <div class="overlay-card">
+    <h1 id="welcome-title">Bike Map</h1>
+    <div id="welcome-body"></div>
+    <p class="welcome-cta" id="welcome-cta">Click any highlighted area on the map to explore that city's data.</p>
+    <button class="overlay-close" id="welcome-close">Got it</button>
+  </div>
+</div>
+
+<!-- ── Info overlay (hamburger) ────────────────────────── -->
+<div class="overlay" id="info-overlay">
+  <div class="overlay-card">
+    <h1 id="info-title">About</h1>
+    <div id="info-body"></div>
+    <div class="overlay-links">
+      <a href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">Source on GitHub</a>
+    </div>
+    <button class="overlay-close" id="info-close">Close</button>
+  </div>
+</div>
+
+<a class="github-link" href="https://github.com/MattTriano/loci_platform" target="_blank" rel="noopener">
+  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+  Source
+</a>
+
+<script>
+// ── Configuration ────────────────────────────────────────
+// Defaults are placeholders; real values come from config.json which the
+// deploy task uploads per env. When config.json is missing, malformed,
+// or the cities array hasn't been injected yet, the page still renders
+// (with the empty-state card).
+const CONFIG = {
+  title: 'Bike Map',
+  welcome_paragraphs: [
+    "Bike Map publishes cycling-focused maps and route suggestions for the cities below.",
+  ],
+  welcome_cta: "Click any highlighted area on the map to explore that city's data.",
+  about_paragraphs: [
+    "Bike Map is a personal project that displays cycling-related data and generates route suggestions for the cities below. Each city site shows where crashes, thefts, and bike parking are concentrated based on recent public data, and the routing engine prefers streets with better bike infrastructure, lower speed limits, and less severe recent crash history.",
+    "Data comes from OpenStreetMap contributors and from each city's open data portals. This project does not independently verify the accuracy or completeness of any of these sources, and the route suggestions are informational — no substitute for your own judgment while riding.",
+  ],
+  cities: [],
+};
+
+// Indigo, matching link color in the bike-map's About overlay — signals
+// "interactive" without colliding with the data-layer colors.
+const CITY_COLOR = '#6366f1';
+
+let map = null;
+let hoveredCityId = null;
+
+// ── Bootstrap ────────────────────────────────────────────
+loadConfig().then(init);
+
+async function loadConfig() {
+  try {
+    const r = await fetch('config.json');
+    if (r.ok) Object.assign(CONFIG, await r.json());
+  } catch {
+    // fall through to defaults
+  }
+}
+
+function init() {
+  const cities = Array.isArray(CONFIG.cities) ? CONFIG.cities : [];
+  applyCopy(cities);
+  wireOverlays();
+  wireNav();
+  initMap(cities);
+  if (cities.length === 0) {
+    document.getElementById('empty-state').classList.add('visible');
+  }
+}
+
+// ── Copy injection ───────────────────────────────────────
+function applyCopy(cities) {
+  document.title = CONFIG.title;
+  document.getElementById('nav-brand').textContent = CONFIG.title;
+  document.getElementById('welcome-title').textContent = CONFIG.title;
+  document.getElementById('info-title').textContent = `About ${CONFIG.title}`;
+
+  document.getElementById('welcome-body').innerHTML =
+    (CONFIG.welcome_paragraphs || []).map(p => `<p>${p}</p>`).join('');
+
+  document.getElementById('info-body').innerHTML =
+    (CONFIG.about_paragraphs || []).map(p => `<p>${p}</p>`).join('');
+
+  // CTA only makes sense if there's something to click.
+  const ctaEl = document.getElementById('welcome-cta');
+  if (cities.length === 0) {
+    ctaEl.textContent = 'No cities are deployed in this environment yet — check back soon.';
+  } else {
+    ctaEl.textContent = CONFIG.welcome_cta;
+  }
+}
+
+// ── Overlay wiring ───────────────────────────────────────
+function wireOverlays() {
+  document.getElementById('welcome-close').addEventListener('click', () => {
+    document.getElementById('welcome-overlay').classList.remove('visible');
+  });
+  document.getElementById('welcome-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('visible');
+  });
+
+  document.getElementById('info-close').addEventListener('click', () => {
+    document.getElementById('info-overlay').classList.remove('visible');
+  });
+  document.getElementById('info-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('visible');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.overlay.visible').forEach(o => o.classList.remove('visible'));
+  });
+}
+
+function wireNav() {
+  document.getElementById('info-btn').addEventListener('click', () => {
+    document.getElementById('info-overlay').classList.add('visible');
+  });
+}
+
+// ── Map init ─────────────────────────────────────────────
+function initMap(cities) {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: defaultMapCenter(cities),
+    zoom: 3,
+    attributionControl: true,
+  });
+
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+  map.on('load', () => {
+    if (cities.length === 0) return;
+    addCityLayer(cities);
+    fitToCities(cities);
+  });
+}
+
+function defaultMapCenter(cities) {
+  if (cities.length === 0) return [-98.5795, 39.8283];  // geographic center of US
+  const lngs = cities.map(c => c.center[0]);
+  const lats = cities.map(c => c.center[1]);
+  return [
+    (Math.min(...lngs) + Math.max(...lngs)) / 2,
+    (Math.min(...lats) + Math.max(...lats)) / 2,
+  ];
+}
+
+// ── City layer ───────────────────────────────────────────
+function bboxToPolygon(bbox) {
+  // bbox shape matches the Python BBox dataclass: {south, west, north, east}
+  const { south: s, west: w, north: n, east: e } = bbox;
+  return {
+    type: 'Polygon',
+    coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
+  };
+}
+
+function addCityLayer(cities) {
+  const features = cities.map((city, i) => ({
+    type: 'Feature',
+    id: i,  // numeric id required for feature-state hover
+    properties: {
+      id: city.id,
+      name: city.name,
+      url: city.url,
+    },
+    geometry: bboxToPolygon(city.bbox),
+  }));
+
+  map.addSource('cities', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features },
+  });
+
+  map.addLayer({
+    id: 'city-fill',
+    type: 'fill',
+    source: 'cities',
+    paint: {
+      'fill-color': CITY_COLOR,
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false], 0.35,
+        0.15,
+      ],
+    },
+  });
+
+  map.addLayer({
+    id: 'city-outline',
+    type: 'line',
+    source: 'cities',
+    paint: {
+      'line-color': CITY_COLOR,
+      'line-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false], 3,
+        2,
+      ],
+      'line-opacity': 0.9,
+    },
+  });
+
+  // City name labels centered inside each bbox. Halo for legibility
+  // against the variable base-map content underneath.
+  map.addLayer({
+    id: 'city-label',
+    type: 'symbol',
+    source: 'cities',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Bold'],
+      'text-size': 16,
+      'text-anchor': 'center',
+      'symbol-placement': 'point',
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': 'rgba(0, 0, 0, 0.85)',
+      'text-halo-width': 2,
+    },
+  });
+
+  map.on('mousemove', 'city-fill', (e) => {
+    if (!e.features.length) return;
+    const id = e.features[0].id;
+    if (hoveredCityId !== null && hoveredCityId !== id) {
+      map.setFeatureState({ source: 'cities', id: hoveredCityId }, { hover: false });
+    }
+    hoveredCityId = id;
+    map.setFeatureState({ source: 'cities', id }, { hover: true });
+    map.getCanvas().style.cursor = 'pointer';
+  });
+
+  map.on('mouseleave', 'city-fill', () => {
+    if (hoveredCityId !== null) {
+      map.setFeatureState({ source: 'cities', id: hoveredCityId }, { hover: false });
+    }
+    hoveredCityId = null;
+    map.getCanvas().style.cursor = '';
+  });
+
+  map.on('click', 'city-fill', (e) => {
+    if (!e.features.length) return;
+    const url = e.features[0].properties.url;
+    if (url) window.location.href = url;
+  });
+}
+
+function fitToCities(cities) {
+  const bounds = new maplibregl.LngLatBounds();
+  for (const c of cities) {
+    bounds.extend([c.bbox.west, c.bbox.south]);
+    bounds.extend([c.bbox.east, c.bbox.north]);
+  }
+  map.fitBounds(bounds, {
+    padding: { top: 80, bottom: 60, left: 60, right: 60 },
+    maxZoom: 7,
+    duration: 0,
+  });
+}
+</script>
+
+</body>
+</html>

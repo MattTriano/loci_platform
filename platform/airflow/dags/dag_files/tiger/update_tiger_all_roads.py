@@ -2,8 +2,8 @@ import datetime as dt
 import logging
 
 from airflow.sdk import dag
-from loci.sources.update_configs import ALL_ROADS_TIGER_UPDATE_CONFIG as UPDATE_CONFIG
-from loci.tasks.tiger_tasks import update_tiger_table
+from loci.collectors.tiger.taskflow import update_tiger_table
+from loci.sources.update_configs import ALL_ROADS_TIGER_UC as UPDATE_CONFIG
 
 task_logger = logging.getLogger("airflow.task")
 

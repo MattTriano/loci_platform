@@ -2,8 +2,8 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
+from loci.collectors.osm.taskflow import update_osm_table
 from loci.sources.update_configs import CHICAGO_OSM_CAFES_UC as UPDATE_CONFIG
-from loci.tasks.osm_tasks import update_osm_table
 
 task_logger = getLogger("airflow.task")
 

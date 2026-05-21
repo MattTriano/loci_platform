@@ -1,0 +1,68 @@
+version: 2
+models:
+  - name: stg_madison_bike_ways
+    columns:
+      - name: osm_id
+        data_tests:
+          - not_null
+          - unique
+      - name: geom
+        data_tests:
+          - not_null
+      - name: node_ids
+        data_tests:
+          - not_null
+      - name: node_count
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 2
+      - name: highway
+        data_tests:
+          - dbt_utils.not_empty_string
+  - name: stg_madison_way_nodes
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - way_id
+              - position
+    columns:
+      - name: way_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_madison_bike_ways')
+                field: osm_id
+      - name: position
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+      - name: node_id
+        data_tests:
+          - not_null
+  - name: stg_madison_intersection_nodes
+    data_tests:
+      - intersection_node_count_in_range:
+          arguments:
+            way_nodes_model: ref('stg_madison_way_nodes')
+    columns:
+      - name: node_id
+        data_tests:
+          - not_null
+          - unique
+  - name: stg_madison_way_segments
+    data_tests:
+      - segment_endpoints_match_node_ids:
+          arguments:
+            ways_model: ref('stg_madison_bike_ways')
+      - segments_cover_full_ways:
+          arguments:
+            way_nodes_model: ref('stg_madison_way_nodes')
+            intersection_nodes_model: ref('stg_madison_intersection_nodes')
+      - segment_geom_endpoints_match_node_positions:
+          arguments:
+            ways_model: ref('stg_madison_bike_ways')

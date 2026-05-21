@@ -1,0 +1,69 @@
+{
+  "city_name": "Madison, WI",
+  "log_endpoint": "<log_endpoint>",
+  "routing_api_url": "<routing_api_url>",
+  "routing_api_key": "<routing_api_key>",
+  "map_center": [-89.405, 43.085],
+  "map_zoom": 11,
+  "map_bbox": {
+    "south": 42.96,
+    "west": -89.60,
+    "north": 43.21,
+    "east": -89.21
+  },
+  "layers": [
+    {
+      "id": "thefts",
+      "label": "Thefts",
+      "color": "#f59e0b",
+      "file": "data/thefts.geojson",
+      "popup_title": "Thefts",
+      "popup_fields": [
+        {"key": "source", "label": "Source"},
+        {"key": "theft_date", "label": "Theft Date"},
+        {"key": "theft_year", "label": "Theft Year"},
+        {"key": "theft_hour", "label": "Theft Hour", "fmt": "hour"},
+        {"key": "bike_title", "label": "Bike Title"},
+        {"key": "bike_description", "label": "Bike Description"},
+        {"key": "theft_description", "label": "Theft Description"},
+        {"key": "locking_description", "label": "Locking Description"},
+        {"key": "lock_defeat_description", "label": "Lock Defeat Description"},
+        {"key": "theft_status", "label": "Theft Status"}
+      ],
+      "default_visible": true,
+      "cluster_max_zoom": 13,
+      "cluster_radius": 45,
+      "point_radius": 5,
+      "date_field": "theft_date"
+    },
+    {
+      "id": "parking",
+      "label": "Parking",
+      "color": "#22c55e",
+      "file": "data/parking.geojson",
+      "popup_title": "Parking",
+      "popup_fields": [
+        {"key": "type", "label": "Type"},
+        {"key": "capacity", "label": "Capacity"},
+        {"key": "covered", "label": "Covered"},
+        {"key": "indoor", "label": "Indoor"},
+        {"key": "fee", "label": "Fee"},
+        {"key": "lit", "label": "Lit"},
+        {"key": "operator", "label": "Operator"},
+        {"key": "access", "label": "Access"}
+      ],
+      "default_visible": true,
+      "cluster_max_zoom": 13,
+      "cluster_radius": 45,
+      "point_radius": 5
+    }
+  ],
+  "about_paragraphs": [
+    "Madison Bike Map helps you explore cycling conditions around the city.",
+    "Routes prefer streets with better bike infrastructure, lower speed limits, and less severe recent crash history, even if that means a slightly longer ride. We recommend always wearing a helmet while riding.",
+    "Routes are generated using OpenStreetMap data that may be incomplete or outdated. Route suggestions are informational and are no substitute for your own judgment while riding."
+  ],
+  "terms_what_is": "Madison Bike Map is a personal project that displays cycling-related data for the Madison area and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.",
+  "terms_data_sources": "Map data comes from OpenStreetMap contributors and is subject to the <a href=\"https://opendatacommons.org/licenses/odbl/\" target=\"_blank\" rel=\"noopener\">ODbL license</a>. This project does not independently verify the accuracy or completeness of any of these sources.",
+  "terms_liability": "This project is provided \"as is\" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of Madison Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss."
+}

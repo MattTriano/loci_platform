@@ -67,16 +67,16 @@ def smoke_test_deployed_routing(
     logger: logging.Logger,
     max_distance_miles: float = 5.0,
     cold_start_timeout_s: int = 30,
+    warm_timeout_s: int = 10,
+    max_route_attempts: int = 5,
     seed: int | None = None,
 ) -> dict:
     """Verify the deployed site can route end-to-end.
-
     Fetches config.json from the site (same as a browser would), then
     POSTs to the routing API using exactly those values with random
     origin/destination points within the city bbox. Catches URL/path
     mismatches, bad API keys, Lambda failures, and stale CloudFront
     caches.
-
     Args:
         site_url: Base URL of the deployed site (no trailing slash).
         bbox: (south, west, north, east) in lat/lon degrees.
@@ -86,56 +86,63 @@ def smoke_test_deployed_routing(
             takes ~15s, so this needs headroom above that.
         seed: Optional seed for reproducible point selection. None
             means a fresh random pair each run.
-
     Returns:
         The parsed routing API response, on success.
-
     Raises:
         RuntimeError: If the API returns non-200 or an obviously
             invalid response (no coordinates, zero length).
     """
     rng = random.Random(seed)
-    origin, destination = _random_route_within(bbox, max_distance_miles, rng)
-    logger.info("Smoke test route: origin=%s destination=%s", origin, destination)
 
     config = requests.get(f"{site_url}/config.json", timeout=10).json()
     api_url = config["routing_api_url"]
     api_key = config["routing_api_key"]
     logger.info("Posting to %s", api_url)
 
-    resp = requests.post(
-        api_url,
-        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
-        json={"origin": list(origin), "destination": list(destination)},
-        timeout=cold_start_timeout_s,
-    )
+    for attempt in range(1, max_route_attempts + 1):
+        origin, destination = _random_route_within(bbox, max_distance_miles, rng)
+        logger.info("Attempt %d: origin=%s destination=%s", attempt, origin, destination)
 
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Smoke test failed: {resp.status_code} from {api_url} — {resp.text[:500]}"
+        timeout = cold_start_timeout_s if attempt == 1 else warm_timeout_s
+        resp = requests.post(
+            api_url,
+            headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+            json={"origin": list(origin), "destination": list(destination)},
+            timeout=timeout,
         )
 
-    data = resp.json()
-    segments = data.get("segments")
-    if not segments:
-        raise RuntimeError(f"Routing returned no segments: {data}")
-    if data.get("total_length_m", 0) <= 0:
-        raise RuntimeError(f"Routing returned zero length: {data}")
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Smoke test failed: {resp.status_code} from {api_url} — {resp.text[:500]}"
+            )
 
-    # Sanity: every segment should have at least one coordinate pair and a
-    # stress_cost. Catches malformed responses where the shape is right but
-    # the contents are empty.
-    for i, seg in enumerate(segments):
-        if not seg.get("coordinates"):
-            raise RuntimeError(f"Segment {i} has no coordinates: {seg}")
-        if seg.get("stress_cost") is None:
-            raise RuntimeError(f"Segment {i} missing stress_cost: {seg}")
+        data = resp.json()
+        segments = data.get("segments")
 
-    total_points = sum(len(seg["coordinates"]) for seg in segments)
-    logger.info(
-        "Smoke test OK: %.0fm route, %d segments, %d total points",
-        data["total_length_m"],
-        len(segments),
-        total_points,
+        # Empty route on a 200 means both points snapped to the same node,
+        # which happens when one or both land in water/parkland/etc. inside
+        # the bbox. That's a sampling problem, not a deploy problem.
+        if not segments or data.get("total_length_m", 0) <= 0:
+            logger.warning("Attempt %d: empty route (likely off-graph snap), retrying", attempt)
+            continue
+
+        for i, seg in enumerate(segments):
+            if not seg.get("coordinates"):
+                raise RuntimeError(f"Segment {i} has no coordinates: {seg}")
+            if seg.get("stress_cost") is None:
+                raise RuntimeError(f"Segment {i} missing stress_cost: {seg}")
+
+        total_points = sum(len(seg["coordinates"]) for seg in segments)
+        logger.info(
+            "Smoke test OK on attempt %d: %.0fm route, %d segments, %d total points",
+            attempt,
+            data["total_length_m"],
+            len(segments),
+            total_points,
+        )
+        return data
+
+    raise RuntimeError(
+        f"Smoke test could not find a routable origin/destination pair in bbox "
+        f"after {max_route_attempts} attempts."
     )
-    return data

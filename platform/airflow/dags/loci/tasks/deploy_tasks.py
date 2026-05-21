@@ -27,8 +27,9 @@ from pathlib import Path
 from airflow.sdk import task
 from loci.aws import get_boto_session
 from loci.deploy import upload_file_to_s3
-from loci.environments import EnvConfig, get_env
+from loci.environments import EnvConfig, LandingEnvConfig, get_env, get_env_apex
 
+BIKE_MAP_LANDING_APP_DIR = "/opt/airflow/app-files/bike-map-landing"
 BIKE_MAP_APP_DIR = "/opt/airflow/app-files/bike-map"
 BIKE_MAP_EXPORT_DIR_BASE = "/opt/airflow/exports/bike-map"
 ROUTING_LAMBDA_ZIP = Path("/opt/airflow/build/routing/routing-lambda.zip")
@@ -264,4 +265,119 @@ def deploy_lambda(env: str, city: str, task_logger: Logger) -> dict:
         "lambda_arn": cfg.routing_lambda_arn,
         "zip_built_at": mtime_iso,
         "last_update_status": response.get("LastUpdateStatus"),
+    }
+
+
+def _build_cities_array(
+    env: str, city_ids: list[str], zone_name: str, logger: Logger
+) -> list[dict]:
+    """Build the cities array for the landing page config.
+
+    For each city in city_ids, reads its per-city config from the bike-map
+    app dir to pick up city_name, map_center, and map_bbox. The URL is
+    constructed from zone_name. Raises if any per-city config is missing
+    or malformed — running the landing deploy with a city in the SSM
+    list but no config on disk is a deployment-ordering bug we want to
+    fail loudly.
+
+    map_bbox is expected as an object {"south", "west", "north", "east"}
+    mirroring the loci.geometry.BBox dataclass, so the field meanings
+    are unambiguous wherever this shape shows up.
+    """
+    cities = []
+    for city_id in city_ids:
+        config_path = Path(BIKE_MAP_APP_DIR) / "config" / env / f"{city_id}.json"
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"Per-city config not found for landing page: {config_path}. "
+                f"Add the config or remove '{city_id}' from var.cities."
+            )
+        with config_path.open() as f:
+            city_config = json.load(f)
+        try:
+            cities.append(
+                {
+                    "id": city_id,
+                    "name": city_config["city_name"],
+                    "center": city_config["map_center"],
+                    "bbox": city_config["map_bbox"],
+                    "url": f"https://{city_id}.{zone_name}",
+                }
+            )
+        except KeyError as e:
+            raise KeyError(
+                f"Per-city config {config_path} is missing required field {e}. "
+                f"Landing page needs city_name, map_center, and map_bbox."
+            ) from e
+    logger.info("Built cities array with %d entries", len(cities))
+    return cities
+
+
+def _sync_bike_map_landing_config(cfg: "LandingEnvConfig", logger: Logger) -> dict:
+    """Upload the env-specific landing config.json to S3 with cities injected.
+
+    Reads config/<env>.json from the landing app dir, fills in the cities
+    array using the SSM-sourced city list + per-city configs, and uploads
+    the result as config.json at the root of the landing S3 bucket.
+    """
+    config_path = Path(BIKE_MAP_LANDING_APP_DIR) / "config" / f"{cfg.name}.json"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Landing config file not found: {config_path}")
+
+    with config_path.open() as f:
+        config = json.load(f)
+
+    cities = _build_cities_array(cfg.name, cfg.cities, cfg.zone_name, logger)
+    config["cities"] = cities
+
+    s3 = get_boto_session(cfg).client("s3")
+    logger.info(
+        "Uploading landing config → s3://%s/config.json (from %s, %d cities)",
+        cfg.app_file_bucket,
+        config_path,
+        len(cities),
+    )
+    s3.put_object(
+        Bucket=cfg.app_file_bucket,
+        Key="config.json",
+        Body=json.dumps(config, indent=2).encode("utf-8"),
+        ContentType="application/json",
+    )
+    return {
+        "bucket": cfg.app_file_bucket,
+        "environment": cfg.name,
+        "cities_count": len(cities),
+        "source": str(config_path),
+    }
+
+
+@task
+def deploy_bike_map_landing(env: str, task_logger: Logger) -> dict:
+    """Sync the bike-map landing page to S3 and invalidate the CloudFront cache.
+
+    Reads the list of deployed cities from SSM (provisioned by tofu) and
+    builds the landing config from the per-city configs on disk.
+    """
+    cfg = get_env_apex(env)
+
+    # _sync_to_s3 already skips the config/ subdir via SKIP_DIRS, so the
+    # raw config/<env>.json doesn't get uploaded — only the post-processed
+    # version written by _sync_bike_map_landing_config below.
+    file_count = _sync_to_s3([BIKE_MAP_LANDING_APP_DIR], cfg, task_logger)
+    task_logger.info("Uploaded %d landing files to s3://%s", file_count, cfg.app_file_bucket)
+
+    conf_log = _sync_bike_map_landing_config(cfg, task_logger)
+    task_logger.info(
+        "Uploaded landing config for env=%s with %d cities",
+        conf_log["environment"],
+        conf_log["cities_count"],
+    )
+
+    invalidation_id = _invalidate_cloudfront(cfg, task_logger)
+
+    return {
+        "bucket": cfg.app_file_bucket,
+        "files_uploaded": file_count,
+        "cities_count": conf_log["cities_count"],
+        "invalidation_id": invalidation_id,
     }
