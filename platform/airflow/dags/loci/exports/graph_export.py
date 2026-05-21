@@ -155,9 +155,7 @@ class RoutingGraphExporter:
         if highway is None or not highway.startswith("["):
             return highway
 
-        logger.warning(
-            "highway value arrived as stringified list, normalizing: %r", highway
-        )
+        logger.warning("highway value arrived as stringified list, normalizing: %r", highway)
         # Strip "[", "]", quotes, then take the first comma-separated value.
         cleaned = highway.strip("[]'\" ").split("'")[0].split(",")[0].strip()
         return cleaned or None
@@ -267,7 +265,22 @@ class RoutingGraphExporter:
         if self.min_component_size <= 1:
             return G
 
-        components = list(nx.weakly_connected_components(G))
+        components = sorted(nx.weakly_connected_components(G), key=len, reverse=True)
+        # (node_count, edge_count) per component, biggest first.
+        component_stats = [(len(c), G.subgraph(c).number_of_edges()) for c in components]
+
+        logger.info("Found %d weakly connected components", len(components))
+        for i, (n_nodes, n_edges) in enumerate(component_stats[:10]):
+            logger.info("  Component %d: %d nodes, %d edges", i, n_nodes, n_edges)
+        if len(component_stats) > 10:
+            smaller = component_stats[10:]
+            logger.info(
+                "  ... and %d smaller components (max %d nodes, %d nodes total)",
+                len(smaller),
+                max(n for n, _ in smaller),
+                sum(n for n, _ in smaller),
+            )
+
         before_nodes = G.number_of_nodes()
         before_edges = G.number_of_edges()
 
@@ -275,7 +288,6 @@ class RoutingGraphExporter:
         nodes_to_remove = set().union(*small) if small else set()
         G.remove_nodes_from(nodes_to_remove)
 
-        # Prune geometries for segments no longer referenced by any edge
         referenced = {data["segment_id"] for _, _, data in G.edges(data=True)}
         seg_geom = G.graph.get("segment_geometry", {})
         for sid in list(seg_geom):
@@ -292,6 +304,19 @@ class RoutingGraphExporter:
             G.number_of_nodes(),
             G.number_of_edges(),
         )
+
+        kept = [c for c in components if len(c) >= self.min_component_size]
+        if len(kept) > 1:
+            kept_stats = [(len(c), G.subgraph(c).number_of_edges()) for c in kept]
+            logger.warning(
+                "Graph has %d large components after filtering (sizes: %s). "
+                "Routes between components will fail. This is usually an OSM data "
+                "problem — check for missing bridges/tunnels, broken way connectivity, "
+                "or a bbox that splits the network.",
+                len(kept),
+                kept_stats,
+            )
+
         return G
 
     # ------------------------------------------------------------------

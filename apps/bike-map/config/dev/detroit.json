@@ -5,6 +5,12 @@
   "routing_api_key": "<routing_api_key>",
   "map_center": [-83.099, 42.380],
   "map_zoom": 11,
+  "map_bbox": {
+    "south": 42.18,
+    "west": -83.40,
+    "north": 42.56,
+    "east": -82.84
+  },
   "layers": [
     {
       "id": "thefts",

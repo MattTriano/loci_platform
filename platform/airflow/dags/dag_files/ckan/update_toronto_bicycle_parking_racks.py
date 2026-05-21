@@ -2,8 +2,8 @@ import datetime as dt
 from logging import getLogger
 
 from airflow.sdk import dag
+from loci.collectors.ckan.taskflow import update_ckan_table
 from loci.sources.update_configs import TORONTO_BICYCLE_PARKING_RACKS_UC as UPDATE_CONFIG
-from loci.tasks.ckan_tasks import update_ckan_table
 
 task_logger = getLogger("airflow.task")
 

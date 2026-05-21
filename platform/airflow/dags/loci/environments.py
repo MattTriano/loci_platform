@@ -26,6 +26,7 @@ of the process, so DAG tasks share a single SSM round-trip.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from functools import cache
@@ -35,12 +36,37 @@ from loci.exports.graph_export import GRAPH_S3_KEY
 
 VALID_ENVS = ("dev", "staging", "prod")
 VALID_CITIES = (
+    "boston",
     "chicago",
+    "dc",
+    "denver",
     "detroit",
+    "madison",
+    "nola",
+    "portland",
     "sf",
+    "toronto",
 )  # extend as we onboard more cities
 
 _SSM_PREFIX = "/loci-infra"
+
+
+@dataclass(frozen=True)
+class LandingEnvConfig:
+    """Env-scoped (non-city) config for the bike-map landing page.
+
+    Loaded from SSM at /loci-infra/<env>/bike-map-landing/ by the
+    bike-map-landing tofu module. Same role as EnvConfig but per-env
+    rather than per-(env, city).
+    """
+
+    name: str
+    aws_profile: str | None
+    aws_region: str
+    app_file_bucket: str
+    cloudfront_dist_id: str
+    zone_name: str
+    cities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -155,4 +181,42 @@ def get_env(env: str, city: str) -> EnvConfig:
         log_endpoint=_require_ssm(route_logger, "log-endpoint", route_logger_path),
         dbt_target=env,
         marts_schema=marts_schema,
+    )
+
+
+@cache
+def get_env_apex(env: str) -> LandingEnvConfig:
+    """Load the env-scoped landing config from SSM.
+
+    Cached for the lifetime of the process. Mirrors get_env(env, city)
+    but reads from the per-env landing prefix populated by the
+    bike-map-landing tofu module.
+    """
+    if env not in VALID_ENVS:
+        raise ValueError(f"Unknown env: {env!r}. Expected one of {VALID_ENVS}.")
+
+    env_suffix = env.upper()
+    aws_profile = os.environ.get(f"AWS_PROFILE_{env_suffix}")
+    aws_region = _require_env("BIKE_MAP_AWS_REGION", env_suffix)
+
+    session_kwargs: dict = {"region_name": aws_region}
+    if aws_profile:
+        session_kwargs["profile_name"] = aws_profile
+    session = boto3.Session(**session_kwargs)
+
+    landing_path = f"{_SSM_PREFIX}/{env}/bike-map-landing"
+    landing = load_parameters_by_path(session, landing_path)
+
+    # `cities` is jsonencode(var.cities) in tofu — decode it back into a
+    # tuple so the frozen dataclass stays hashable.
+    cities = tuple(json.loads(_require_ssm(landing, "cities", landing_path)))
+
+    return LandingEnvConfig(
+        name=env,
+        aws_profile=aws_profile,
+        aws_region=aws_region,
+        app_file_bucket=_require_ssm(landing, "app-file-bucket", landing_path),
+        cloudfront_dist_id=_require_ssm(landing, "cloudfront-dist-id", landing_path),
+        zone_name=_require_ssm(landing, "zone-name", landing_path),
+        cities=cities,
     )

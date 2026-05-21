@@ -5,6 +5,12 @@
   "routing_api_key": "<routing_api_key>",
   "map_center": [-87.6298, 41.8781],
   "map_zoom": 11,
+  "map_bbox": {
+    "south": 41.62,
+    "west": -87.97,
+    "north": 42.05,
+    "east": -87.50
+  },
   "layers": [
     {
       "id": "crashes",
