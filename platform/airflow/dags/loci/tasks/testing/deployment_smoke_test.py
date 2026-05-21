@@ -71,7 +71,27 @@ def smoke_test_deployed_routing(
     max_route_attempts: int = 5,
     seed: int | None = None,
 ) -> dict:
-    """..."""
+    """Verify the deployed site can route end-to-end.
+    Fetches config.json from the site (same as a browser would), then
+    POSTs to the routing API using exactly those values with random
+    origin/destination points within the city bbox. Catches URL/path
+    mismatches, bad API keys, Lambda failures, and stale CloudFront
+    caches.
+    Args:
+        site_url: Base URL of the deployed site (no trailing slash).
+        bbox: (south, west, north, east) in lat/lon degrees.
+        logger: Task logger for progress and result reporting.
+        max_distance_miles: Cap on origin-to-destination distance.
+        cold_start_timeout_s: Request timeout. The Lambda cold start
+            takes ~15s, so this needs headroom above that.
+        seed: Optional seed for reproducible point selection. None
+            means a fresh random pair each run.
+    Returns:
+        The parsed routing API response, on success.
+    Raises:
+        RuntimeError: If the API returns non-200 or an obviously
+            invalid response (no coordinates, zero length).
+    """
     rng = random.Random(seed)
 
     config = requests.get(f"{site_url}/config.json", timeout=10).json()

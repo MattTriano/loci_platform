@@ -36,12 +36,16 @@ from loci.exports.graph_export import GRAPH_S3_KEY
 
 VALID_ENVS = ("dev", "staging", "prod")
 VALID_CITIES = (
+    "boston",
     "chicago",
     "dc",
+    "denver",
     "detroit",
     "madison",
     "nola",
+    "portland",
     "sf",
+    "toronto",
 )  # extend as we onboard more cities
 
 _SSM_PREFIX = "/loci-infra"

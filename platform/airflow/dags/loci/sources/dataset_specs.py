@@ -98,8 +98,8 @@ TORONTO_BIKEINDEX_BIKE_THEFTS_SPEC = BikeIndexDatasetSpec(
     name="toronto_bikeindex_bike_thefts",
     target_table="toronto_bikeindex_bike_thefts",
     entity_key=["id"],
-    location="43.715,-79.315",
-    distance=15,
+    location="43.67,-79.315",
+    distance=25,
     stolenness="proximity",
 )
 

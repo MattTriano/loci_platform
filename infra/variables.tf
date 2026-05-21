@@ -46,11 +46,15 @@ variable "routing_lambda_memory_by_city" {
   description = "Per-city memory (MB) for the routing Lambda. Must include every city in var.cities."
   type        = map(number)
   default = {
-    chicago = 1024
-    dc      = 512
-    detroit = 1024
-    madison = 512
-    nola    = 512
-    sf      = 1536
+    boston   = 512
+    chicago  = 1024
+    dc       = 512
+    denver   = 512
+    detroit  = 1024
+    madison  = 512
+    nola     = 512
+    portland = 1024
+    sf       = 1536
+    toronto  = 1024
   }
 }
