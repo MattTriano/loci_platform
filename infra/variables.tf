@@ -58,3 +58,50 @@ variable "routing_lambda_memory_by_city" {
     toronto  = 1024
   }
 }
+
+variable "routing_lambda_timeout_seconds" {
+  description = "Lambda timeout (seconds) for the routing function. Defaults to 8, slightly above the ~7s observed worst case. Tighten if real workloads stay well under; loosen if real users hit timeouts."
+  type        = number
+  default     = 8
+}
+
+variable "alarm_email" {
+  description = "Email subscribed to the CloudWatch alarms SNS topic. AWS sends a confirmation link on first apply that I must click to activate the subscription."
+  type        = string
+}
+
+variable "budget_alert_amount" {
+  description = "Monthly spend (USD) that triggers an informational budget alert."
+  type        = number
+  default     = 5
+}
+
+variable "budget_warn_amount" {
+  description = "Monthly spend (USD) that triggers a warning budget alert."
+  type        = number
+  default     = 15
+}
+
+variable "budget_kill_amount" {
+  description = "Monthly spend (USD) that triggers the cost-guard kill switch."
+  type        = number
+  default     = 30
+}
+
+variable "lockdown_non_prod" {
+  description = "Enable basic auth on CloudFront distributions, noindex headers, and tighter cost limits. Should be true for dev and staging, false for prod."
+  type        = bool
+  default     = true
+}
+
+variable "api_throttle_rate" {
+  description = "API Gateway sustained requests per second for the routing API."
+  type        = number
+  default     = 5
+}
+
+variable "api_throttle_burst" {
+  description = "API Gateway burst requests per second for the routing API."
+  type        = number
+  default     = 10
+}

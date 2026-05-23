@@ -79,18 +79,28 @@ resource "aws_cloudfront_distribution" "site" {
   }
 
   default_cache_behavior {
-    target_origin_id       = "s3"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
+      target_origin_id       = "s3"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+    
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+    
+      response_headers_policy_id = var.response_headers_policy_id
+    
+      dynamic "function_association" {
+        for_each = var.basic_auth_function_arn != null ? [1] : []
+        content {
+          event_type   = "viewer-request"
+          function_arn = var.basic_auth_function_arn
+        }
       }
     }
-  }
 
   restrictions {
     geo_restriction {
@@ -208,9 +218,9 @@ resource "aws_acm_certificate_validation" "api" {
 
 resource "aws_route53_record" "site" {
   provider = aws.dns
-  zone_id = var.zone_id
-  name    = local.domain
-  type    = "A"
+  zone_id  = var.zone_id
+  name     = local.domain
+  type     = "A"
 
   alias {
     name                   = aws_cloudfront_distribution.site.domain_name
@@ -221,9 +231,9 @@ resource "aws_route53_record" "site" {
 
 resource "aws_route53_record" "api" {
   provider = aws.dns
-  zone_id = var.zone_id
-  name    = local.api_domain
-  type    = "A"
+  zone_id  = var.zone_id
+  name     = local.api_domain
+  type     = "A"
 
   alias {
     name                   = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name
@@ -276,9 +286,9 @@ resource "aws_iam_user_policy" "deploy" {
         Resource = aws_lambda_function.routing_api.arn
       },
       {
-        Sid    = "ReadBikeMapSSM"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+        Sid      = "ReadBikeMapSSM"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
         Resource = "arn:aws:ssm:*:*:parameter/${var.basename}/${var.environment}/${var.city}/*"
       }
     ]
@@ -366,6 +376,35 @@ resource "aws_cloudwatch_log_group" "routing_lambda" {
 
 
 # -----------------------------------------------------------------------------
+# CloudWatch alarm — Lambda throttles
+#
+# Fires when the routing Lambda is being throttled by its reserved-concurrency
+# cap. Real users should never see throttles in normal operation; if this
+# alarm fires either legitimate traffic has outgrown the cap (raise account
+# limit) or someone is abusing the API (check WAF/budget signals first).
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "routing_lambda_throttles" {
+  alarm_name          = "${local.resource_name}-routing-throttles"
+  alarm_description   = "Routing Lambda is being throttled; either legit growth past concurrency cap, or abuse."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Throttles"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 10
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.routing_api.function_name
+  }
+
+  alarm_actions = [var.alarm_sns_topic_arn]
+}
+
+
+# -----------------------------------------------------------------------------
 # IAM — Lambda execution role
 # -----------------------------------------------------------------------------
 
@@ -432,7 +471,7 @@ resource "aws_iam_role_policy" "routing_lambda" {
 data "archive_file" "lambda_dummy" {
   type             = "zip"
   output_path      = "${path.module}/dummy.zip"
-  output_file_mode = "0755"   # bootstrap must be executable for provided.al2023
+  output_file_mode = "0755" # bootstrap must be executable for provided.al2023
 
   source {
     # Bootstrap for provided.al2023 — the runtime expects an executable
@@ -470,7 +509,7 @@ resource "aws_lambda_function" "routing_api" {
   runtime          = "provided.al2023"
   handler          = "bootstrap"
   architectures    = ["arm64"]
-  timeout          = 30
+  timeout          = var.routing_lambda_timeout_seconds
   memory_size      = var.routing_lambda_memory_mb
 
   environment {

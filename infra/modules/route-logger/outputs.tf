@@ -13,3 +13,8 @@ output "log_bucket_arn" {
   description = "ARN of the route logs bucket (for Athena or warehouse ingestion)"
   value       = aws_s3_bucket.route_logs.arn
 }
+
+output "rest_api_id" {
+  description = "ID of the route-logger REST API. Used by the cost-guard kill switch."
+  value       = aws_api_gateway_rest_api.route_logger.id
+}
