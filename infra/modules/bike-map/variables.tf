@@ -60,3 +60,32 @@ variable "routing_lambda_memory_mb" {
     error_message = "routing_lambda_memory_mb must be between 128 and 10240."
   }
 }
+
+variable "routing_lambda_timeout_seconds" {
+  description = "Lambda timeout (seconds) for the routing function."
+  type        = number
+  default     = 8
+}
+
+variable "alarm_sns_topic_arn" {
+  description = "SNS topic ARN for CloudWatch alarm notifications."
+  type        = string
+}
+
+variable "basic_auth_function_arn" {
+  description = "ARN of a CloudFront Function to attach at viewer-request for basic auth. Null means no auth attached."
+  type        = string
+  default     = null
+}
+
+variable "response_headers_policy_id" {
+  description = "ID of a CloudFront Response Headers Policy to attach. Null means no policy attached."
+  type        = string
+  default     = null
+}
+
+variable "waf_web_acl_arn" {
+  description = "ARN of a WAF WebACL to attach to the routing API CloudFront distribution. Null means no WAF."
+  type        = string
+  default     = null
+}

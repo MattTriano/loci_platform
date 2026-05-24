@@ -3,8 +3,14 @@
   "log_endpoint": "<log_endpoint>",
   "routing_api_url": "<routing_api_url>",
   "routing_api_key": "<routing_api_key>",
-  "map_center": [-122.43, 37.75],
+  "map_center": [-122.16, 37.59],
   "map_zoom": 11,
+  "map_bbox": {
+    "south": 37.18,
+    "west": -122.59,
+    "north": 38.00,
+    "east": -121.73
+  },
   "layers": [
     {
       "id": "thefts",

@@ -27,3 +27,21 @@ variable "cities" {
   description = "List of city identifiers deployed in this environment. Written to SSM so the landing deploy task can read it."
   type        = list(string)
 }
+
+variable "basic_auth_function_arn" {
+  description = "ARN of a CloudFront Function to attach at viewer-request for basic auth. Null means no auth attached."
+  type        = string
+  default     = null
+}
+
+variable "response_headers_policy_id" {
+  description = "ID of a CloudFront Response Headers Policy to attach. Null means no policy attached."
+  type        = string
+  default     = null
+}
+
+variable "waf_web_acl_arn" {
+  description = "ARN of a WAF WebACL to attach to the routing API CloudFront distribution. Null means no WAF."
+  type        = string
+  default     = null
+}
