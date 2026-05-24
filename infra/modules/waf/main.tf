@@ -112,7 +112,6 @@ resource "aws_cloudwatch_metric_alarm" "blocked_requests" {
 
   dimensions = {
     WebACL = aws_wafv2_web_acl.cloudfront.name
-    Region = "CloudFront"
     Rule   = "ALL"
   }
 
