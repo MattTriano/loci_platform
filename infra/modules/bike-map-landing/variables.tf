@@ -39,3 +39,9 @@ variable "response_headers_policy_id" {
   type        = string
   default     = null
 }
+
+variable "waf_web_acl_arn" {
+  description = "ARN of a WAF WebACL to attach to the routing API CloudFront distribution. Null means no WAF."
+  type        = string
+  default     = null
+}

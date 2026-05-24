@@ -54,6 +54,7 @@ module "bike_map_landing" {
   cities                     = var.cities
   basic_auth_function_arn    = local.basic_auth_function_arn
   response_headers_policy_id = local.response_headers_policy_id
+  waf_web_acl_arn            = local.waf_web_acl_arn
 }
 
 module "bike_map" {
@@ -79,6 +80,7 @@ module "bike_map" {
   api_throttle_burst             = var.api_throttle_burst
   basic_auth_function_arn        = local.basic_auth_function_arn
   response_headers_policy_id     = local.response_headers_policy_id
+  waf_web_acl_arn                = local.waf_web_acl_arn
 }
 
 
@@ -119,6 +121,23 @@ module "cost_guard" {
       stage_name  = "v1"
     }
   ]
+}
+
+module "waf" {
+  source = "./modules/waf"
+  count  = var.enable_waf ? 1 : 0
+
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  basename    = var.basename
+  environment = var.environment
+  alarm_email = var.alarm_email
+}
+
+locals {
+  waf_web_acl_arn = var.enable_waf ? module.waf[0].web_acl_arn : null
 }
 
 

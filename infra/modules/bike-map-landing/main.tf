@@ -48,6 +48,7 @@ resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   default_root_object = "index.html"
   aliases             = [local.domain]
+  web_acl_id          = var.waf_web_acl_arn
 
   origin {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name

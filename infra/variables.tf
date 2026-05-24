@@ -105,3 +105,9 @@ variable "api_throttle_burst" {
   type        = number
   default     = 10
 }
+
+variable "enable_waf" {
+  description = "Enable AWS WAF on CloudFront distributions. Defaults to false; should be true for prod only."
+  type        = bool
+  default     = false
+}

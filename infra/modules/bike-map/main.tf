@@ -71,6 +71,7 @@ resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   default_root_object = "index.html"
   aliases             = [local.domain]
+  web_acl_id          = var.waf_web_acl_arn
 
   origin {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
@@ -79,28 +80,28 @@ resource "aws_cloudfront_distribution" "site" {
   }
 
   default_cache_behavior {
-      target_origin_id       = "s3"
-      viewer_protocol_policy = "redirect-to-https"
-      allowed_methods        = ["GET", "HEAD"]
-      cached_methods         = ["GET", "HEAD"]
-    
-      forwarded_values {
-        query_string = false
-        cookies {
-          forward = "none"
-        }
-      }
-    
-      response_headers_policy_id = var.response_headers_policy_id
-    
-      dynamic "function_association" {
-        for_each = var.basic_auth_function_arn != null ? [1] : []
-        content {
-          event_type   = "viewer-request"
-          function_arn = var.basic_auth_function_arn
-        }
+    target_origin_id       = "s3"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
       }
     }
+
+    response_headers_policy_id = var.response_headers_policy_id
+
+    dynamic "function_association" {
+      for_each = var.basic_auth_function_arn != null ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = var.basic_auth_function_arn
+      }
+    }
+  }
 
   restrictions {
     geo_restriction {
@@ -686,8 +687,9 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
 data "aws_region" "current" {}
 
 resource "aws_cloudfront_distribution" "routing_api" {
-  enabled = true
-  aliases = [local.api_domain]
+  enabled    = true
+  aliases    = [local.api_domain]
+  web_acl_id = var.waf_web_acl_arn
 
   origin {
     domain_name = "${aws_apigatewayv2_api.routing.id}.execute-api.${data.aws_region.current.region}.amazonaws.com"
