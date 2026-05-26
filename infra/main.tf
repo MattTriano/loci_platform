@@ -141,6 +141,26 @@ locals {
 }
 
 
+module "synthetic_monitor" {
+  source = "./modules/synthetic-monitor"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+    aws.dns       = aws.admin_mgmt
+  }
+
+  basename                   = var.basename
+  environment                = var.environment
+  cities                     = var.cities
+  zone_id                    = local.zone_id
+  zone_name                  = local.zone_name
+  lockdown_non_prod          = var.lockdown_non_prod
+  alarm_sns_topic_arn        = aws_sns_topic.alerts.arn
+  basic_auth_function_arn    = local.basic_auth_function_arn
+  response_headers_policy_id = local.response_headers_policy_id
+}
+
 # -----------------------------------------------------------------------------
 # Shared SNS topic for CloudWatch alarms
 #

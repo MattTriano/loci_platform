@@ -22,7 +22,7 @@ from loci.environments import VALID_ENVS, get_env
 from loci.exports.bike_map_layers import LayerDisplayConfig, validate_layer_displays
 from loci.exports.geojson_export import GeoJSONExportConfig
 from loci.exports.graph_export import RoutingGraphExporter
-from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda
+from loci.tasks.deploy_tasks import deploy_bike_map, deploy_lambda, push_synthetic_fixture
 from loci.tasks.export_tasks import export_bike_map_geojson
 from loci.tasks.testing.deployment_smoke_test import (
     site_url_for,
@@ -67,6 +67,10 @@ class CityBuildSpec:
         City-specific route quality test cases run after the routing
         graph is built. Empty list = no tests for this city (a warning
         is logged at run time).
+    synthetic_check_fixture
+        An (origin, destination) lat/lon pair used by the synthetic monitor
+        as a known-good request payload. Each tuple is (lat, lon). None means
+        no routing API check is run for this city.
     """
 
     city: str
@@ -77,6 +81,7 @@ class CityBuildSpec:
     geojson_exports: list[GeoJSONExportConfig] = field(default_factory=list)
     layer_displays: list[LayerDisplayConfig] = field(default_factory=list)
     route_tests: list[RouteTestCase] = field(default_factory=list)
+    synthetic_check_fixture: tuple[tuple[float, float], tuple[float, float]] | None = None
 
     def __post_init__(self):
         # Validate at DAG-parse time so typos in popup field formatters
@@ -172,9 +177,12 @@ def smoke_test_deployment(
         return None
 
     city = _city_from_context()
+    cfg = get_env(env, city)
     return smoke_test_deployed_routing(
         site_url=site_url_for(city=city, env=env),
         bbox=bbox,
+        env=env,
+        cfg=cfg,
         logger=task_logger,
     )
 
@@ -264,6 +272,14 @@ def build_refresh_task_graph(spec: CityBuildSpec) -> None:
         task_logger=task_logger,
     )
     chain([_deploy_lambda, _deploy_map], _smoke_test)
+
+    _push_fixture = push_synthetic_fixture(
+        env=ENV_TEMPLATE,
+        city=spec.city,
+        fixture=spec.synthetic_check_fixture,
+        task_logger=task_logger,
+    )
+    chain(_deploy_lambda, _push_fixture)
 
 
 def standard_dag_params(city: str) -> dict:

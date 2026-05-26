@@ -6,12 +6,15 @@ the routing API to verify that the full deploy chain (S3 site, Lambda,
 API Gateway, CloudFront, SSM key) is wired up correctly.
 """
 
+import base64
 import logging
 import math
 import os
 import random
 
 import requests
+from loci.aws import get_boto_session
+from loci.environments import EnvConfig
 from loci.geo import BBox
 
 # Approximate, fine for picking points within a city bbox
@@ -28,6 +31,24 @@ def site_url_for(city: str, env: str) -> str:
     if not base:
         raise RuntimeError("BIKE_MAP_BASE_DOMAIN is not set")
     return f"https://{city}.{base}" if env == "prod" else f"https://{city}.{env}.{base}"
+
+
+def _basic_auth_header(env: str, cfg: EnvConfig) -> dict[str, str]:
+    """Fetch the shared non-prod basic auth credentials from SSM and return
+    them as a request-header dict. Returns an empty dict for prod, since
+    prod has no basic auth.
+    """
+    if env == "prod":
+        return {}
+
+    ssm = get_boto_session(cfg).client("ssm")
+    resp = ssm.get_parameter(
+        Name=f"/loci-infra/{env}/non-prod-auth/credentials",
+        WithDecryption=True,
+    )
+    credentials = resp["Parameter"]["Value"]
+    encoded = base64.b64encode(credentials.encode()).decode()
+    return {"Authorization": f"Basic {encoded}"}
 
 
 def _random_route_within(
@@ -64,6 +85,8 @@ def _random_route_within(
 def smoke_test_deployed_routing(
     site_url: str,
     bbox: tuple[float, float, float, float],
+    env: str,
+    cfg: EnvConfig,
     logger: logging.Logger,
     max_distance_miles: float = 5.0,
     cold_start_timeout_s: int = 30,
@@ -72,32 +95,60 @@ def smoke_test_deployed_routing(
     seed: int | None = None,
 ) -> dict:
     """Verify the deployed site can route end-to-end.
+
     Fetches config.json from the site (same as a browser would), then
     POSTs to the routing API using exactly those values with random
     origin/destination points within the city bbox. Catches URL/path
     mismatches, bad API keys, Lambda failures, and stale CloudFront
     caches.
+
+    For non-prod environments, fetches the shared basic auth credentials
+    from SSM and includes them on every request to the site and the
+    routing API. The routing API itself doesn't enforce basic auth, but
+    sending the header to it is harmless — non-prod sites need the header
+    for the config.json fetch, and reusing the same headers for the API
+    POST keeps the code simple.
+
     Args:
         site_url: Base URL of the deployed site (no trailing slash).
         bbox: (south, west, north, east) in lat/lon degrees.
+        env: Environment name (dev/staging/prod). Used to decide whether
+            to fetch basic auth credentials.
+        cfg: EnvConfig for the city, used to construct a boto session
+            for reading credentials from SSM.
         logger: Task logger for progress and result reporting.
         max_distance_miles: Cap on origin-to-destination distance.
         cold_start_timeout_s: Request timeout. The Lambda cold start
             takes ~15s, so this needs headroom above that.
         seed: Optional seed for reproducible point selection. None
             means a fresh random pair each run.
+
     Returns:
         The parsed routing API response, on success.
+
     Raises:
         RuntimeError: If the API returns non-200 or an obviously
             invalid response (no coordinates, zero length).
     """
     rng = random.Random(seed)
+    auth_headers = _basic_auth_header(env, cfg)
 
-    config = requests.get(f"{site_url}/config.json", timeout=10).json()
+    config_resp = requests.get(f"{site_url}/config.json", headers=auth_headers, timeout=10)
+    if config_resp.status_code != 200:
+        raise RuntimeError(
+            f"Failed to fetch {site_url}/config.json: {config_resp.status_code} — "
+            f"{config_resp.text[:500]}"
+        )
+    config = config_resp.json()
     api_url = config["routing_api_url"]
     api_key = config["routing_api_key"]
     logger.info("Posting to %s", api_url)
+
+    request_headers = {
+        **auth_headers,
+        "Content-Type": "application/json",
+        "X-Api-Key": api_key,
+    }
 
     for attempt in range(1, max_route_attempts + 1):
         origin, destination = _random_route_within(bbox, max_distance_miles, rng)
@@ -106,7 +157,7 @@ def smoke_test_deployed_routing(
         timeout = cold_start_timeout_s if attempt == 1 else warm_timeout_s
         resp = requests.post(
             api_url,
-            headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+            headers=request_headers,
             json={"origin": list(origin), "destination": list(destination)},
             timeout=timeout,
         )

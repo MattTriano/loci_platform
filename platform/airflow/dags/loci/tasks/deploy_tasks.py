@@ -381,3 +381,38 @@ def deploy_bike_map_landing(env: str, task_logger: Logger) -> dict:
         "cities_count": conf_log["cities_count"],
         "invalidation_id": invalidation_id,
     }
+
+
+@task
+def push_synthetic_fixture(
+    env: str,
+    city: str,
+    fixture: tuple[tuple[float, float], tuple[float, float]] | None,
+    task_logger: Logger,
+) -> dict | None:
+    """Push the synthetic monitor fixture to SSM so the synthetic Lambda
+    can use it as a known-good request payload at check time.
+
+    Cities without a fixture configured get no SSM parameter, and the
+    synthetic monitor skips their routing API check.
+    """
+    if fixture is None:
+        task_logger.info("No synthetic fixture configured for %s; skipping", city)
+        return None
+
+    cfg = get_env(env, city)
+    origin, destination = fixture
+    payload = {
+        "origin": [origin[0], origin[1]],
+        "destination": [destination[0], destination[1]],
+    }
+    ssm_path = f"/loci-infra/{env}/{city}/synthetic/fixture"
+    ssm = get_boto_session(cfg).client("ssm")
+    ssm.put_parameter(
+        Name=ssm_path,
+        Value=json.dumps(payload),
+        Type="String",
+        Overwrite=True,
+    )
+    task_logger.info("Pushed synthetic fixture to %s", ssm_path)
+    return {"ssm_path": ssm_path, "fixture": payload}
