@@ -47,3 +47,9 @@ variable "response_headers_policy_id" {
   type        = string
   default     = null
 }
+
+variable "enable_cloudwatch_metrics" {
+  description = "Whether to emit CloudWatch custom metrics and create per-target alarms. Should be true for prod only."
+  type        = bool
+  default     = false
+}

@@ -159,6 +159,7 @@ module "synthetic_monitor" {
   alarm_sns_topic_arn        = aws_sns_topic.alerts.arn
   basic_auth_function_arn    = local.basic_auth_function_arn
   response_headers_policy_id = local.response_headers_policy_id
+  enable_cloudwatch_metrics  = var.environment == "prod"
 }
 
 # -----------------------------------------------------------------------------

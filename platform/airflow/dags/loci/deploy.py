@@ -7,7 +7,7 @@ import boto3
 
 
 def upload_file_to_s3(
-    local_path: Path,
+    local_path: str | Path,
     bucket: str,
     key: str,
     logger: logging.Logger | None = None,

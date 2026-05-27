@@ -86,6 +86,17 @@ resource "aws_iam_role_policy" "synthetic_monitor" {
           "arn:aws:ssm:*:*:parameter/${var.basename}/${var.environment}/non-prod-auth/credentials",
         ]
       },
+      {
+        Sid      = "EmitMetrics"
+        Effect   = "Allow"
+        Action   = "cloudwatch:PutMetricData"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "LociInfra/SyntheticMonitor"
+          }
+        }
+      },
     ]
   })
 }
@@ -127,6 +138,7 @@ resource "aws_lambda_function" "synthetic_monitor" {
       STATIC_SITE_TARGETS = jsonencode(local.static_site_targets)
       ROUTING_API_TARGETS = jsonencode(local.routing_api_targets)
       BASIC_AUTH_SSM_PATH = var.lockdown_non_prod ? "/${var.basename}/${var.environment}/non-prod-auth/credentials" : ""
+      ENABLE_CLOUDWATCH_METRICS = var.enable_cloudwatch_metrics ? "true" : "false"
     }
   }
 
@@ -437,3 +449,42 @@ resource "aws_route53_record" "dashboard" {
   }
 }
 
+
+# -----------------------------------------------------------------------------
+# Phase 3: per-target availability alarms
+#
+# In prod only, one alarm per monitored target. Fires if any check in
+# the last 2 hours has returned 0 (failed). treat_missing_data is
+# "notBreaching" — Lambda-itself failures are caught by the separate
+# synthetic_lambda_errors alarm from Phase 1.
+# -----------------------------------------------------------------------------
+
+locals {
+  alarm_target_names = var.enable_cloudwatch_metrics ? toset(concat(
+    [for t in local.static_site_targets : t.name],
+    [for t in local.routing_api_targets : t.name],
+  )) : toset([])
+}
+
+resource "aws_cloudwatch_metric_alarm" "availability" {
+  for_each = local.alarm_target_names
+
+  alarm_name          = "${var.basename}-${var.environment}-synthetic-${each.key}-down"
+  alarm_description   = "Synthetic monitor target ${each.key} has had failures in the last 2 hours."
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 24
+  metric_name         = "Availability"
+  namespace           = "LociInfra/SyntheticMonitor"
+  period              = 300
+  statistic           = "Minimum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    Environment = var.environment
+    Target      = each.key
+  }
+
+  alarm_actions = [var.alarm_sns_topic_arn]
+  ok_actions    = [var.alarm_sns_topic_arn]
+}

@@ -22,6 +22,7 @@ import boto3
 
 s3 = boto3.client("s3")
 ssm = boto3.client("ssm")
+cloudwatch = boto3.client("cloudwatch")
 
 CHECK_TIMEOUT_SECONDS = 10
 SSM_CACHE: dict[str, str] = {}
@@ -192,6 +193,30 @@ def lambda_handler(event, context):
         ContentType="application/json",
         CacheControl="no-cache, max-age=0",
     )
+
+    # Emit CloudWatch custom metrics if enabled. Done in a try/except so a
+    # metric-emission failure doesn't kill the whole check run — the
+    # status.json is the primary output, metrics are secondary.
+    if os.environ.get("ENABLE_CLOUDWATCH_METRICS") == "true":
+        try:
+            cloudwatch.put_metric_data(
+                Namespace="LociInfra/SyntheticMonitor",
+                MetricData=[
+                    {
+                        "MetricName": "Availability",
+                        "Dimensions": [
+                            {"Name": "Environment", "Value": environment},
+                            {"Name": "Target", "Value": r["name"]},
+                        ],
+                        "Value": 1.0 if r["status"] == "ok" else 0.0,
+                        "Unit": "None",
+                    }
+                    for r in results
+                    if r["status"] != "skipped"
+                ],
+            )
+        except Exception as e:
+            print(f"Failed to emit CloudWatch metrics: {e}")
 
     return {
         "checks_run": len(results),

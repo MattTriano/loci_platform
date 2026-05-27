@@ -92,6 +92,12 @@ class CityBuildSpec:
 
 @task
 def install_dependencies(env: str) -> str:
+    from airflow.sdk import get_current_context
+
+    if get_current_context()["params"].get("skip_deps", False):
+        task_logger.info("skip_deps=True; dbt deps assumed installed by parent DAG")
+        return "skipped"
+
     target = get_env(env, _city_from_context()).dbt_target
     return run_dbt("deps", target=target)
 
@@ -293,4 +299,14 @@ def standard_dag_params(city: str) -> dict:
             description="Which AWS account + dbt target to build and deploy to.",
         ),
         "city": Param(city, type="string", const=city),
+        "skip_deps": Param(
+            False,
+            type="boolean",
+            title="Skip dbt deps",
+            description=(
+                "Skip the install_dependencies task. Set automatically by the controller "
+                "DAG (refresh_bike_map_all) so concurrent children don't race each other "
+                "wiping and reinstalling dbt_packages/. Leave False for normal single-city runs."
+            ),
+        ),
     }
