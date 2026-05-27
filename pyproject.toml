@@ -55,7 +55,7 @@ testpaths = ["platform/tests"]
 exclude = ["**/*.ipynb"]
 
 [tool.ty.environment]
-extra-paths = ["platform", "platform/airflow/plugins"]
+extra-paths = ["platform", "platform/airflow/dags"]
 
 [tool.ty.rules]
 # These are already errors by default, but you can be explicit:
