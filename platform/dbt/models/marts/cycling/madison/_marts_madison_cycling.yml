@@ -46,18 +46,6 @@ models:
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 1.0
-      - name: road_type_factor
-        data_tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              arguments:
-                min_value: 1.0
-      - name: infrastructure_factor
-        data_tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              arguments:
-                min_value: 1.0
       - name: tunnel_factor
         data_tests:
           - not_null
@@ -81,7 +69,7 @@ models:
           - not_null
           - dbt_utils.accepted_range:
               arguments:
-                min_value: 0
+                min_value: length_m
       - name: infra_category
         data_tests:
           - accepted_values:
@@ -126,25 +114,6 @@ models:
                   - turning_circle
                   - turning_loop
                 quote: true
-      - name: max_road_class
-        description: Worst road class among car-carrying ways at this node.
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values:
-                  - primary
-                  - secondary
-                  - tertiary
-                  - minor
-      - name: max_road_rank
-        description: Numeric form of max_road_class (1-4).
-        data_tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              arguments:
-                min_value: 1
-                max_value: 4
       - name: intersection_cost
         description: Stress cost added to a route for traversing through this intersection.
         data_tests:

@@ -3,31 +3,32 @@
     one a stress penalty representing the cost of a cyclist traversing it.
 
     A "logical intersection" is a node where at least two distinct OSM ways meet
-    AND at least one of those ways carries cars. This captures the places where a
-    cyclist's path crosses or merges with car traffic, which is the underlying
-    stressor we want to penalize.
-
-    Explicitly excluded:
-      - Mid-block pedestrian crossings (only one way touches the node)
-      - Cycleway-to-cycleway or path-to-path junctions (no car traffic)
-      - Cul-de-sac endpoints, turning circles, turning loops
-      - Mid-segment graph-split nodes
+    AND at least one of those ways carries cars.
 
     Penalty design:
-      - Direction-symmetric: the penalty is a property of the node, not
-          the path through it. Turn-specific costs are handled separately
-          in the routing algorithm.
-      - Higher road class -> higher penalty (more/faster cars to cross).
-      - Better traffic control -> lower penalty.
+      - Each car-carrying leg has a base cost determined by its road class
+          (primary, secondary, tertiary/busway, unclassified, residential, service).
+      - Per node, we take the worst leg's base cost at full weight and add a
+          fraction (alpha) of the sum of the remaining car-carrying legs' base
+          costs. This captures the worst-stream-dominates intuition while still
+          recognizing that more car streams = more stress.
+      - A traffic-control multiplier scales the result downward when there is
+          signalization or other control reducing the burden on the cyclist.
+      - Direction-symmetric: the penalty is a property of the node, not the
+          path through it. Turn-specific costs are handled separately in the
+          routing algorithm.
 
     Joined into <city>_bike_stress_weighted_segments on end_node_id.
-
 #}
 {% macro generate_stg_city_intersection_costs_model(city) %}
+
+{# Weight applied to non-worst car-carrying legs. #}
+{% set alpha = 0.3 %}
+
 -- =====================================================================
--- Ways meeting at each node, with each way's highway class and a flag
--- for whether it carries cars. Distinct on (node, way) so a self-loop
--- counts a way only once.
+-- Each (node, way) pair, with the way's base cost if it carries cars.
+-- Non-car-carrying ways get NULL base_cost; they still count toward
+-- way_count but contribute nothing to the cost arithmetic.
 -- =====================================================================
 with ways_at_node as (
     select distinct
@@ -35,42 +36,34 @@ with ways_at_node as (
         wn.way_id,
         w.highway,
         case
-            when w.highway in (
-                'primary', 'primary_link',
-                'secondary', 'secondary_link',
-                'tertiary', 'tertiary_link',
-                'unclassified', 'residential', 'service', 'busway'
-            ) then true
-            when w.highway like '%primary%'     then true
-            when w.highway like '%secondary%'   then true
-            when w.highway like '%tertiary%'    then true
-            when w.highway like '%residential%' then true
-            else false
-        end as is_car_carrying
+            when w.highway in ('primary', 'primary_link')
+                or w.highway like '%primary%'                   then 600.0
+            when w.highway in ('secondary', 'secondary_link')
+                or w.highway like '%secondary%'                 then 400.0
+            when w.highway in ('tertiary', 'tertiary_link', 'busway')
+                or w.highway like '%tertiary%'                  then 250.0
+            when w.highway = 'unclassified'                     then 220.0
+            when w.highway in ('residential')
+                or w.highway like '%residential%'               then 70.0
+            when w.highway = 'service'                          then 40.0
+            else                                                     null
+        end as leg_base_cost
     from {{ ref('stg_' ~ city ~ '_way_nodes') }} as wn
     inner join {{ ref('stg_' ~ city ~ '_bike_ways') }} as w
         on w.osm_id = wn.way_id
 ),
 -- =====================================================================
--- Per-node summary: how many distinct ways meet, and the worst road
--- class among the *car-carrying* ways. Nodes with no car-carrying way
--- get max_road_rank = NULL and are filtered out next.
+-- Per-node summary: distinct way count, car-carrying leg count, and the
+-- worst-leg base cost plus the sum of the remaining car-carrying legs.
 -- =====================================================================
 node_summary as (
     select
         node_id,
         count(*) as way_count,
-        max(case when is_car_carrying then
-            case
-                when highway in ('primary', 'primary_link')
-                    or highway like '%primary%'         then 4
-                when highway in ('secondary', 'secondary_link')
-                    or highway like '%secondary%'       then 3
-                when highway in ('tertiary', 'tertiary_link')
-                    or highway like '%tertiary%'        then 2
-                else                                         1
-            end
-        end) as max_road_rank
+        count(leg_base_cost) as car_way_count,
+        coalesce(max(leg_base_cost), 0) as worst_leg_base_cost,
+        coalesce(sum(leg_base_cost), 0)
+            - coalesce(max(leg_base_cost), 0) as other_legs_base_cost_sum
     from ways_at_node
     group by node_id
 ),
@@ -80,27 +73,34 @@ node_summary as (
 logical_intersections as (
     select
         node_id,
-        max_road_rank,
-        case max_road_rank
-            when 4 then 'primary'
-            when 3 then 'secondary'
-            when 2 then 'tertiary'
-            else        'minor'
-        end as max_road_class
+        way_count,
+        car_way_count,
+        worst_leg_base_cost,
+        other_legs_base_cost_sum
     from node_summary
     where way_count >= 2
-      and max_road_rank is not null
+      and car_way_count >= 1
 ),
 -- =====================================================================
--- Attach traffic control tag from the raw OSM nodes source.
--- Nodes missing from the source get NULL -> treated as uncontrolled.
+-- Attach traffic-control tag from the raw OSM nodes source and resolve
+-- the control multiplier. Missing nodes get NULL -> uncontrolled.
 -- =====================================================================
 nodes_with_control as (
     select
         li.node_id as osmid,
         n.tags->>'highway' as traffic_control,
-        li.max_road_rank,
-        li.max_road_class
+        li.way_count,
+        li.car_way_count,
+        li.worst_leg_base_cost,
+        li.other_legs_base_cost_sum,
+        case n.tags->>'highway'
+            when 'traffic_signals' then 0.4
+            when 'stop'            then 0.55
+            when 'mini_roundabout' then 0.55
+            when 'give_way'        then 0.7
+            when 'crossing'        then 0.8
+            else                        1.0
+        end as control_multiplier
     from logical_intersections as li
     left join {{ source('osm', city ~ '_osm_bike_network_nodes') }} as n
         on n.osm_type = 'node'
@@ -111,57 +111,13 @@ nodes_with_control as (
 select
     osmid,
     traffic_control,
-    max_road_rank,
-    max_road_class,
-    case
-        when traffic_control = 'traffic_signals' then
-            case max_road_class
-                when 'primary'   then 200.0
-                when 'secondary' then 100.0
-                when 'tertiary'  then 50.0
-                else                  25.0
-            end
-
-        when traffic_control = 'stop' then
-            case max_road_class
-                when 'primary'   then 250.0
-                when 'secondary' then 150.0
-                when 'tertiary'  then 75.0
-                else                  50.0
-            end
-
-        when traffic_control = 'mini_roundabout' then
-            case max_road_class
-                when 'primary'   then 250.0
-                when 'secondary' then 150.0
-                when 'tertiary'  then 75.0
-                else                  50.0
-            end
-
-        when traffic_control = 'give_way' then
-            case max_road_class
-                when 'primary'   then 325.0
-                when 'secondary' then 175.0
-                when 'tertiary'  then 100.0
-                else                  75.0
-            end
-
-        when traffic_control = 'crossing' then
-            case max_road_class
-                when 'primary'   then 350.0
-                when 'secondary' then 200.0
-                when 'tertiary'  then 125.0
-                else                  90.0
-            end
-
-        else
-            case max_road_class
-                when 'primary'   then 450.0
-                when 'secondary' then 250.0
-                when 'tertiary'  then 150.0
-                else                  100.0
-            end
-    end as intersection_cost
+    way_count,
+    car_way_count,
+    worst_leg_base_cost,
+    other_legs_base_cost_sum,
+    control_multiplier,
+    (worst_leg_base_cost + {{ alpha }} * other_legs_base_cost_sum)
+        * control_multiplier as intersection_cost
 
 from nodes_with_control
 

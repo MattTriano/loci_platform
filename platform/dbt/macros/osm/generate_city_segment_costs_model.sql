@@ -48,37 +48,37 @@ with factors as (
 
         -- Road type factor
         case
-            when s.highway in ('cycleway')                      then 1.0
-            when s.highway like '%cycleway%'                    then 1.0
-            when s.highway in ('path', 'footway', 'bridleway')  then 1.2
-            when s.highway like '%path%'                        then 1.2
-            when s.highway in ('pedestrian')                    then 1.5
-            when s.highway in ('living_street')                 then 3.0
-            when s.highway in ('residential')                   then 3.0
-            when s.highway like '%residential%'                 then 3.0
-            when s.highway in ('unclassified')                  then 3.5
-            when s.highway in ('busway')                        then 3.5
-            when s.highway in ('service')                       then 6.0
-            when s.highway in ('tertiary', 'tertiary_link')     then 5.5
-            when s.highway like '%tertiary%'                    then 5.5
-            when s.highway in ('secondary', 'secondary_link')   then 7.3
-            when s.highway like '%secondary%'                   then 7.3
-            when s.highway in ('primary', 'primary_link')       then 9.0
-            when s.highway like '%primary%'                     then 9.0
+            when s.highway in ('cycleway')                      then 0.5
+            when s.highway like '%cycleway%'                    then 0.5
+            when s.highway in ('path', 'footway', 'bridleway')  then 0.7
+            when s.highway like '%path%'                        then 0.7
+            when s.highway in ('pedestrian')                    then 0.8
+            when s.highway in ('living_street')                 then 1.3
+            when s.highway in ('residential')                   then 1.3
+            when s.highway like '%residential%'                 then 1.3
+            when s.highway in ('unclassified')                  then 2.5
+            when s.highway in ('busway')                        then 2.0
+            when s.highway in ('service')                       then 4.0
+            when s.highway in ('tertiary', 'tertiary_link')     then 3.0
+            when s.highway like '%tertiary%'                    then 3.0
+            when s.highway in ('secondary', 'secondary_link')   then 4.0
+            when s.highway like '%secondary%'                   then 4.0
+            when s.highway in ('primary', 'primary_link')       then 5.0
+            when s.highway like '%primary%'                     then 5.0
             else 1.3
         end as road_type_factor,
 
         -- Infrastructure factor
         case
-            when s.infra_type = 'protected_lane'    then 1.0
-            when s.infra_type = 'track'             then 1.0
-            when s.infra_type = 'shared_path'       then 1.3
-            when s.infra_type = 'buffered_lane'     then 1.5
-            when s.infra_type = 'designated_path'   then 1.5
-            when s.infra_type = 'bicycle_road'      then 1.7
-            when s.infra_type = 'bike_lane'         then 1.85
-            when s.infra_type = 'share_busway'      then 2.0
-            when s.infra_type = 'sharrow'           then 2.0
+            when s.infra_type = 'protected_lane'    then 0.6
+            when s.infra_type = 'track'             then 0.6
+            when s.infra_type = 'shared_path'       then 0.8
+            when s.infra_type = 'buffered_lane'     then 1.0
+            when s.infra_type = 'designated_path'   then 1.0
+            when s.infra_type = 'bicycle_road'      then 1.2
+            when s.infra_type = 'bike_lane'         then 1.3
+            when s.infra_type = 'share_busway'      then 1.5
+            when s.infra_type = 'sharrow'           then 1.5
             else 2.5
         end as infrastructure_factor,
 
@@ -160,14 +160,16 @@ select
     surface_factor,
     lighting_factor,
 
-    length_m
-        * speed_factor
-        * road_type_factor
-        * infrastructure_factor
-        * tunnel_factor
-        * surface_factor
-        * lighting_factor
-        as physical_cost
+    length_m * (
+        1 + (
+            speed_factor
+            * road_type_factor
+            * infrastructure_factor
+            * tunnel_factor
+            * surface_factor
+            * lighting_factor
+        )
+    ) as physical_cost
 
 from factors
 
