@@ -1,21 +1,24 @@
 {#
-    Final stress-weighted bike segments. Joins per-segment cost
-    components and sums them into a single stress_cost per segment.
+    Final stress-weighted bike segments. Joins per-segment cost components
+    plus the intersection costs at *both* endpoints.
 
-    Cost formula:
-      stress_cost = physical_cost + crash_cost + intersection_cost
+    Cost composition:
+      The exporter assembles per-direction stress when building each
+      directed edge:
+        forward edge:  physical_cost + crash_cost + intersection_cost_at_end
+        backward edge: physical_cost + crash_cost + intersection_cost_at_start
 
-    Each component model owns its own multiplications. This model just
-    joins and adds.
+      This model does NOT compose a single `stress_cost` column — there's
+      no honest direction-symmetric value to put there. Segment-level cost
+      is `physical_cost + crash_cost`; intersection cost is exposed per
+      endpoint and selected by the exporter based on traversal direction.
 
     Sources:
       - <city>_segment_costs (always)
       - <city>_segment_crash_costs (when include_crashes=true)
-      - <city>_intersection_costs (always; joined on end_node_id)
+      - <city>_intersection_costs (always; joined twice, on start and end)
 
-    Grain: one row per segment (segment_id). Direction-symmetric: forward
-    and backward traversal share the same stress_cost. The graph
-    exporter handles direction.
+    Grain: one row per segment (segment_id).
 
     Parameters:
       city: city name.
@@ -73,13 +76,13 @@ select
     sc.cycleway_left,
     sc.cycleway_right,
 
-    -- Physical factors (preserved for tuning)
-    sc.speed_factor,
-    sc.road_type_factor,
-    sc.infrastructure_factor,
-    sc.tunnel_factor,
-    sc.surface_factor,
-    sc.lighting_factor,
+    -- Cost classification (preserved for tuning)
+    sc.highway_class,
+    sc.infra_tier,
+    sc.base_stress_per_meter,
+    sc.surface_penalty,
+    sc.tunnel_penalty,
+    sc.lighting_penalty,
 
     -- Cost components
     sc.physical_cost,
@@ -92,18 +95,25 @@ select
     0 as crash_score,
     0 as crash_cost,
     {% endif %}
-    coalesce(ic.intersection_cost, 0) as intersection_cost,
 
-    -- Final composition
-    sc.physical_cost
-        {% if include_crashes %}+ coalesce(cc.crash_cost, 0){% endif %}
-        + coalesce(ic.intersection_cost, 0)
-        as stress_cost
+    -- Intersection costs at both endpoints. The exporter selects the
+    -- right one per direction. NULL endpoints (nodes that aren't
+    -- logical intersections) default to 0.
+    coalesce(ic_start.intersection_cost, 0) as intersection_cost_at_start,
+    coalesce(ic_end.intersection_cost,   0) as intersection_cost_at_end,
+
+    -- Whether each endpoint is a logical intersection (used by the
+    -- graph exporter to populate WriteNode.is_intersection without
+    -- re-deriving from degree on the Rust side). True iff the node
+    -- appears in <city>_intersection_costs.
+    ic_start.osmid is not null as start_is_intersection,
+    ic_end.osmid   is not null as end_is_intersection
 
 from segment_costs sc
 {% if include_crashes %}
 left join crash_costs cc on cc.segment_id = sc.segment_id
 {% endif %}
-left join intersection_costs ic on ic.osmid = sc.end_node_id
+left join intersection_costs ic_start on ic_start.osmid = sc.start_node_id
+left join intersection_costs ic_end   on ic_end.osmid   = sc.end_node_id
 
 {% endmacro %}

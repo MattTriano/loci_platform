@@ -81,22 +81,29 @@ class CityPipelineBuilder(abc.ABC):
         self,
         city: str,
         overwrite: bool = False,
+        overwrite_tests: bool = False,
         fmt_kwargs: dict | None = None,
         staging_models: dict[str, str] | None = None,
         marts_models: dict[str, str] | None = None,
     ) -> list[Path]:
         """Write all pipeline files for a city.
 
-        Existing .sql files are skipped (unless overwrite=True). Yml files
-        are merged into — model entries already present are left untouched.
+        Existing .sql files are skipped (unless overwrite=True). Yml model
+        entries are merged: entries already present are left untouched unless
+        overwrite_tests=True, in which case entries whose name matches a
+        spec are replaced in-place. Entries for unrelated models are always
+        preserved.
 
         Args:
             city: city name.
             overwrite: when True, overwrite existing .sql files.
-            fmt_kwargs: extra keyword args for str.format() on each SQL template
-                (in addition to `city`, which is always passed).
-            staging_models: overrides cls.STAGING_MODELS. Use when the
-                subclass needs to add/remove models conditionally.
+            overwrite_tests: when True, replace existing yml model entries
+                whose name matches a spec in STAGING_TESTS / MARTS_TESTS.
+                Use this when the test spec has structurally changed (e.g.
+                a column rename) and you need to re-roll a city's yml.
+            fmt_kwargs: extra keyword args for str.format() on each SQL
+                template (in addition to `city`, which is always passed).
+            staging_models: overrides cls.STAGING_MODELS.
             marts_models: overrides cls.MARTS_MODELS.
 
         Returns:
@@ -125,10 +132,14 @@ class CityPipelineBuilder(abc.ABC):
         marts_yml = marts_dir / f"_marts_{city}_{self.DOMAIN}.yml"
 
         if self.STAGING_TESTS:
-            if path := self._ensure_yml_tests(staging_yml, self.STAGING_TESTS, city):
+            if path := self._ensure_yml_tests(
+                staging_yml, self.STAGING_TESTS, city, overwrite_tests=overwrite_tests
+            ):
                 written.append(path)
         if self.MARTS_TESTS:
-            if path := self._ensure_yml_tests(marts_yml, self.MARTS_TESTS, city):
+            if path := self._ensure_yml_tests(
+                marts_yml, self.MARTS_TESTS, city, overwrite_tests=overwrite_tests
+            ):
                 written.append(path)
 
         # Source registration
@@ -176,12 +187,19 @@ class CityPipelineBuilder(abc.ABC):
         yml_path: Path,
         test_specs: list[dict],
         city: str,
+        overwrite_tests: bool = False,
     ) -> Path | None:
         """Ensure a per-pipeline test yml has model entries for each spec.
 
-        If the yml doesn't exist, it's created with all entries. If it does,
-        only entries that aren't already present are added — existing ones
-        are left untouched.
+        If the yml doesn't exist, it's created with all entries.
+
+        If it does exist:
+          - Entries for models not in `test_specs` are left untouched
+            (preserves hand-edits for unrelated models).
+          - Entries whose name matches a spec are replaced in-place when
+            `overwrite_tests=True`. When False (default), they're left
+            untouched.
+          - Specs with no matching entry are appended.
 
         Returns the yml path if changed, or None if no changes were needed.
         """
@@ -196,15 +214,25 @@ class CityPipelineBuilder(abc.ABC):
 
         data.setdefault("version", 2)
         models = data.setdefault("models", [])
-        existing_names = {m["name"] for m in models if isinstance(m, dict) and "name" in m}
 
-        added = False
+        # Index existing entries by name for both lookup and in-place
+        # replacement.
+        existing_idx_by_name: dict[str, int] = {
+            m["name"]: i for i, m in enumerate(models) if isinstance(m, dict) and "name" in m
+        }
+
+        changed = False
         for spec in rendered_specs:
-            if spec["name"] not in existing_names:
+            existing_idx = existing_idx_by_name.get(spec["name"])
+            if existing_idx is None:
                 models.append(spec)
-                added = True
+                changed = True
+            elif overwrite_tests:
+                models[existing_idx] = spec
+                changed = True
+            # else: existing entry present, leave it alone
 
-        if not added and yml_path.exists():
+        if not changed and yml_path.exists():
             return None
 
         yml_path.write_text(
@@ -474,8 +502,10 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
         {
             "name": "{city}_segment_costs",
             "description": (
-                "Per-segment intrinsic stress costs from OSM physical attributes "
-                "(highway class, infrastructure, surface, lighting, tunnel)."
+                "Per-segment intrinsic stress costs from OSM physical attributes. "
+                "physical_cost = length_m * (base_stress_per_meter + surface_penalty "
+                "+ tunnel_penalty + lighting_penalty), where base_stress_per_meter "
+                "is at least 1.0 — so physical_cost is always at least length_m."
             ),
             "data_tests": [
                 {
@@ -485,8 +515,10 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                 },
                 {
                     "dbt_utils.expression_is_true": {
-                        "arguments": {"expression": "physical_cost >= 0"},
-                        "config": {"name": "{city}_segment_costs_physical_cost_non_negative"},
+                        "arguments": {"expression": "physical_cost >= length_m"},
+                        "config": {
+                            "name": "{city}_segment_costs_physical_cost_at_least_length",
+                        },
                     },
                 },
                 {
@@ -513,45 +545,77 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                 },
                 {"name": "geom", "data_tests": ["not_null"]},
                 {
-                    "name": "speed_factor",
+                    "name": "highway_class",
+                    "description": ("Bucketed OSM highway value. Drives base_stress_per_meter."),
+                    "data_tests": [
+                        "not_null",
+                        {
+                            "accepted_values": {
+                                "arguments": {
+                                    "values": [
+                                        "quiet",
+                                        "service",
+                                        "local",
+                                        "tertiary",
+                                        "secondary",
+                                        "primary",
+                                        "motorway",
+                                    ],
+                                },
+                            },
+                        },
+                    ],
+                },
+                {
+                    "name": "infra_tier",
+                    "description": ("Bucketed bike-infra quality. Drives base_stress_per_meter."),
+                    "data_tests": [
+                        "not_null",
+                        {
+                            "accepted_values": {
+                                "arguments": {
+                                    "values": [
+                                        "protected",
+                                        "lane",
+                                        "shared_path",
+                                        "sharrow",
+                                        "none",
+                                    ],
+                                },
+                            },
+                        },
+                    ],
+                },
+                {
+                    "name": "base_stress_per_meter",
+                    "description": (
+                        "Per-meter stress cost from the (highway_class, infra_tier) "
+                        "lookup. Minimum 1.0 (cycleway / quiet path)."
+                    ),
                     "data_tests": [
                         "not_null",
                         {"dbt_utils.accepted_range": {"arguments": {"min_value": 1.0}}},
                     ],
                 },
                 {
-                    "name": "road_type_factor",
+                    "name": "surface_penalty",
                     "data_tests": [
                         "not_null",
-                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 1.0}}},
+                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 0.0}}},
                     ],
                 },
                 {
-                    "name": "infrastructure_factor",
+                    "name": "tunnel_penalty",
                     "data_tests": [
                         "not_null",
-                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 1.0}}},
+                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 0.0}}},
                     ],
                 },
                 {
-                    "name": "tunnel_factor",
+                    "name": "lighting_penalty",
                     "data_tests": [
                         "not_null",
-                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 1.0}}},
-                    ],
-                },
-                {
-                    "name": "surface_factor",
-                    "data_tests": [
-                        "not_null",
-                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 1.0}}},
-                    ],
-                },
-                {
-                    "name": "lighting_factor",
-                    "data_tests": [
-                        "not_null",
-                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 1.0}}},
+                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 0.0}}},
                     ],
                 },
                 {
@@ -579,10 +643,12 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
         {
             "name": "{city}_intersection_costs",
             "description": (
-                "Logical bike-network intersections with stress penalties. A row "
-                "exists for each node where >= 2 distinct OSM ways meet AND >= 1 "
-                "of those ways carries cars. Joined into "
-                "{city}_bike_stress_weighted_segments on end_node_id."
+                "Logical bike-network intersections with stress penalties. One row per "
+                "node where >= 2 distinct OSM ways meet. The cost depends on the top "
+                "two way classes meeting at the node and the traffic-control tag. "
+                "Joined into {city}_bike_stress_weighted_segments on BOTH endpoints "
+                "(start_node_id and end_node_id) so the graph exporter can pick the "
+                "right one per traversal direction."
             ),
             "columns": [
                 {
@@ -625,52 +691,102 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                                     ],
                                     "quote": True,
                                 },
+                                "config": {"severity": "warn"},
                             },
                         },
                     ],
                 },
                 {
-                    "name": "max_road_class",
-                    "description": "Worst road class among car-carrying ways at this node.",
+                    "name": "max_class",
+                    "description": (
+                        "Highest stress class among the ways meeting at this node. "
+                        "Drives the base intersection cost lookup."
+                    ),
                     "data_tests": [
                         "not_null",
                         {
                             "accepted_values": {
                                 "arguments": {
-                                    "values": ["primary", "secondary", "tertiary", "minor"],
+                                    "values": [
+                                        "motorway",
+                                        "primary",
+                                        "secondary",
+                                        "tertiary",
+                                        "local",
+                                        "service",
+                                        "quiet",
+                                    ],
                                 },
                             },
                         },
                     ],
                 },
                 {
-                    "name": "max_road_rank",
-                    "description": "Numeric form of max_road_class (1-4).",
+                    "name": "second_max_class",
+                    "description": (
+                        "Second-highest stress class. Used as a tie-break override "
+                        "for local-and-below intersections (e.g. local x service "
+                        "is cheaper than local x local)."
+                    ),
                     "data_tests": [
                         "not_null",
                         {
-                            "dbt_utils.accepted_range": {
-                                "arguments": {"min_value": 1, "max_value": 4},
+                            "accepted_values": {
+                                "arguments": {
+                                    "values": [
+                                        "motorway",
+                                        "primary",
+                                        "secondary",
+                                        "tertiary",
+                                        "local",
+                                        "service",
+                                        "quiet",
+                                    ],
+                                },
                             },
                         },
                     ],
                 },
                 {
+                    "name": "way_count",
+                    "description": "Number of distinct ways meeting at this node.",
+                    "data_tests": [
+                        "not_null",
+                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 2}}},
+                    ],
+                },
+                {
+                    "name": "base_cost",
+                    "description": (
+                        "Base intersection cost from the (max_class, second_max_class) "
+                        "lookup, before applying the traffic-control multiplier."
+                    ),
+                    "data_tests": [
+                        "not_null",
+                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 0}}},
+                    ],
+                },
+                {
                     "name": "intersection_cost",
                     "description": (
-                        "Stress cost added to a route for traversing through this intersection."
+                        "Final intersection cost = base_cost * traffic_control_multiplier."
                     ),
-                    "data_tests": ["not_null"],
+                    "data_tests": [
+                        "not_null",
+                        {"dbt_utils.accepted_range": {"arguments": {"min_value": 0}}},
+                    ],
                 },
             ],
         },
         {
             "name": "{city}_bike_stress_weighted_segments",
             "description": (
-                "Stress-weighted directed segments for bike routing. One row per "
-                "directed edge (u, v, key). stress_cost is the primary routing "
-                "weight, combining length, speed, infrastructure, surface, "
-                "lighting, crash history, and traffic control penalties."
+                "Stress-weighted segments for bike routing. One row per undirected "
+                "segment; direction is carried as a column. Exposes physical_cost, "
+                "crash_cost, and intersection costs at BOTH endpoints. The graph "
+                "exporter composes per-direction stress when expanding each row into "
+                "one or two directed edges (forward edges pay intersection_cost_at_end; "
+                "backward edges pay intersection_cost_at_start)."
             ),
             "data_tests": [
                 {
@@ -686,8 +802,10 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                 },
                 {
                     "dbt_utils.expression_is_true": {
-                        "arguments": {"expression": "stress_cost >= 0"},
-                        "config": {"name": "{city}_stress_cost_non_negative"},
+                        "arguments": {"expression": "physical_cost >= length_m"},
+                        "config": {
+                            "name": "{city}_stress_weighted_physical_cost_at_least_length",
+                        },
                     },
                 },
                 {
@@ -697,12 +815,29 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                     },
                 },
                 {
+                    "dbt_utils.expression_is_true": {
+                        "arguments": {"expression": "intersection_cost_at_start >= 0"},
+                        "config": {
+                            "name": "{city}_intersection_cost_at_start_non_negative",
+                        },
+                    },
+                },
+                {
+                    "dbt_utils.expression_is_true": {
+                        "arguments": {"expression": "intersection_cost_at_end >= 0"},
+                        "config": {
+                            "name": "{city}_intersection_cost_at_end_non_negative",
+                        },
+                    },
+                },
+                {
                     "dbt_utils.equal_rowcount": {
                         "arguments": {"compare_model": "ref('stg_{city}_bike_segments')"},
                     },
                 },
             ],
             "columns": [
+                {"name": "segment_id", "data_tests": ["not_null", "unique"]},
                 {"name": "start_node_id", "data_tests": ["not_null"]},
                 {"name": "end_node_id", "data_tests": ["not_null"]},
                 {"name": "way_id", "data_tests": ["not_null"]},
@@ -717,14 +852,42 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                         },
                     ],
                 },
-                {"name": "stress_cost", "data_tests": ["not_null"]},
-                {"name": "speed_factor", "data_tests": ["not_null"]},
-                {"name": "infrastructure_factor", "data_tests": ["not_null"]},
-                {"name": "surface_factor", "data_tests": ["not_null"]},
-                {"name": "lighting_factor", "data_tests": ["not_null"]},
-                {"name": "crash_cost", "data_tests": ["not_null"]},
-                {"name": "intersection_cost", "data_tests": ["not_null"]},
                 {"name": "geom", "data_tests": ["not_null"]},
+                {"name": "physical_cost", "data_tests": ["not_null"]},
+                {"name": "crash_cost", "data_tests": ["not_null"]},
+                {
+                    "name": "intersection_cost_at_start",
+                    "description": (
+                        "Intersection cost at the start of the segment. Paid by "
+                        "backward-direction edges (which approach the start)."
+                    ),
+                    "data_tests": ["not_null"],
+                },
+                {
+                    "name": "intersection_cost_at_end",
+                    "description": (
+                        "Intersection cost at the end of the segment. Paid by "
+                        "forward-direction edges (which approach the end)."
+                    ),
+                    "data_tests": ["not_null"],
+                },
+                {
+                    "name": "start_is_intersection",
+                    "description": (
+                        "True iff start_node_id appears in {city}_intersection_costs. "
+                        "Propagated through the graph format so the routing service "
+                        "doesn't have to re-derive it from edge degree."
+                    ),
+                    "data_tests": ["not_null"],
+                },
+                {
+                    "name": "end_is_intersection",
+                    "data_tests": ["not_null"],
+                },
+                {"name": "base_stress_per_meter", "data_tests": ["not_null"]},
+                {"name": "surface_penalty", "data_tests": ["not_null"]},
+                {"name": "tunnel_penalty", "data_tests": ["not_null"]},
+                {"name": "lighting_penalty", "data_tests": ["not_null"]},
             ],
         },
     ]
@@ -736,16 +899,22 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
         include_crashes: bool,
         include_all_sidewalks: bool,
         overwrite: bool = False,
+        overwrite_tests: bool = False,
     ) -> list[Path]:
         """Generate all dbt files for a city's bike-stress pipeline.
 
         Args:
             city: city name.
             include_crashes: when True, also writes <city>_segment_crash_costs
-                and tells the stress-weighted-segments macro to join crash costs.
+                and tells the stress-weighted-segments macro to join crash
+                costs.
             include_all_sidewalks: passed through to the bike_ways and
                 osm_bike_infra macros.
             overwrite: when True, overwrite existing .sql files.
+            overwrite_tests: when True, replace existing yml model entries
+                whose name matches an entry in STAGING_TESTS / MARTS_TESTS.
+                Use this to roll out a structural test-schema change (e.g.
+                the chunk 1 cost-model rework).
         """
         marts_models = dict(self.MARTS_MODELS_ALWAYS)
         if include_crashes:
@@ -754,6 +923,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
         return self._generate_pipeline(
             city=city,
             overwrite=overwrite,
+            overwrite_tests=overwrite_tests,
             fmt_kwargs={
                 "include_crashes": jinja_bool(include_crashes),
                 "include_all_sidewalks": jinja_bool(include_all_sidewalks),
