@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/find_route.rs
 //! Public routing entry point.
 //!
 //! Composes the A* result into a structured response matching the
@@ -14,7 +15,7 @@ use crate::turn_cost::compute_left_turn_penalty;
 /// Result of a successful routing query.
 ///
 /// Field names mirror the JSON keys produced by the Python Lambda for
-/// straightforward serialization in chunk 4 (CLI) and chunk 6 (Lambda).
+/// straightforward serialization.
 #[derive(Debug, Clone)]
 pub struct RouteResult {
     pub total_cost: f32,
@@ -26,8 +27,9 @@ pub struct RouteResult {
 
 #[derive(Debug, Clone)]
 pub struct RouteSegment {
-    /// (lon, lat) pairs ready for the frontend.
-    pub coordinates: Vec<(f32, f32)>,
+    /// (lon, lat) pairs ready for the frontend. f64 to match the graph
+    /// format's coordinate precision.
+    pub coordinates: Vec<(f64, f64)>,
     pub length_m: f32,
     pub stress_cost: f32,
     pub name: Option<String>,
@@ -39,12 +41,7 @@ pub struct RouteSegment {
 #[derive(Debug, Clone)]
 pub struct CostComponents {
     pub length_m: f32,
-    pub speed_factor: Option<f32>,
-    pub road_type_factor: Option<f32>,
-    pub infrastructure_factor: Option<f32>,
-    pub tunnel_factor: Option<f32>,
-    pub surface_factor: Option<f32>,
-    pub lighting_factor: Option<f32>,
+    pub physical_cost: f32,
     pub crash_cost: f32,
     pub intersection_cost: f32,
     pub left_turn_penalty: f32,
@@ -134,12 +131,7 @@ fn compose_result(g: &IndexedGraph, path: &[u32]) -> Result<RouteResult, FindRou
                 .map(str::to_owned),
             cost_components: CostComponents {
                 length_m: edge_length,
-                speed_factor: nan_to_option(edge.speed_factor),
-                road_type_factor: nan_to_option(edge.road_type_factor),
-                infrastructure_factor: nan_to_option(edge.infrastructure_factor),
-                tunnel_factor: nan_to_option(edge.tunnel_factor),
-                surface_factor: nan_to_option(edge.surface_factor),
-                lighting_factor: nan_to_option(edge.lighting_factor),
+                physical_cost: edge.physical_cost,
                 crash_cost: edge.crash_cost,
                 intersection_cost: edge.intersection_cost,
                 left_turn_penalty,
@@ -173,14 +165,13 @@ fn find_edge<'g>(g: &'g IndexedGraph, u: u32, v: u32) -> Option<&'g Edge> {
 /// Resolve segment geometry for an edge, reversing if the edge is the
 /// backward sibling. Falls back to a two-point straight line if no
 /// geometry is stored for the segment.
-fn segment_coords(g: &IndexedGraph, edge: &Edge, u: u32, v: u32) -> Vec<(f32, f32)> {
-    let geom = lookup_segment_geometry(g, edge.segment_id_str_idx);
-    match geom {
-        Some(coords) => {
+fn segment_coords(g: &IndexedGraph, edge: &Edge, u: u32, v: u32) -> Vec<(f64, f64)> {
+    match g.segment_geometry(edge.segment_id_str_idx) {
+        Some(sg) => {
             if edge.is_forward() {
-                coords.to_vec()
+                sg.coords.clone()
             } else {
-                let mut rev = coords.to_vec();
+                let mut rev = sg.coords.clone();
                 rev.reverse();
                 rev
             }
@@ -193,36 +184,19 @@ fn segment_coords(g: &IndexedGraph, edge: &Edge, u: u32, v: u32) -> Vec<(f32, f3
     }
 }
 
-/// Lookup the geometry for a given segment string index.
-///
-/// The segment-geometry table is typically small (~125k for Chicago),
-/// but linear scan would still be wasteful for response composition
-/// of long routes. Build a HashMap lazily? — no: the table is read
-/// once at startup. We could build an index inside `IndexedGraph` at
-/// `build` time.
-///
-/// For chunk 3 we keep it simple with a linear scan; the optimization
-/// is a one-line addition if it ever matters. Profile first.
-fn lookup_segment_geometry(g: &IndexedGraph, seg_idx: u32) -> Option<&[(f32, f32)]> {
-    g.graph
-        .segment_geometries
-        .iter()
-        .find(|s| s.segment_id_str_idx == seg_idx)
-        .map(|s| s.coords.as_slice())
-}
-
-fn nan_to_option(f: f32) -> Option<f32> {
-    if f.is_nan() {
-        None
-    } else {
-        Some(f)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::format::{Edge, Graph, Node, SegmentGeometry};
+
+    fn node(osm_id: u64, lon: f64, lat: f64) -> Node {
+        Node {
+            osm_id,
+            lon,
+            lat,
+            is_intersection: false,
+        }
+    }
 
     fn edge(target: u32, length: f32, stress: f32, seg_str_idx: u32, forward: bool) -> Edge {
         Edge {
@@ -234,13 +208,7 @@ mod tests {
             flags: if forward { 0b1 } else { 0 },
             length_m: length,
             stress_cost: stress,
-            speed_factor: f32::NAN,
-            road_type_factor: f32::NAN,
-            infrastructure_factor: f32::NAN,
-            tunnel_factor: f32::NAN,
-            surface_factor: f32::NAN,
-            lighting_factor: f32::NAN,
-            physical_cost: f32::NAN,
+            physical_cost: stress,
             intersection_cost: 0.0,
             crash_cost: 0.0,
         }
@@ -252,21 +220,9 @@ mod tests {
             heuristic_floor: 0.0,
             strings: vec!["seg_a".into(), "seg_b".into()],
             nodes: vec![
-                Node {
-                    osm_id: 100,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 200,
-                    lon: 0.0,
-                    lat: 0.001,
-                },
-                Node {
-                    osm_id: 300,
-                    lon: 0.0,
-                    lat: 0.002,
-                },
+                node(100, 0.0, 0.0),
+                node(200, 0.0, 0.001),
+                node(300, 0.0, 0.002),
             ],
             edges: vec![
                 edge(1, 100.0, 100.0, 0, true),
@@ -302,18 +258,7 @@ mod tests {
         let g = Graph {
             heuristic_floor: 0.0,
             strings: vec!["seg".into()],
-            nodes: vec![
-                Node {
-                    osm_id: 100,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 200,
-                    lon: 0.0,
-                    lat: 0.001,
-                },
-            ],
+            nodes: vec![node(100, 0.0, 0.0), node(200, 0.0, 0.001)],
             // Edge 0 → 1 is the backward sibling: geometry stored
             // 1→0, returned reversed.
             edges: vec![edge(1, 100.0, 100.0, 0, false)],
@@ -337,18 +282,7 @@ mod tests {
         let g = Graph {
             heuristic_floor: 0.0,
             strings: vec!["seg".into()],
-            nodes: vec![
-                Node {
-                    osm_id: 100,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 200,
-                    lon: 0.0,
-                    lat: 0.001,
-                },
-            ],
+            nodes: vec![node(100, 0.0, 0.0), node(200, 0.0, 0.001)],
             edges: vec![edge(1, 100.0, 100.0, 0, true)],
             csr_offsets: vec![0, 1, 1],
             segment_geometries: vec![], // none — fallback triggered
@@ -366,11 +300,7 @@ mod tests {
         let g = Graph {
             heuristic_floor: 0.0,
             strings: vec![],
-            nodes: vec![Node {
-                osm_id: 100,
-                lon: 0.0,
-                lat: 0.0,
-            }],
+            nodes: vec![node(100, 0.0, 0.0)],
             edges: vec![],
             csr_offsets: vec![0, 0],
             segment_geometries: vec![],
@@ -386,18 +316,7 @@ mod tests {
         let g = Graph {
             heuristic_floor: 0.0,
             strings: vec![],
-            nodes: vec![
-                Node {
-                    osm_id: 100,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 200,
-                    lon: 1.0,
-                    lat: 0.0,
-                },
-            ],
+            nodes: vec![node(100, 0.0, 0.0), node(200, 1.0, 0.0)],
             edges: vec![],
             csr_offsets: vec![0, 0, 0],
             segment_geometries: vec![],

@@ -32,7 +32,7 @@ from loci.exports.graph_format import (
 # Layout constants from the spec — used to compute offsets in tests.
 HEADER_SIZE = 16
 NODE_RECORD_SIZE = 32
-EDGE_RECORD_SIZE = 68
+EDGE_RECORD_SIZE = 44
 GEOM_COORD_SIZE = 16  # f64 lon + f64 lat
 
 
@@ -60,15 +60,9 @@ def _make_simple_writes():
             forward=True,
             length_m=100.0,
             stress_cost=250.0,
-            speed_factor=math.nan,
-            road_type_factor=math.nan,
-            infrastructure_factor=math.nan,
-            tunnel_factor=math.nan,
-            surface_factor=math.nan,
-            lighting_factor=math.nan,
-            physical_cost=math.nan,
-            intersection_cost=math.nan,
-            crash_cost=math.nan,
+            physical_cost=250.0,
+            intersection_cost=0.0,
+            crash_cost=0.0,
         ),
         # source 1 → target 2, S1, unnamed, residential, forward
         WriteEdge(
@@ -81,15 +75,9 @@ def _make_simple_writes():
             forward=True,
             length_m=80.0,
             stress_cost=200.0,
-            speed_factor=math.nan,
-            road_type_factor=math.nan,
-            infrastructure_factor=math.nan,
-            tunnel_factor=math.nan,
-            surface_factor=math.nan,
-            lighting_factor=math.nan,
-            physical_cost=math.nan,
-            intersection_cost=math.nan,
-            crash_cost=math.nan,
+            physical_cost=200.0,
+            intersection_cost=0.0,
+            crash_cost=0.0,
         ),
         # source 1 → target 0, S0 backward sibling
         WriteEdge(
@@ -102,15 +90,9 @@ def _make_simple_writes():
             forward=False,
             length_m=100.0,
             stress_cost=250.0,
-            speed_factor=math.nan,
-            road_type_factor=math.nan,
-            infrastructure_factor=math.nan,
-            tunnel_factor=math.nan,
-            surface_factor=math.nan,
-            lighting_factor=math.nan,
-            physical_cost=math.nan,
-            intersection_cost=math.nan,
-            crash_cost=math.nan,
+            physical_cost=250.0,
+            intersection_cost=0.0,
+            crash_cost=0.0,
         ),
         # source 2 → target 0, S2 forward
         WriteEdge(
@@ -123,15 +105,9 @@ def _make_simple_writes():
             forward=True,
             length_m=60.0,
             stress_cost=150.0,
-            speed_factor=math.nan,
-            road_type_factor=math.nan,
-            infrastructure_factor=math.nan,
-            tunnel_factor=math.nan,
-            surface_factor=math.nan,
-            lighting_factor=math.nan,
-            physical_cost=math.nan,
-            intersection_cost=math.nan,
-            crash_cost=math.nan,
+            physical_cost=150.0,
+            intersection_cost=0.0,
+            crash_cost=0.0,
         ),
     ]
     geoms = [
@@ -215,8 +191,8 @@ def test_node_table_layout():
         cursor += NODE_RECORD_SIZE
 
 
-def test_edge_table_records_are_68_bytes():
-    """Edge record size is unchanged in v2 — only nodes and geometry coords grew."""
+def test_edge_table_records_are_44_bytes():
+    """Edge record shrank to 44 bytes in v2 — the six legacy factor fields were removed."""
     strings, nodes, edges, geoms = _make_simple_writes()
     payload = _write_to_bytes(strings, nodes, edges, geoms)
 
@@ -237,6 +213,9 @@ def test_edge_table_records_are_68_bytes():
         padding = record[21:24]
         length = struct.unpack_from("<f", record, 24)[0]
         stress = struct.unpack_from("<f", record, 28)[0]
+        physical = struct.unpack_from("<f", record, 32)[0]
+        intersection = struct.unpack_from("<f", record, 36)[0]
+        crash = struct.unpack_from("<f", record, 40)[0]
 
         assert padding == b"\x00\x00\x00", "edge padding must be zero"
         assert flags & 0b1111_1110 == 0, "reserved edge flag bits must be zero"
@@ -248,6 +227,9 @@ def test_edge_table_records_are_68_bytes():
         assert bool(flags & EDGE_FLAG_FORWARD) == expected.forward
         assert length == pytest.approx(expected.length_m, rel=1e-5)
         assert stress == pytest.approx(expected.stress_cost, rel=1e-5)
+        assert physical == pytest.approx(expected.physical_cost, rel=1e-5)
+        assert intersection == pytest.approx(expected.intersection_cost, rel=1e-5)
+        assert crash == pytest.approx(expected.crash_cost, rel=1e-5)
         cursor += EDGE_RECORD_SIZE
 
 

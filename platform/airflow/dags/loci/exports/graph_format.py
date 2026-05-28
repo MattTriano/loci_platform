@@ -13,7 +13,11 @@ Format v2 changes from v1:
   - Node coordinates promoted from f32 to f64.
   - Node record gains an is_intersection u8 flag and padding to 32 bytes.
   - Segment geometry coordinates promoted from f32 to f64.
-The header, string table, edge table, and CSR offsets are unchanged.
+  - Edge record drops the six legacy multiplicative factor fields
+    (speed/road_type/infrastructure/tunnel/surface/lighting), shrinking
+    from 68 to 44 bytes. The additive cost model that replaced them
+    keeps only physical_cost, intersection_cost, and crash_cost.
+The header, string table, and CSR offsets are unchanged.
 """
 
 from __future__ import annotations
@@ -63,9 +67,9 @@ class WriteEdge:
     not written to disk; the writer derives implicit source nodes from
     the position in the edge table.
 
-    The six "factor" fields (speed_factor through lighting_factor) are
-    legacy from an earlier cost model; pass math.nan in v2. A future
-    format version will restructure these.
+    `stress_cost` is the per-direction routing weight A* minimizes;
+    physical_cost / intersection_cost / crash_cost are its components,
+    carried for inspection and the route-segment popup.
     """
 
     source_node_idx: int
@@ -77,13 +81,6 @@ class WriteEdge:
     forward: bool
     length_m: float
     stress_cost: float
-    # Legacy factor fields — pass math.nan.
-    speed_factor: float
-    road_type_factor: float
-    infrastructure_factor: float
-    tunnel_factor: float
-    surface_factor: float
-    lighting_factor: float
     physical_cost: float
     intersection_cost: float
     crash_cost: float
@@ -188,12 +185,6 @@ def _write_edge(out: IO[bytes], e: WriteEdge) -> None:
     out.write(b"\x00\x00\x00")  # 3-byte padding
     out.write(_F32_LE.pack(e.length_m))
     out.write(_F32_LE.pack(e.stress_cost))
-    out.write(_F32_LE.pack(e.speed_factor))
-    out.write(_F32_LE.pack(e.road_type_factor))
-    out.write(_F32_LE.pack(e.infrastructure_factor))
-    out.write(_F32_LE.pack(e.tunnel_factor))
-    out.write(_F32_LE.pack(e.surface_factor))
-    out.write(_F32_LE.pack(e.lighting_factor))
     out.write(_F32_LE.pack(e.physical_cost))
     out.write(_F32_LE.pack(e.intersection_cost))
     out.write(_F32_LE.pack(e.crash_cost))

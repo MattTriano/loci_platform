@@ -209,9 +209,10 @@ class RoutingGraphExporter:
                     "crash_cost": _f(row["crash_cost"]),
                     "intersection_cost_at_start": _f(row["intersection_cost_at_start"]),
                     "intersection_cost_at_end": _f(row["intersection_cost_at_end"]),
-                    # Carried for visibility / future use. Not currently
-                    # written to the binary format (the edge record
-                    # still has legacy factor field names from v1).
+                    # Carried as graph attributes for the heuristic-floor
+                    # pass and possible future use; not written to the
+                    # binary edge record (which carries only the composed
+                    # stress_cost and its physical/intersection/crash parts).
                     "highway_class": row["highway_class"],
                     "infra_tier": row["infra_tier"],
                     "base_stress_per_meter": _f(row["base_stress_per_meter"]),
@@ -441,15 +442,6 @@ def build_edges_and_strings(
                 forward=forward,
                 length_m=f32_or_nan(data.get("length_m")),
                 stress_cost=f32_or_nan(stress_cost),
-                # Legacy six-factor fields — NaN in v2. The values
-                # describing the new cost model live on the NX graph
-                # attributes; a future format version will store them.
-                speed_factor=f32_or_nan(None),
-                road_type_factor=f32_or_nan(None),
-                infrastructure_factor=f32_or_nan(None),
-                tunnel_factor=f32_or_nan(None),
-                surface_factor=f32_or_nan(None),
-                lighting_factor=f32_or_nan(None),
                 physical_cost=f32_or_nan(data.get("physical_cost")),
                 # `intersection_cost` is the value that was actually
                 # applied for this edge's direction. Matches what's
