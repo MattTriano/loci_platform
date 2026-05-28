@@ -69,6 +69,8 @@ select
     sc.lit,
     sc.bridge,
     sc.tunnel,
+    sc.layer,
+    sc.covered,
     sc.maxspeed,
 
     -- Raw cycleway tags
@@ -81,7 +83,7 @@ select
     sc.infra_tier,
     sc.base_stress_per_meter,
     sc.surface_penalty,
-    sc.tunnel_penalty,
+    sc.enclosed_penalty,
     sc.lighting_penalty,
 
     -- Cost components

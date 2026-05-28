@@ -9,7 +9,7 @@
     Cost model:
       physical_cost = length_m * (base_stress_per_meter
                                   + surface_penalty
-                                  + tunnel_penalty
+                                  + enclosed_penalty
                                   + lighting_penalty)
 
     The base lookup is keyed on (highway class, infra type) and reads as
@@ -19,7 +19,7 @@
 
     The three penalties are additive on top of the base:
       - surface_penalty: +0.3 on rough surfaces (cobblestone, gravel, dirt)
-      - tunnel_penalty:  +0.5 on car-tunnels without separated bike infra
+      - enclosed_penalty:  +0.5 on car-tunnels without separated bike infra
       - lighting_penalty: +0.1 on unlit segments
 
     Parameters:
@@ -119,17 +119,27 @@ with_base as (
             else 0.0
         end as surface_penalty,
 
-        -- Tunnel penalty. Only applies to car-tunnels where the
-        -- cyclist shares space with cars; separated infra in a
-        -- tunnel doesn't get penalized. `tunnel=culvert` and other
-        -- non-cyclist values are excluded.
+        -- Enclosed-segment penalty. Fires when the segment is structurally
+        -- confined (in a tunnel, under a bridge, or otherwise covered),
+        -- regardless of which overhead feature is responsible. The cyclist
+        -- has limited room to maneuver and visibility often drops; the
+        -- experience is the same whether OSM models the overhead as a
+        -- tunnel above or a bridge way above with layer=-1 below.
+        --
+        -- See issue #250. Replaces the prior tunnel-only check, which missed
+        -- underpasses that follow the bridge=yes / layer=-1 convention.
         case
-            when tunnel in ('yes', 'building_passage')
+            when (
+                    tunnel in ('yes', 'building_passage')
+                    or covered = 'yes'
+                    or (layer ~ '^-[0-9]+$')           -- layer is a negative integer
+                )
                 and highway_class in ('local', 'tertiary',
                                       'secondary', 'primary', 'service')
-                and infra_tier not in ('protected', 'shared_path')     then 0.5
+                and infra_tier not in ('protected', 'shared_path')
+            then 0.5
             else 0.0
-        end as tunnel_penalty,
+        end as enclosed_penalty,
 
         -- Lighting penalty. Small additive cost for unlit segments.
         case
@@ -170,6 +180,8 @@ select
     lit,
     bridge,
     tunnel,
+    layer,
+    covered,
     maxspeed,
 
     -- Raw cycleway tags
@@ -182,7 +194,7 @@ select
     infra_tier,
     base_stress_per_meter,
     surface_penalty,
-    tunnel_penalty,
+    enclosed_penalty,
     lighting_penalty,
 
     -- Final per-segment physical cost. Always >= length_m since
@@ -190,7 +202,7 @@ select
     length_m * (
         base_stress_per_meter
         + surface_penalty
-        + tunnel_penalty
+        + enclosed_penalty
         + lighting_penalty
     ) as physical_cost
 

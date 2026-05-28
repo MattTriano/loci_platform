@@ -2,7 +2,7 @@ version: 2
 models:
   - name: sf_segment_costs
     description: "Per-segment intrinsic stress costs from OSM physical attributes.\
-      \ physical_cost = length_m * (base_stress_per_meter + surface_penalty + tunnel_penalty\
+      \ physical_cost = length_m * (base_stress_per_meter + surface_penalty + enclosed_penalty\
       \ + lighting_penalty), where base_stress_per_meter is at least 1.0 \u2014 so\
       \ physical_cost is always at least length_m."
     data_tests:
@@ -82,7 +82,7 @@ models:
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 0.0
-      - name: tunnel_penalty
+      - name: enclosed_penalty
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
@@ -292,7 +292,7 @@ models:
       - name: surface_penalty
         data_tests:
           - not_null
-      - name: tunnel_penalty
+      - name: enclosed_penalty
         data_tests:
           - not_null
       - name: lighting_penalty

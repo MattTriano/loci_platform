@@ -504,7 +504,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
             "description": (
                 "Per-segment intrinsic stress costs from OSM physical attributes. "
                 "physical_cost = length_m * (base_stress_per_meter + surface_penalty "
-                "+ tunnel_penalty + lighting_penalty), where base_stress_per_meter "
+                "+ enclosed_penalty + lighting_penalty), where base_stress_per_meter "
                 "is at least 1.0 — so physical_cost is always at least length_m."
             ),
             "data_tests": [
@@ -605,7 +605,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                     ],
                 },
                 {
-                    "name": "tunnel_penalty",
+                    "name": "enclosed_penalty",
                     "data_tests": [
                         "not_null",
                         {"dbt_utils.accepted_range": {"arguments": {"min_value": 0.0}}},
@@ -886,7 +886,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                 },
                 {"name": "base_stress_per_meter", "data_tests": ["not_null"]},
                 {"name": "surface_penalty", "data_tests": ["not_null"]},
-                {"name": "tunnel_penalty", "data_tests": ["not_null"]},
+                {"name": "enclosed_penalty", "data_tests": ["not_null"]},
                 {"name": "lighting_penalty", "data_tests": ["not_null"]},
             ],
         },

@@ -79,7 +79,7 @@ class RoutingGraphExporter:
             infra_tier,
             base_stress_per_meter,
             surface_penalty,
-            tunnel_penalty,
+            enclosed_penalty,
             lighting_penalty,
             ST_AsGeoJSON(ST_Simplify(geom, 0.00005)) as geom_geojson,
             ST_X(ST_StartPoint(geom)) as start_lon,
@@ -217,7 +217,7 @@ class RoutingGraphExporter:
                     "infra_tier": row["infra_tier"],
                     "base_stress_per_meter": _f(row["base_stress_per_meter"]),
                     "surface_penalty": _f(row["surface_penalty"]),
-                    "tunnel_penalty": _f(row["tunnel_penalty"]),
+                    "enclosed_penalty": _f(row["enclosed_penalty"]),
                     "lighting_penalty": _f(row["lighting_penalty"]),
                 }
 
