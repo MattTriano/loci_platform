@@ -1,15 +1,22 @@
+//! /loci_platform/services/routing/routing-core/src/format/reader/tests.rs
 //! Reader tests with a hand-rolled byte fixture.
 //!
 //! The fixture is built byte-by-byte rather than via a sibling writer.
-//! This is deliberate: if a future writer (chunk 5) and this reader
-//! both share a misinterpretation of the spec, a round-trip test
-//! would pass and the spec-vs-implementation drift would go unnoticed.
-//! Hand-rolled bytes anchor the implementation to `docs/graph-format.md`.
+//! This is deliberate: if the writer and this reader both share a
+//! misinterpretation of the spec, a round-trip test would pass and the
+//! spec-vs-implementation drift would go unnoticed. Hand-rolled bytes
+//! anchor the implementation to `docs/graph-format.md`.
+//!
+//! Format version: 2. Node records are 32 bytes (f64 coords, an
+//! is_intersection byte, 7 bytes of padding); geometry coords are f64.
 
 use super::*;
 use crate::format::{
     types::GraphFormatError, EDGE_FLAG_FORWARD, FORMAT_VERSION, MAGIC, NULL_STR_IDX,
 };
+
+const NODE_RECORD_SIZE: usize = 32;
+const EDGE_RECORD_SIZE: usize = 44;
 
 /// Build a minimal valid fixture: 3 nodes, 4 edges, 1 segment geometry.
 ///
@@ -18,6 +25,8 @@ use crate::format::{
 ///   N1 ── e1 ──▶ N2    (segment S1, forward, no geometry)
 ///   N2 ── e2 ──▶ N0    (segment S2, forward, no geometry)
 ///   N1 ── e3 ──▶ N0    (segment S0, backward, geometry shared with e0)
+///
+/// Nodes 0 and 2 are intersections; node 1 is not.
 ///
 /// Strings table:
 ///   [0] = "S0"           (segment id)
@@ -42,20 +51,22 @@ fn build_fixture() -> Vec<u8> {
         b.extend_from_slice(s.as_bytes());
     }
 
-    // --- Node table ---
-    let nodes: [(u64, f32, f32); 3] = [
-        (10001, -87.6298, 41.8781), // Chicago-ish
-        (10002, -87.6299, 41.8782),
-        (10003, -87.6300, 41.8783),
+    // --- Node table (32 bytes each: u64 + f64 + f64 + u8 + 7 pad) ---
+    let nodes: [(u64, f64, f64, bool); 3] = [
+        (10001, -87.6298, 41.8781, true), // Chicago-ish, intersection
+        (10002, -87.6299, 41.8782, false),
+        (10003, -87.6300, 41.8783, true),
     ];
     b.extend_from_slice(&(nodes.len() as u32).to_le_bytes());
-    for (osm, lon, lat) in nodes {
+    for (osm, lon, lat, is_int) in nodes {
         b.extend_from_slice(&osm.to_le_bytes());
         b.extend_from_slice(&lon.to_le_bytes());
         b.extend_from_slice(&lat.to_le_bytes());
+        b.push(if is_int { 1 } else { 0 });
+        b.extend_from_slice(&[0u8; 7]); // padding
     }
 
-    // --- Edge table (CSR-ordered by source node) ---
+    // --- Edge table (CSR-ordered by source node; unchanged from v1) ---
     // source 0: e0 (target 1, seg "S0", forward, named)
     // source 1: e1 (target 2, seg "S1"), e3 (target 0, seg "S0", backward)
     // source 2: e2 (target 0, seg "S2")
@@ -93,8 +104,6 @@ fn build_fixture() -> Vec<u8> {
             150.0,
         ),
     ];
-    // CSR order: source 0 → e0; source 1 → e1, e3 (backward sibling); source 2 → e2
-    // Edge index within file: 0=e0, 1=e1, 2=e3-backward, 3=e2
     b.extend_from_slice(&(edges.len() as u32).to_le_bytes());
     for (target, seg, name, hwy, infra, flags, length, stress) in edges {
         b.extend_from_slice(&target.to_le_bytes());
@@ -106,10 +115,12 @@ fn build_fixture() -> Vec<u8> {
         b.extend_from_slice(&[0, 0, 0]); // padding
         b.extend_from_slice(&length.to_le_bytes());
         b.extend_from_slice(&stress.to_le_bytes());
-        // 9 remaining f32 cost-component fields, all NaN to exercise the null path
-        for _ in 0..9 {
-            b.extend_from_slice(&f32::NAN.to_le_bytes());
-        }
+        // v2 edge record: physical_cost, intersection_cost, crash_cost.
+        // The six legacy factor fields are gone. Use concrete values so
+        // the test can assert they round-trip.
+        b.extend_from_slice(&stress.to_le_bytes()); // physical_cost
+        b.extend_from_slice(&0.0f32.to_le_bytes()); // intersection_cost
+        b.extend_from_slice(&0.0f32.to_le_bytes()); // crash_cost
     }
 
     // --- CSR offsets ---
@@ -120,12 +131,12 @@ fn build_fixture() -> Vec<u8> {
         b.extend_from_slice(&o.to_le_bytes());
     }
 
-    // --- Segment geometry table ---
+    // --- Segment geometry table (coords are f64) ---
     // Only S0 has geometry: 3 coords
     let geom = [(
         0u32,
         vec![
-            (-87.6298_f32, 41.8781_f32),
+            (-87.6298_f64, 41.8781_f64),
             (-87.62985, 41.87815),
             (-87.6299, 41.8782),
         ],
@@ -149,22 +160,29 @@ fn reads_valid_fixture() {
     let g = read_from_bytes(&bytes).expect("fixture should parse");
 
     // Header
-    assert!((g.heuristic_floor - 0.0001).abs() < 1e-9);
+    assert!((g.heuristic_floor - 0.0001).abs() < 1e-12);
 
     // Strings
     assert_eq!(g.strings, vec!["S0", "S1", "S2", "Main St", "residential"]);
 
-    // Nodes
+    // Nodes — f64 coords round-trip losslessly.
     assert_eq!(g.nodes.len(), 3);
     assert_eq!(g.nodes[0].osm_id, 10001);
-    assert!((g.nodes[0].lon - -87.6298).abs() < 1e-4);
+    assert_eq!(g.nodes[0].lon, -87.6298);
+    assert_eq!(g.nodes[0].lat, 41.8781);
+
+    // Intersection flags
+    assert!(g.nodes[0].is_intersection);
+    assert!(!g.nodes[1].is_intersection);
+    assert!(g.nodes[2].is_intersection);
 
     // Edges
     assert_eq!(g.edges.len(), 4);
     assert!(g.edges[0].is_forward());
     assert!(!g.edges[2].is_forward());
     assert_eq!(g.edges[0].length_m, 100.0);
-    assert!(g.edges[0].speed_factor.is_nan());
+    assert_eq!(g.edges[0].physical_cost, 250.0);
+    assert_eq!(g.edges[0].crash_cost, 0.0);
 
     // Nullability
     assert_eq!(g.lookup_str(g.edges[0].name_str_idx), Some("Main St"));
@@ -176,9 +194,10 @@ fn reads_valid_fixture() {
     assert_eq!(g.edges_from(1).len(), 2);
     assert_eq!(g.edges_from(2).len(), 1);
 
-    // Geometry
+    // Geometry — f64
     assert_eq!(g.segment_geometries.len(), 1);
     assert_eq!(g.segment_geometries[0].coords.len(), 3);
+    assert_eq!(g.segment_geometries[0].coords[0], (-87.6298, 41.8781));
 }
 
 #[test]
@@ -215,6 +234,32 @@ fn rejects_reserved_flags() {
 }
 
 #[test]
+fn rejects_invalid_is_intersection_byte() {
+    let mut bytes = build_fixture();
+    let node_table_start = node_table_start_offset();
+    // First node's is_intersection byte sits past osm_id (8) + lon (8) + lat (8).
+    let is_int_offset = node_table_start + 8 + 8 + 8;
+    bytes[is_int_offset] = 2;
+    match read_from_bytes(&bytes) {
+        Err(GraphFormatError::InvalidBool { field, value: 2 }) if field.contains("intersection") => {}
+        other => panic!("expected InvalidBool(node.is_intersection), got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_nonzero_node_padding() {
+    let mut bytes = build_fixture();
+    let node_table_start = node_table_start_offset();
+    // Padding follows osm_id (8) + lon (8) + lat (8) + is_intersection (1).
+    let padding_offset = node_table_start + 8 + 8 + 8 + 1;
+    bytes[padding_offset] = 0xFF;
+    match read_from_bytes(&bytes) {
+        Err(GraphFormatError::ReservedNotZero { field, .. }) if field.contains("padding") => {}
+        other => panic!("expected ReservedNotZero(node padding), got {other:?}"),
+    }
+}
+
+#[test]
 fn rejects_trailing_bytes() {
     let mut bytes = build_fixture();
     bytes.push(0xAA);
@@ -236,19 +281,12 @@ fn rejects_truncated_file() {
 
 #[test]
 fn rejects_csr_offsets_with_wrong_count() {
-    // Build a fixture where the CSR offset count is wrong.
-    // Cheapest way: edit the CSR count field directly. It lives after
-    // the edge table; rather than computing offsets here, rebuild
-    // the fixture and corrupt the byte we know.
+    // Build a fixture where the CSR offset count is wrong, then confirm
+    // the reader rejects it. We locate the CSR count u32 by replicating
+    // the layout math from build_fixture.
     let mut bytes = build_fixture();
-    // Find the CSR offset count: scan for the value 4 (node_count+1) preceded by edges.
-    // Simpler: replicate the layout math from build_fixture above to locate the byte
-    // window. Given the fixture is fixed, the CSR count u32 lives at a known offset.
-    //
-    // header(16) + string_table + node_table(4 + 3*16) + edge_table(4 + 4*68)
-    //   = 16 + string_size + 52 + 276
-    let string_size = string_table_size_of(&["S0", "S1", "S2", "Main St", "residential"]);
-    let csr_count_offset = 16 + string_size + 52 + 276;
+    let csr_count_offset = csr_count_offset_value();
+
     // Confirm what we expect to see there (count = 4, i.e. node_count + 1).
     let actual = u32::from_le_bytes([
         bytes[csr_count_offset],
@@ -263,8 +301,9 @@ fn rejects_csr_offsets_with_wrong_count() {
 
     // Corrupt it.
     bytes[csr_count_offset..csr_count_offset + 4].copy_from_slice(&5u32.to_le_bytes());
-    // We also need to provide an extra u32 in the offsets so the reader doesn't
-    // hit EOF instead of CsrOffsetCountMismatch. Insert a zero offset.
+    // Provide an extra u32 in the offsets so the reader hits
+    // CsrOffsetCountMismatch rather than EOF. Insert a zero offset after
+    // the existing four.
     bytes.splice(
         csr_count_offset + 4 + 16..csr_count_offset + 4 + 16,
         [0u8; 4],
@@ -279,7 +318,29 @@ fn rejects_csr_offsets_with_wrong_count() {
     }
 }
 
+// ----------------------------------------------------------------------
+// Layout helpers — keep offset math in one place so format changes only
+// touch these.
+// ----------------------------------------------------------------------
+
 fn string_table_size_of(strings: &[&str]) -> usize {
     // count u32 + per-string (u32 len + bytes)
     4 + strings.iter().map(|s| 4 + s.len()).sum::<usize>()
+}
+
+fn fixture_strings() -> [&'static str; 5] {
+    ["S0", "S1", "S2", "Main St", "residential"]
+}
+
+/// Byte offset of the first node record (past the node-count u32).
+fn node_table_start_offset() -> usize {
+    let string_size = string_table_size_of(&fixture_strings());
+    16 + string_size + 4
+}
+
+/// Byte offset of the CSR offset-count u32.
+fn csr_count_offset_value() -> usize {
+    let string_size = string_table_size_of(&fixture_strings());
+    // header(16) + string_table + node_table(4 + 3*32) + edge_table(4 + 4*68)
+    16 + string_size + (4 + 3 * NODE_RECORD_SIZE) + (4 + 4 * EDGE_RECORD_SIZE)
 }

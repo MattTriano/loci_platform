@@ -1,6 +1,6 @@
 version: 2
 models:
-  - name: dc_segment_costs
+  - name: detroit_segment_costs
     description: "Per-segment intrinsic stress costs from OSM physical attributes.\
       \ physical_cost = length_m * (base_stress_per_meter + surface_penalty + enclosed_penalty\
       \ + lighting_penalty), where base_stress_per_meter is at least 1.0 \u2014 so\
@@ -14,10 +14,10 @@ models:
           arguments:
             expression: physical_cost >= length_m
           config:
-            name: dc_segment_costs_physical_cost_at_least_length
+            name: detroit_segment_costs_physical_cost_at_least_length
       - dbt_utils.equal_rowcount:
           arguments:
-            compare_model: ref('stg_dc_bike_segments')
+            compare_model: ref('stg_detroit_bike_segments')
     columns:
       - name: segment_id
         data_tests:
@@ -111,10 +111,10 @@ models:
                   - path
               config:
                 where: infra_category is not null
-  - name: dc_intersection_costs
+  - name: detroit_intersection_costs
     description: Logical bike-network intersections with stress penalties. One row
       per node where >= 2 distinct OSM ways meet. The cost depends on the top two
-      way classes meeting at the node and the traffic-control tag. Joined into dc_bike_stress_weighted_segments
+      way classes meeting at the node and the traffic-control tag. Joined into detroit_bike_stress_weighted_segments
       on BOTH endpoints (start_node_id and end_node_id) so the graph exporter can
       pick the right one per traversal direction.
     columns:
@@ -125,7 +125,7 @@ models:
           - unique
           - dbt_utils.relationships_where:
               arguments:
-                to: source('osm', 'dc_osm_bike_network_nodes')
+                to: source('osm', 'detroit_osm_bike_network_nodes')
                 field: osm_id
                 from_condition: traffic_control is not null
                 to_condition: osm_type = 'node' and valid_to is null
@@ -201,7 +201,7 @@ models:
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 0
-  - name: dc_bike_stress_weighted_segments
+  - name: detroit_bike_stress_weighted_segments
     description: Stress-weighted segments for bike routing. One row per undirected
       segment; direction is carried as a column. Exposes physical_cost, crash_cost,
       and intersection costs at BOTH endpoints. The graph exporter composes per-direction
@@ -218,25 +218,25 @@ models:
           arguments:
             expression: physical_cost >= length_m
           config:
-            name: dc_stress_weighted_physical_cost_at_least_length
+            name: detroit_stress_weighted_physical_cost_at_least_length
       - dbt_utils.expression_is_true:
           arguments:
             expression: crash_cost >= 0
           config:
-            name: dc_crash_cost_non_negative
+            name: detroit_crash_cost_non_negative
       - dbt_utils.expression_is_true:
           arguments:
             expression: intersection_cost_at_start >= 0
           config:
-            name: dc_intersection_cost_at_start_non_negative
+            name: detroit_intersection_cost_at_start_non_negative
       - dbt_utils.expression_is_true:
           arguments:
             expression: intersection_cost_at_end >= 0
           config:
-            name: dc_intersection_cost_at_end_non_negative
+            name: detroit_intersection_cost_at_end_non_negative
       - dbt_utils.equal_rowcount:
           arguments:
-            compare_model: ref('stg_dc_bike_segments')
+            compare_model: ref('stg_detroit_bike_segments')
     columns:
       - name: segment_id
         data_tests:
@@ -278,9 +278,9 @@ models:
         data_tests:
           - not_null
       - name: start_is_intersection
-        description: True iff start_node_id appears in dc_intersection_costs. Propagated
-          through the graph format so the routing service doesn't have to re-derive
-          it from edge degree.
+        description: True iff start_node_id appears in detroit_intersection_costs.
+          Propagated through the graph format so the routing service doesn't have
+          to re-derive it from edge degree.
         data_tests:
           - not_null
       - name: end_is_intersection

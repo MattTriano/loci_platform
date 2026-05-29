@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/astar.rs
 //! Turn-aware A* shortest-path.
 //!
 //! Port of `_astar_with_turn_costs` from routing.py. The state space
@@ -62,11 +63,14 @@ pub fn astar_with_turn_costs(g: &IndexedGraph, source: u32, target: u32) -> Opti
         return Some(vec![source]);
     }
 
-    let heuristic_floor = g.graph.heuristic_floor as f32;
+    // heuristic_floor is f64 in the format; keep the full precision
+    // through the distance multiply and cast to f32 only at the end,
+    // since g_score / f_score are f32.
+    let heuristic_floor = g.graph.heuristic_floor;
     let heuristic = |from: u32, to: u32| -> f32 {
         let f = g.graph.nodes[from as usize];
         let t = g.graph.nodes[to as usize];
-        heuristic_floor * haversine_m(f.lat, f.lon, t.lat, t.lon)
+        (heuristic_floor * haversine_m(f.lat, f.lon, t.lat, t.lon)) as f32
     };
 
     let mut open: BinaryHeap<HeapEntry> = BinaryHeap::new();
@@ -165,6 +169,15 @@ mod tests {
     use crate::format::{Edge, Graph, Node};
     use crate::indexed::IndexedGraph;
 
+    fn node(osm_id: u64, lon: f64, lat: f64, is_intersection: bool) -> Node {
+        Node {
+            osm_id,
+            lon,
+            lat,
+            is_intersection,
+        }
+    }
+
     fn edge(target: u32, length: f32, stress: f32, highway_str_idx: u32) -> Edge {
         Edge {
             target_node_idx: target,
@@ -175,13 +188,7 @@ mod tests {
             flags: 0b1,
             length_m: length,
             stress_cost: stress,
-            speed_factor: f32::NAN,
-            road_type_factor: f32::NAN,
-            infrastructure_factor: f32::NAN,
-            tunnel_factor: f32::NAN,
-            surface_factor: f32::NAN,
-            lighting_factor: f32::NAN,
-            physical_cost: f32::NAN,
+            physical_cost: stress,
             intersection_cost: f32::NAN,
             crash_cost: f32::NAN,
         }
@@ -209,21 +216,9 @@ mod tests {
         // 0 → 1 → 2, each edge length 100, stress 100. Only one path.
         let g = make_graph(
             vec![
-                Node {
-                    osm_id: 1,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 2,
-                    lon: 0.0,
-                    lat: 0.001,
-                },
-                Node {
-                    osm_id: 3,
-                    lon: 0.0,
-                    lat: 0.002,
-                },
+                node(1, 0.0, 0.0, false),
+                node(2, 0.0, 0.001, false),
+                node(3, 0.0, 0.002, false),
             ],
             vec!["seg".into()],
             vec![
@@ -239,15 +234,7 @@ mod tests {
 
     #[test]
     fn source_equals_target_is_single_node() {
-        let g = make_graph(
-            vec![Node {
-                osm_id: 1,
-                lon: 0.0,
-                lat: 0.0,
-            }],
-            vec![],
-            vec![vec![]],
-        );
+        let g = make_graph(vec![node(1, 0.0, 0.0, false)], vec![], vec![vec![]]);
         let idx = IndexedGraph::build(g);
         let path = astar_with_turn_costs(&idx, 0, 0).unwrap();
         assert_eq!(path, vec![0]);
@@ -257,18 +244,7 @@ mod tests {
     fn no_path_returns_none() {
         // Two disconnected nodes
         let g = make_graph(
-            vec![
-                Node {
-                    osm_id: 1,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 2,
-                    lon: 1.0,
-                    lat: 0.0,
-                },
-            ],
+            vec![node(1, 0.0, 0.0, false), node(2, 1.0, 0.0, false)],
             vec![],
             vec![vec![], vec![]],
         );
@@ -284,26 +260,10 @@ mod tests {
         // The detour has lower total stress and should be chosen.
         let g = make_graph(
             vec![
-                Node {
-                    osm_id: 1,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 2,
-                    lon: 0.001,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 3,
-                    lon: 0.001,
-                    lat: 0.001,
-                },
-                Node {
-                    osm_id: 4,
-                    lon: 0.0,
-                    lat: 0.002,
-                },
+                node(1, 0.0, 0.0, false),
+                node(2, 0.001, 0.0, false),
+                node(3, 0.001, 0.001, false),
+                node(4, 0.0, 0.002, false),
             ],
             vec!["seg".into()],
             vec![
@@ -335,42 +295,15 @@ mod tests {
         // both routes tie; with the penalty the right-turn route wins
         // by 75 virtual cost.
         //
-        // Coordinates (lat, lon):
-        //   N0 (0.0, 0.0)         south of N1
-        //   N1 (0.001, 0.0)       intersection
-        //   N2 (0.001, -0.001)    west of N1  (left turn from N0)
-        //   N3 (0.001, 0.001)     east of N1  (right turn from N0)
-        //   N4 (0.002, 0.0)       far north, reachable from both
-        //
-        // Node 1 needs degree >= 3 to qualify as an intersection. It
-        // gets 1 in-edge (from 0) and 2 out-edges (to 2, to 3) → degree 3.
+        // Node 1 is flagged as an intersection directly (the pipeline
+        // owns that definition now; A* just reads the flag).
         let g = make_graph(
             vec![
-                Node {
-                    osm_id: 1,
-                    lon: 0.0,
-                    lat: 0.0,
-                },
-                Node {
-                    osm_id: 2,
-                    lon: 0.0,
-                    lat: 0.001,
-                },
-                Node {
-                    osm_id: 3,
-                    lon: -0.001,
-                    lat: 0.001,
-                },
-                Node {
-                    osm_id: 4,
-                    lon: 0.001,
-                    lat: 0.001,
-                },
-                Node {
-                    osm_id: 5,
-                    lon: 0.0,
-                    lat: 0.002,
-                },
+                node(1, 0.0, 0.0, false),
+                node(2, 0.0, 0.001, true), // N1: the intersection
+                node(3, -0.001, 0.001, false),
+                node(4, 0.001, 0.001, false),
+                node(5, 0.0, 0.002, false),
             ],
             vec!["seg".into(), "primary".into()],
             vec![
