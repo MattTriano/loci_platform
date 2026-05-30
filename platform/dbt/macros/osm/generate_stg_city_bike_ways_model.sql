@@ -19,9 +19,11 @@ select
     maxspeed,
 
     -- Physical conditions for stress weighting
-    tags->>'lit' as lit,
-    tags->>'bridge' as bridge,
-    tags->>'tunnel' as tunnel,
+    tags->>'lit'     as lit,
+    tags->>'bridge'  as bridge,
+    tags->>'tunnel'  as tunnel,
+    tags->>'layer'   as layer,
+    tags->>'covered' as covered,
 
     -- Cycleway sub-tags for infra classification
     tags->>'cycleway:buffer'             as cycleway_buffer,

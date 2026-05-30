@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/format/reader/mod.rs
 //! Reader for the binary routing graph format.
 //!
 //! Operates on an in-memory byte slice — the caller decompresses gzip
@@ -67,13 +68,28 @@ pub fn read_from_bytes(bytes: &[u8]) -> Result<Graph, GraphFormatError> {
     }
 
     // --- Node table ---
+    // Each node record is 32 bytes: u64 osm_id + f64 lon + f64 lat
+    // + u8 is_intersection + 7 bytes zero padding.
     let node_count = cursor.read_u32("node table count")? as usize;
     let mut nodes = Vec::with_capacity(node_count);
     for _ in 0..node_count {
         let osm_id = cursor.read_u64("node.osm_id")?;
-        let lon = cursor.read_f32("node.lon")?;
-        let lat = cursor.read_f32("node.lat")?;
-        nodes.push(Node { osm_id, lon, lat });
+        let lon = cursor.read_f64("node.lon")?;
+        let lat = cursor.read_f64("node.lat")?;
+        let is_intersection = cursor.read_bool("node.is_intersection")?;
+        let padding = cursor.read_array::<7>("node.padding")?;
+        if padding != [0u8; 7] {
+            return Err(GraphFormatError::ReservedNotZero {
+                field: "node padding bytes",
+                value: pack_padding(&padding),
+            });
+        }
+        nodes.push(Node {
+            osm_id,
+            lon,
+            lat,
+            is_intersection,
+        });
     }
 
     // --- Edge table ---
@@ -99,6 +115,7 @@ pub fn read_from_bytes(bytes: &[u8]) -> Result<Graph, GraphFormatError> {
     validate_csr_offsets(&csr_offsets, edge_count)?;
 
     // --- Segment geometry table ---
+    // Coordinates are f64 (format v2).
     let geom_count = cursor.read_u32("segment geometry count")?;
     let mut segment_geometries = Vec::with_capacity(geom_count as usize);
     for _ in 0..geom_count {
@@ -107,8 +124,8 @@ pub fn read_from_bytes(bytes: &[u8]) -> Result<Graph, GraphFormatError> {
         let coord_count = cursor.read_u32("geom coord_count")? as usize;
         let mut coords = Vec::with_capacity(coord_count);
         for _ in 0..coord_count {
-            let lon = cursor.read_f32("geom lon")?;
-            let lat = cursor.read_f32("geom lat")?;
+            let lon = cursor.read_f64("geom lon")?;
+            let lat = cursor.read_f64("geom lat")?;
             coords.push((lon, lat));
         }
         segment_geometries.push(SegmentGeometry {
@@ -133,6 +150,11 @@ pub fn read_from_bytes(bytes: &[u8]) -> Result<Graph, GraphFormatError> {
     })
 }
 
+/// Pack up to 8 padding bytes into a u64 for diagnostics.
+fn pack_padding(padding: &[u8]) -> u64 {
+    padding.iter().fold(0u64, |acc, &b| (acc << 8) | u64::from(b))
+}
+
 fn read_edge(cursor: &mut Cursor<'_>, str_table_len: usize) -> Result<Edge, GraphFormatError> {
     let target_node_idx = cursor.read_u32("edge.target")?;
     let segment_id_str_idx = cursor.read_u32("edge.segment_id")?;
@@ -155,8 +177,7 @@ fn read_edge(cursor: &mut Cursor<'_>, str_table_len: usize) -> Result<Edge, Grap
     if padding != [0, 0, 0] {
         return Err(GraphFormatError::ReservedNotZero {
             field: "edge padding bytes",
-            // Pack three bytes into the value field for diagnostics.
-            value: u64::from(padding[0]) << 16 | u64::from(padding[1]) << 8 | u64::from(padding[2]),
+            value: pack_padding(&padding),
         });
     }
 
@@ -169,12 +190,6 @@ fn read_edge(cursor: &mut Cursor<'_>, str_table_len: usize) -> Result<Edge, Grap
         flags,
         length_m: cursor.read_f32("edge.length_m")?,
         stress_cost: cursor.read_f32("edge.stress_cost")?,
-        speed_factor: cursor.read_f32("edge.speed_factor")?,
-        road_type_factor: cursor.read_f32("edge.road_type_factor")?,
-        infrastructure_factor: cursor.read_f32("edge.infrastructure_factor")?,
-        tunnel_factor: cursor.read_f32("edge.tunnel_factor")?,
-        surface_factor: cursor.read_f32("edge.surface_factor")?,
-        lighting_factor: cursor.read_f32("edge.lighting_factor")?,
         physical_cost: cursor.read_f32("edge.physical_cost")?,
         intersection_cost: cursor.read_f32("edge.intersection_cost")?,
         crash_cost: cursor.read_f32("edge.crash_cost")?,
@@ -255,6 +270,18 @@ impl<'a> Cursor<'a> {
 
     fn read_u8(&mut self, section: &'static str) -> Result<u8, GraphFormatError> {
         Ok(self.read_array::<1>(section)?[0])
+    }
+
+    /// Read a u8 constrained to 0 or 1. Any other value is a format error.
+    fn read_bool(&mut self, section: &'static str) -> Result<bool, GraphFormatError> {
+        match self.read_u8(section)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(GraphFormatError::InvalidBool {
+                field: section,
+                value: other,
+            }),
+        }
     }
 
     fn read_u16(&mut self, section: &'static str) -> Result<u16, GraphFormatError> {

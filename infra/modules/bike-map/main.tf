@@ -71,6 +71,7 @@ resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   default_root_object = "index.html"
   aliases             = [local.domain]
+  web_acl_id          = var.waf_web_acl_arn
 
   origin {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
@@ -88,6 +89,16 @@ resource "aws_cloudfront_distribution" "site" {
       query_string = false
       cookies {
         forward = "none"
+      }
+    }
+
+    response_headers_policy_id = var.response_headers_policy_id
+
+    dynamic "function_association" {
+      for_each = var.basic_auth_function_arn != null ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = var.basic_auth_function_arn
       }
     }
   }
@@ -167,50 +178,14 @@ resource "aws_acm_certificate_validation" "site" {
 
 
 # -----------------------------------------------------------------------------
-# ACM certificate — routing API (must be in us-east-1 for API Gateway)
-# -----------------------------------------------------------------------------
-
-resource "aws_acm_certificate" "api" {
-  domain_name       = local.api_domain
-  validation_method = "DNS"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_route53_record" "api_cert_validation" {
-  provider = aws.dns
-  for_each = {
-    for dvo in aws_acm_certificate.api.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      type   = dvo.resource_record_type
-      record = dvo.resource_record_value
-    }
-  }
-
-  zone_id = var.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = 300
-  records = [each.value.record]
-}
-
-resource "aws_acm_certificate_validation" "api" {
-  certificate_arn         = aws_acm_certificate.api.arn
-  validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
-}
-
-
-# -----------------------------------------------------------------------------
 # Route53 — A Records pointing to CloudFront
 # -----------------------------------------------------------------------------
 
 resource "aws_route53_record" "site" {
   provider = aws.dns
-  zone_id = var.zone_id
-  name    = local.domain
-  type    = "A"
+  zone_id  = var.zone_id
+  name     = local.domain
+  type     = "A"
 
   alias {
     name                   = aws_cloudfront_distribution.site.domain_name
@@ -221,13 +196,13 @@ resource "aws_route53_record" "site" {
 
 resource "aws_route53_record" "api" {
   provider = aws.dns
-  zone_id = var.zone_id
-  name    = local.api_domain
-  type    = "A"
+  zone_id  = var.zone_id
+  name     = local.api_domain
+  type     = "A"
 
   alias {
-    name                   = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name
-    zone_id                = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].hosted_zone_id
+    name                   = aws_cloudfront_distribution.routing_api.domain_name
+    zone_id                = aws_cloudfront_distribution.routing_api.hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -276,9 +251,9 @@ resource "aws_iam_user_policy" "deploy" {
         Resource = aws_lambda_function.routing_api.arn
       },
       {
-        Sid    = "ReadBikeMapSSM"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+        Sid      = "ReadBikeMapSSM"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
         Resource = "arn:aws:ssm:*:*:parameter/${var.basename}/${var.environment}/${var.city}/*"
       }
     ]
@@ -366,6 +341,35 @@ resource "aws_cloudwatch_log_group" "routing_lambda" {
 
 
 # -----------------------------------------------------------------------------
+# CloudWatch alarm — Lambda throttles
+#
+# Fires when the routing Lambda is being throttled by its reserved-concurrency
+# cap. Real users should never see throttles in normal operation; if this
+# alarm fires either legitimate traffic has outgrown the cap (raise account
+# limit) or someone is abusing the API (check WAF/budget signals first).
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "routing_lambda_throttles" {
+  alarm_name          = "${local.resource_name}-routing-throttles"
+  alarm_description   = "Routing Lambda is being throttled; either legit growth past concurrency cap, or abuse."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Throttles"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 10
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.routing_api.function_name
+  }
+
+  alarm_actions = [var.alarm_sns_topic_arn]
+}
+
+
+# -----------------------------------------------------------------------------
 # IAM — Lambda execution role
 # -----------------------------------------------------------------------------
 
@@ -432,7 +436,7 @@ resource "aws_iam_role_policy" "routing_lambda" {
 data "archive_file" "lambda_dummy" {
   type             = "zip"
   output_path      = "${path.module}/dummy.zip"
-  output_file_mode = "0755"   # bootstrap must be executable for provided.al2023
+  output_file_mode = "0755" # bootstrap must be executable for provided.al2023
 
   source {
     # Bootstrap for provided.al2023 — the runtime expects an executable
@@ -470,7 +474,7 @@ resource "aws_lambda_function" "routing_api" {
   runtime          = "provided.al2023"
   handler          = "bootstrap"
   architectures    = ["arm64"]
-  timeout          = 30
+  timeout          = var.routing_lambda_timeout_seconds
   memory_size      = var.routing_lambda_memory_mb
 
   environment {
@@ -605,18 +609,124 @@ resource "aws_apigatewayv2_stage" "default" {
   }
 }
 
-resource "aws_apigatewayv2_domain_name" "api" {
-  domain_name = local.api_domain
+# -----------------------------------------------------------------------------
+# ACM certificate — routing API (us-east-1 for CloudFront)
+# -----------------------------------------------------------------------------
 
-  domain_name_configuration {
-    certificate_arn = aws_acm_certificate_validation.api.certificate_arn
-    endpoint_type   = "REGIONAL"
-    security_policy = "TLS_1_2"
+resource "aws_acm_certificate" "api" {
+  provider          = aws.us_east_1
+  domain_name       = local.api_domain
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
-resource "aws_apigatewayv2_api_mapping" "api" {
-  api_id      = aws_apigatewayv2_api.routing.id
-  domain_name = aws_apigatewayv2_domain_name.api.id
-  stage       = aws_apigatewayv2_stage.default.id
+resource "aws_route53_record" "api_cert_validation" {
+  provider = aws.dns
+  for_each = {
+    for dvo in aws_acm_certificate.api.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      type   = dvo.resource_record_type
+      record = dvo.resource_record_value
+    }
+  }
+
+  zone_id = var.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 300
+  records = [each.value.record]
+}
+
+resource "aws_acm_certificate_validation" "api" {
+  provider                = aws.us_east_1
+  certificate_arn         = aws_acm_certificate.api.arn
+  validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
+}
+
+# -----------------------------------------------------------------------------
+# CloudFront Function — API-key validation at the edge
+#
+# Rejects requests missing or with an incorrect X-Api-Key header before they
+# reach API Gateway or the routing Lambda. The expected key is baked into the
+# function code at deploy time via templatefile().
+# -----------------------------------------------------------------------------
+
+data "aws_ssm_parameter" "routing_api_key" {
+  name = aws_ssm_parameter.routing_api_key.name
+}
+
+resource "aws_cloudfront_function" "api_key_check" {
+  name    = "${local.resource_name}-api-key-check"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+  code = templatefile("${path.root}/templates/api_key_check.js", {
+    expected_api_key = data.aws_ssm_parameter.routing_api_key.value
+  })
+}
+
+# -----------------------------------------------------------------------------
+# CloudFront — routing API distribution
+#
+# Sits in front of the HTTP API Gateway. Forwards everything to the regional
+# API Gateway URL (which is the actual origin). Caching is disabled — these
+# are POST routing requests, not static content. API-key validation happens
+# at the CloudFront Function before the request reaches API Gateway.
+# -----------------------------------------------------------------------------
+
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
+data "aws_region" "current" {}
+
+resource "aws_cloudfront_distribution" "routing_api" {
+  enabled    = true
+  aliases    = [local.api_domain]
+  web_acl_id = var.waf_web_acl_arn
+
+  origin {
+    domain_name = "${aws_apigatewayv2_api.routing.id}.execute-api.${data.aws_region.current.region}.amazonaws.com"
+    origin_id   = "api-gateway"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id           = "api-gateway"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = var.response_headers_policy_id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_key_check.arn
+    }
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate_validation.api.certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
 }

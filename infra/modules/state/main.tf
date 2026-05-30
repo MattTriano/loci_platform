@@ -4,7 +4,7 @@ provider "aws" {
 }
 
 resource "aws_s3_bucket" "tofu_state" {
-  bucket        = "${var.basename}-${var.environment}-state-storage"
+  bucket = "${var.basename}-${var.environment}-state-storage"
 
   #lifecycle {
   #  prevent_destroy = true

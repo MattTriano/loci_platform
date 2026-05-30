@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/format/types.rs
 //! Data structures for a loaded routing graph.
 //!
 //! The layout mirrors the on-disk format: a CSR-style edge list with
@@ -10,17 +11,23 @@ use std::io;
 use thiserror::Error;
 
 /// A single node in the routing graph.
+///
+/// Coordinates are f64 (format v2). `is_intersection` is the
+/// authoritative flag for turn-penalty logic, set by the data pipeline
+/// rather than re-derived from edge degree at load time.
 #[derive(Debug, Clone, Copy)]
 pub struct Node {
     pub osm_id: u64,
-    pub lon: f32,
-    pub lat: f32,
+    pub lon: f64,
+    pub lat: f64,
+    pub is_intersection: bool,
 }
 
 /// A single directed edge. Source node is implicit in `csr_offsets`.
 ///
-/// f32 attribute fields use NaN to represent SQL NULL. Use `is_nan()`
-/// to detect missing values, or the `option_*` accessors on `Edge`.
+/// `stress_cost` is the per-direction routing weight; `physical_cost`,
+/// `intersection_cost`, and `crash_cost` are its components, kept for
+/// explaining a segment's cost. f32 fields use NaN for SQL NULL.
 #[derive(Debug, Clone, Copy)]
 pub struct Edge {
     pub target_node_idx: u32,
@@ -31,12 +38,6 @@ pub struct Edge {
     pub flags: u8,
     pub length_m: f32,
     pub stress_cost: f32,
-    pub speed_factor: f32,
-    pub road_type_factor: f32,
-    pub infrastructure_factor: f32,
-    pub tunnel_factor: f32,
-    pub surface_factor: f32,
-    pub lighting_factor: f32,
     pub physical_cost: f32,
     pub intersection_cost: f32,
     pub crash_cost: f32,
@@ -53,11 +54,13 @@ impl Edge {
 
 /// Geometry for a single segment. Edges referencing the same segment
 /// share this geometry; orientation is resolved at response time.
+///
+/// Coordinates are f64 (format v2).
 #[derive(Debug, Clone)]
 pub struct SegmentGeometry {
     pub segment_id_str_idx: u32,
     /// (lon, lat) pairs in segment-canonical order.
-    pub coords: Vec<(f32, f32)>,
+    pub coords: Vec<(f64, f64)>,
 }
 
 /// A fully loaded routing graph.
@@ -110,6 +113,9 @@ pub enum GraphFormatError {
 
     #[error("reserved field had non-zero value: {field} = {value}")]
     ReservedNotZero { field: &'static str, value: u64 },
+
+    #[error("invalid boolean for {field}: {value} (expected 0 or 1)")]
+    InvalidBool { field: &'static str, value: u8 },
 
     #[error("string index {idx} out of bounds for string table of length {len}")]
     StringIndexOutOfBounds { idx: u32, len: usize },

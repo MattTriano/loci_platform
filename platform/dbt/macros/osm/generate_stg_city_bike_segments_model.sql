@@ -46,6 +46,8 @@ select
     s.lit,
     s.bridge,
     s.tunnel,
+    s.layer,
+    s.covered,
     s.maxspeed,
     s.bicycle,
 

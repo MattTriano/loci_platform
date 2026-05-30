@@ -21,7 +21,7 @@ models:
         data_tests:
           - dbt_utils.not_empty_string
   - name: stg_sf_way_nodes
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
@@ -29,33 +29,33 @@ models:
               - position
     columns:
       - name: way_id
-        tests:
+        data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('stg_sf_bike_ways')
                 field: osm_id
       - name: position
-        tests:
+        data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 1
       - name: node_id
-        tests:
+        data_tests:
           - not_null
   - name: stg_sf_intersection_nodes
-    tests:
+    data_tests:
       - intersection_node_count_in_range:
           arguments:
             way_nodes_model: ref('stg_sf_way_nodes')
     columns:
       - name: node_id
-        tests:
+        data_tests:
           - not_null
           - unique
   - name: stg_sf_way_segments
-    tests:
+    data_tests:
       - segment_endpoints_match_node_ids:
           arguments:
             ways_model: ref('stg_sf_bike_ways')
