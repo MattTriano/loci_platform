@@ -38,3 +38,8 @@ output "routing_lambda_arn" {
   description = "ARN of the routing Lambda function."
   value       = aws_lambda_function.routing_api.arn
 }
+
+output "routing_api_id" {
+  description = "ID of the routing HTTP API. Used by the cost-guard kill switch."
+  value       = aws_apigatewayv2_api.routing.id
+}

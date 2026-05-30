@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>bikeinfra status</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --fg: #111;
+      --muted: #666;
+      --card-bg: #fff;
+      --card-border: #e5e5e5;
+      --ok: #16a34a;
+      --skipped: #f59e0b;
+      --failed: #dc2626;
+      --error-bg: #fef2f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      margin: 0;
+      padding: 2rem 1rem;
+      max-width: 1100px;
+      margin-inline: auto;
+      line-height: 1.5;
+    }
+    header { margin-bottom: 2rem; }
+    h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+    .meta { color: var(--muted); font-size: 0.875rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 0.75rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-left-width: 4px;
+      border-radius: 6px;
+      padding: 0.875rem 1rem;
+    }
+    .card.ok { border-left-color: var(--ok); }
+    .card.skipped { border-left-color: var(--skipped); }
+    .card.failed { border-left-color: var(--failed); }
+    .card-name { font-weight: 600; margin-bottom: 0.25rem; }
+    .card-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .pill {
+      display: inline-block;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .pill.ok { background: var(--ok); }
+    .pill.skipped { background: var(--skipped); }
+    .pill.failed { background: var(--failed); }
+    .card-error {
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      background: var(--error-bg);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-family: ui-monospace, monospace;
+      color: #991b1b;
+      word-break: break-word;
+    }
+    .banner {
+      background: var(--error-bg);
+      border: 1px solid var(--failed);
+      color: #991b1b;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0a0a0a;
+        --fg: #f5f5f5;
+        --muted: #999;
+        --card-bg: #171717;
+        --card-border: #262626;
+        --error-bg: #422;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>bikeinfra status</h1>
+    <div class="meta" id="meta">Loading&hellip;</div>
+  </header>
+  <div id="banner-slot"></div>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    const STATUS_URL = '/status.json';
+    const REFRESH_MS = 60_000;
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderCard(target) {
+      const status = target.status || 'failed';
+      const latency = target.latency_ms != null ? `${target.latency_ms} ms` : '—';
+      const httpStatus = target.http_status != null ? `HTTP ${target.http_status}` : '';
+      const errorBlock = target.error
+        ? `<div class="card-error">${escapeHtml(target.error)}</div>`
+        : '';
+      return `
+        <div class="card ${status}">
+          <div class="card-name">${escapeHtml(target.name)}</div>
+          <div class="card-row">
+            <span class="pill ${status}">${status}</span>
+            <span>${escapeHtml(httpStatus)} ${escapeHtml(latency)}</span>
+          </div>
+          ${errorBlock}
+        </div>
+      `;
+    }
+
+    function showBanner(message) {
+      document.getElementById('banner-slot').innerHTML =
+        `<div class="banner">${escapeHtml(message)}</div>`;
+    }
+
+    function clearBanner() {
+      document.getElementById('banner-slot').innerHTML = '';
+    }
+
+    async function refresh() {
+      try {
+        const resp = await fetch(STATUS_URL, { cache: 'no-store' });
+        if (!resp.ok) {
+          throw new Error(`Got HTTP ${resp.status} fetching status.json`);
+        }
+        const data = await resp.json();
+        clearBanner();
+        document.getElementById('meta').textContent =
+          `Environment: ${data.environment} · Last updated: ${data.generated_at}`;
+        const sorted = [...data.targets].sort((a, b) => a.name.localeCompare(b.name));
+        document.getElementById('grid').innerHTML = sorted.map(renderCard).join('');
+      } catch (err) {
+        showBanner(`Status data unavailable: ${err.message}. Retrying in 60 seconds.`);
+      }
+    }
+
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+  </script>
+</body>
+</html>

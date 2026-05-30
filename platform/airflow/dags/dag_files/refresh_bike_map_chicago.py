@@ -181,6 +181,8 @@ CHICAGO_ROUTE_TESTS: list[RouteTestCase] = [
     ),
 ]
 
+ROUTABLE_ORIGIN_DEST_PAIR = ((41.9792, -87.6748), (41.9162, -87.6428))
+
 CHICAGO_SPEC = CityBuildSpec(
     city="chicago",
     bbox=CHICAGO_BBOX,
@@ -195,9 +197,10 @@ CHICAGO_SPEC = CityBuildSpec(
         ("--select", "+chicago_bike_crash_hotspots", "--indirect-selection=cautious"),
     ],
     geojson_exports=CHICAGO_GEOJSON_EXPORTS,
-    # layer_displays=CHICAGO_LAYER_DISPLAYS,
+    layer_displays=CHICAGO_LAYER_DISPLAYS,
     weights_dbt_select="+chicago_bike_stress_weighted_segments",
     route_tests=CHICAGO_ROUTE_TESTS,
+    synthetic_check_fixture=ROUTABLE_ORIGIN_DEST_PAIR,
 )
 
 

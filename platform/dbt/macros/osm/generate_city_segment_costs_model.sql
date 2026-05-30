@@ -6,113 +6,148 @@
     Source: stg_<city>_bike_segments
     Grain: one row per segment (segment_id).
 
-    Outputs:
-      - All segment passthrough columns from stg_<city>_bike_segments
-      - Six factor columns (preserved for tuning visibility):
-          speed_factor, road_type_factor, infrastructure_factor,
-          tunnel_factor, surface_factor, lighting_factor
-      - physical_cost = length_m * product of the six factors
+    Cost model:
+      physical_cost = length_m * (base_stress_per_meter
+                                  + surface_penalty
+                                  + enclosed_penalty
+                                  + lighting_penalty)
+
+    The base lookup is keyed on (highway class, infra type) and reads as
+    "stress-equivalent meters per meter of segment": a value of 6.0 means
+    100m of this segment feels like 600m of calm riding. The minimum is
+    1.0 (cycleway / path), so stress_cost >= length_m always.
+
+    The three penalties are additive on top of the base:
+      - surface_penalty: +0.3 on rough surfaces (cobblestone, gravel, dirt)
+      - enclosed_penalty:  +0.5 on car-tunnels without separated bike infra
+      - lighting_penalty: +0.1 on unlit segments
 
     Parameters:
       city: city name; used to resolve stg_<city>_bike_segments.
 #}
 {% macro generate_city_segment_costs_model(city) %}
 
-with factors as (
+with classified as (
     select
         s.*,
 
-        -- Speed factor
+        -- Bucket the OSM highway value into a stress class. The class
+        -- drives the base stress lookup below. Motorway is included for
+        -- completeness but shouldn't appear in the bike network ref
+        -- since we filter access=no earlier in the pipeline.
         case
-            when s.highway in ('cycleway', 'path', 'footway', 'bridleway',
-                               'pedestrian', 'living_street')                  then 1.0
-            when s.highway like '%cycleway%' or s.highway like '%path%'        then 1.0
-            when s.maxspeed is not null
-                and regexp_replace(s.maxspeed, '[^0-9].*', '') ~ '^\d+$'
-            then case
-                when regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 20 then 1.0
-                when regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 25 then 1.3
-                when regexp_replace(s.maxspeed, '[^0-9].*', '')::int <= 30 then 1.6
-                else 2.0
-            end
-            when s.highway in ('service', 'residential', 'unclassified')       then 1.3
-            when s.highway like '%residential%'                                then 1.3
-            when s.highway in ('tertiary', 'tertiary_link')                    then 1.5
-            when s.highway like '%tertiary%'                                   then 1.5
-            when s.highway in ('secondary', 'secondary_link', 'busway')        then 1.7
-            when s.highway like '%secondary%'                                  then 1.7
-            when s.highway in ('primary', 'primary_link')                      then 2.0
-            when s.highway like '%primary%'                                    then 2.0
-            else 1.4
-        end as speed_factor,
+            when s.highway in ('cycleway', 'path', 'footway',
+                               'pedestrian', 'bridleway', 'steps')   then 'quiet'
+            when s.highway in ('service')                              then 'service'
+            when s.highway in ('residential', 'unclassified',
+                               'living_street', 'busway')              then 'local'
+            when s.highway in ('tertiary', 'tertiary_link')            then 'tertiary'
+            when s.highway in ('secondary', 'secondary_link')          then 'secondary'
+            when s.highway in ('primary', 'primary_link')              then 'primary'
+            when s.highway in ('motorway', 'motorway_link', 'trunk',
+                               'trunk_link')                            then 'motorway'
+            else 'local'
+        end as highway_class,
 
-        -- Road type factor
+        -- Bucket infra_type into broader quality tiers. NULL infra is
+        -- "no bike-specific infrastructure on this segment".
         case
-            when s.highway in ('cycleway')                      then 1.0
-            when s.highway like '%cycleway%'                    then 1.0
-            when s.highway in ('path', 'footway', 'bridleway')  then 1.2
-            when s.highway like '%path%'                        then 1.2
-            when s.highway in ('pedestrian')                    then 1.5
-            when s.highway in ('living_street')                 then 3.0
-            when s.highway in ('residential')                   then 3.0
-            when s.highway like '%residential%'                 then 3.0
-            when s.highway in ('unclassified')                  then 3.5
-            when s.highway in ('busway')                        then 3.5
-            when s.highway in ('service')                       then 6.0
-            when s.highway in ('tertiary', 'tertiary_link')     then 5.5
-            when s.highway like '%tertiary%'                    then 5.5
-            when s.highway in ('secondary', 'secondary_link')   then 7.3
-            when s.highway like '%secondary%'                   then 7.3
-            when s.highway in ('primary', 'primary_link')       then 9.0
-            when s.highway like '%primary%'                     then 9.0
-            else 1.3
-        end as road_type_factor,
-
-        -- Infrastructure factor
-        case
-            when s.infra_type = 'protected_lane'    then 1.0
-            when s.infra_type = 'track'             then 1.0
-            when s.infra_type = 'shared_path'       then 1.3
-            when s.infra_type = 'buffered_lane'     then 1.5
-            when s.infra_type = 'designated_path'   then 1.5
-            when s.infra_type = 'bicycle_road'      then 1.7
-            when s.infra_type = 'bike_lane'         then 1.85
-            when s.infra_type = 'share_busway'      then 2.0
-            when s.infra_type = 'sharrow'           then 2.0
-            else 2.5
-        end as infrastructure_factor,
-
-        -- Tunnel factor
-        case
-            when s.tunnel = 'yes'
-                and coalesce(s.infra_type, '') not in (
-                    'protected_lane', 'track', 'shared_path', 'buffered_lane'
-                )
-            then 2.5
-            else 1.0
-        end as tunnel_factor,
-
-        -- Surface factor
-        case
-            when s.surface in ('asphalt', 'paved', 'concrete',
-                               'concrete:plates', 'concrete:lanes') then 1.0
-            when s.surface in ('paving_stones', 'sett',
-                               'cobblestone', 'unhewn_cobblestone') then 1.3
-            when s.surface in ('unpaved', 'gravel', 'fine_gravel',
-                               'compacted', 'dirt', 'grass',
-                               'ground', 'mud', 'sand')             then 1.5
-            when s.surface is null                                  then 1.0
-            else 1.0
-        end as surface_factor,
-
-        -- Lighting factor
-        case
-            when s.lit = 'yes' then 1.0
-            when s.lit = 'no'  then 1.2
-            else                    1.1
-        end as lighting_factor
+            when s.infra_type in ('protected_lane', 'track')           then 'protected'
+            when s.infra_type in ('buffered_lane', 'bike_lane',
+                                  'bicycle_road')                       then 'lane'
+            when s.infra_type in ('shared_path', 'designated_path')    then 'shared_path'
+            when s.infra_type in ('sharrow', 'share_busway')           then 'sharrow'
+            else 'none'
+        end as infra_tier
 
     from {{ ref('stg_' ~ city ~ '_bike_segments') }} s
+),
+
+with_base as (
+    select
+        *,
+
+        -- Base stress per meter, by (highway_class, infra_tier).
+        -- See issue #N for derivation. Tuned so the minimum is 1.0
+        -- (cycleway / path) and the worst case is ~6.0 (primary with
+        -- no bike infra). Service ways sit at 4.0 to discourage
+        -- routing through alleys and parking lots except as
+        -- last-resort connectors.
+        case
+            when highway_class = 'quiet'                               then 1.0
+
+            when highway_class = 'local' and infra_tier = 'protected'  then 1.1
+            when highway_class = 'local' and infra_tier = 'lane'       then 1.3
+            when highway_class = 'local'                               then 1.8
+
+            when highway_class = 'tertiary' and infra_tier = 'protected' then 1.2
+            when highway_class = 'tertiary' and infra_tier = 'lane'    then 1.8
+            when highway_class = 'tertiary'                            then 2.8
+
+            when highway_class = 'secondary' and infra_tier = 'protected' then 1.3
+            when highway_class = 'secondary' and infra_tier = 'lane'   then 2.5
+            when highway_class = 'secondary'                           then 4.5
+
+            when highway_class = 'primary' and infra_tier = 'protected' then 1.5
+            when highway_class = 'primary' and infra_tier = 'lane'     then 3.5
+            when highway_class = 'primary'                             then 6.0
+
+            -- Service: alleys, parking aisles, driveways. Last-resort
+            -- connectors; we want the router to avoid these unless
+            -- the alternative is much worse.
+            when highway_class = 'service' and infra_tier in ('protected', 'lane') then 3.0
+            when highway_class = 'service'                             then 4.0
+
+            -- Motorway shouldn't appear post-access-filtering, but
+            -- give it a high cost so any leakage routes around it.
+            when highway_class = 'motorway'                            then 10.0
+
+            -- Fallback for anything unclassified.
+            else 2.0
+        end as base_stress_per_meter,
+
+        -- Additive surface penalty. Applied uniformly across all
+        -- segments — a cobblestone cycleway is still uncomfortable
+        -- regardless of car traffic. NULL surface is treated as
+        -- paved (good OSM coverage in current target cities; revisit
+        -- for rural extracts).
+        case
+            when surface in ('cobblestone', 'unhewn_cobblestone',
+                             'sett', 'gravel', 'fine_gravel',
+                             'unpaved', 'dirt', 'ground',
+                             'mud', 'sand')                            then 0.3
+            else 0.0
+        end as surface_penalty,
+
+        -- Enclosed-segment penalty. Fires when the segment is structurally
+        -- confined (in a tunnel, under a bridge, or otherwise covered),
+        -- regardless of which overhead feature is responsible. The cyclist
+        -- has limited room to maneuver and visibility often drops; the
+        -- experience is the same whether OSM models the overhead as a
+        -- tunnel above or a bridge way above with layer=-1 below.
+        --
+        -- See issue #250. Replaces the prior tunnel-only check, which missed
+        -- underpasses that follow the bridge=yes / layer=-1 convention.
+        case
+            when (
+                    tunnel in ('yes', 'building_passage')
+                    or covered = 'yes'
+                    or (layer ~ '^-[0-9]+$')           -- layer is a negative integer
+                )
+                and highway_class in ('local', 'tertiary',
+                                      'secondary', 'primary', 'service')
+                and infra_tier not in ('protected', 'shared_path')
+            then 0.5
+            else 0.0
+        end as enclosed_penalty,
+
+        -- Lighting penalty. Small additive cost for unlit segments.
+        case
+            when lit = 'no'                                            then 0.1
+            else 0.0
+        end as lighting_penalty
+
+    from classified
 )
 
 select
@@ -145,6 +180,8 @@ select
     lit,
     bridge,
     tunnel,
+    layer,
+    covered,
     maxspeed,
 
     -- Raw cycleway tags
@@ -152,23 +189,23 @@ select
     cycleway_left,
     cycleway_right,
 
-    -- Factors (preserved for tuning)
-    speed_factor,
-    road_type_factor,
-    infrastructure_factor,
-    tunnel_factor,
-    surface_factor,
-    lighting_factor,
+    -- Cost classification (preserved for tuning visibility)
+    highway_class,
+    infra_tier,
+    base_stress_per_meter,
+    surface_penalty,
+    enclosed_penalty,
+    lighting_penalty,
 
-    length_m
-        * speed_factor
-        * road_type_factor
-        * infrastructure_factor
-        * tunnel_factor
-        * surface_factor
-        * lighting_factor
-        as physical_cost
+    -- Final per-segment physical cost. Always >= length_m since
+    -- base_stress_per_meter >= 1.0 and the penalties are >= 0.
+    length_m * (
+        base_stress_per_meter
+        + surface_penalty
+        + enclosed_penalty
+        + lighting_penalty
+    ) as physical_cost
 
-from factors
+from with_base
 
 {% endmacro %}

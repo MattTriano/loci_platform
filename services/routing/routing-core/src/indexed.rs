@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/indexed.rs
 //! IndexedGraph: a routing-ready graph with derived indexes.
 //!
 //! Built once at Lambda cold start (or once per CLI invocation) from a
@@ -5,39 +6,44 @@
 //!
 //!   - The underlying `Graph` (CSR adjacency, nodes, edges, geometry).
 //!   - A KD-tree over node coordinates for nearest-node lookup.
-//!   - The set of nodes that are intersections (out-degree >= 3),
-//!     stored as a bit-vector for O(1) membership checks during A*.
+//!   - A map from segment string-index to its geometry record, so
+//!     response composition is O(1) per edge instead of a linear scan.
 //!
-//! All derived data is computed eagerly so there's no interior
-//! mutability or once-cell synchronization to manage.
+//! Intersection status is read directly from `Node.is_intersection`
+//! (populated by the data pipeline), so there's no degree-counting or
+//! cached bitset to keep in sync.
 
-use crate::format::Graph;
+use std::collections::HashMap;
+
+use crate::format::{Graph, SegmentGeometry};
 use crate::kdtree::KdTree;
 
-/// Wraps a Graph with KD-tree and intersection-set indexes.
+/// Wraps a Graph with KD-tree and segment-geometry indexes.
 pub struct IndexedGraph {
     pub graph: Graph,
     /// KD-tree over node coordinates as (lat, lon).
     kdtree: KdTree,
-    /// One bit per node, set if the node has degree >= 3.
-    /// Matches the Python `get_intersection_nodes` definition.
-    intersections: Vec<u64>,
+    /// segment_id string index -> position in `graph.segment_geometries`.
+    segment_geometry_by_str_idx: HashMap<u32, usize>,
 }
 
 impl IndexedGraph {
     /// Build derived indexes for a loaded graph.
     pub fn build(graph: Graph) -> Self {
-        let coords: Vec<[f64; 2]> = graph
-            .nodes
-            .iter()
-            .map(|n| [n.lat as f64, n.lon as f64])
-            .collect();
+        let coords: Vec<[f64; 2]> = graph.nodes.iter().map(|n| [n.lat, n.lon]).collect();
         let kdtree = KdTree::build(&coords);
-        let intersections = compute_intersection_bitset(&graph);
+
+        let segment_geometry_by_str_idx = graph
+            .segment_geometries
+            .iter()
+            .enumerate()
+            .map(|(i, sg)| (sg.segment_id_str_idx, i))
+            .collect();
+
         Self {
             graph,
             kdtree,
-            intersections,
+            segment_geometry_by_str_idx,
         }
     }
 
@@ -50,48 +56,24 @@ impl IndexedGraph {
         self.kdtree.nearest(q).unwrap_or(0)
     }
 
-    /// True if the node has degree >= 3 (i.e. is an intersection).
+    /// True if the node is a logical intersection. Read straight from
+    /// the node record; the data pipeline owns the definition.
     pub fn is_intersection(&self, node_idx: u32) -> bool {
-        let i = node_idx as usize;
-        let word = i / 64;
-        let bit = i % 64;
-        (self.intersections[word] >> bit) & 1 == 1
-    }
-}
-
-fn compute_intersection_bitset(graph: &Graph) -> Vec<u64> {
-    // Python uses NetworkX's `G.degree(n) >= 3`, which counts both
-    // in- and out-edges. Our graph is directed and stored with both
-    // forward and backward edges for bidirectional segments, so the
-    // out-degree alone matches Python's degree for the bidirectional
-    // case. For one-way segments the directed in+out degree is what
-    // we want; we approximate it by computing in-degree from a
-    // single sweep and adding it to out-degree.
-    let n = graph.nodes.len();
-    let mut total_degree = vec![0u32; n];
-
-    for source_idx in 0..n {
-        let out_edges = graph.edges_from(source_idx as u32);
-        total_degree[source_idx] += out_edges.len() as u32;
-        for e in out_edges {
-            total_degree[e.target_node_idx as usize] += 1;
-        }
+        self.graph.nodes[node_idx as usize].is_intersection
     }
 
-    let word_count = n.div_ceil(64);
-    let mut bits = vec![0u64; word_count];
-    for (i, &deg) in total_degree.iter().enumerate() {
-        if deg >= 3 {
-            bits[i / 64] |= 1 << (i % 64);
-        }
+    /// Geometry for a segment, by its string-table index. O(1).
+    pub fn segment_geometry(&self, seg_str_idx: u32) -> Option<&SegmentGeometry> {
+        self.segment_geometry_by_str_idx
+            .get(&seg_str_idx)
+            .map(|&i| &self.graph.segment_geometries[i])
     }
-    bits
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::{Edge, Graph, Node};
+    use crate::format::{Graph, Node};
 
     fn empty_graph() -> Graph {
         Graph {
@@ -104,115 +86,40 @@ mod tests {
         }
     }
 
-    fn nan_edge(target: u32) -> Edge {
-        Edge {
-            target_node_idx: target,
-            segment_id_str_idx: 0,
-            name_str_idx: u32::MAX,
-            highway_str_idx: u32::MAX,
-            infra_type_str_idx: u32::MAX,
-            flags: 0b1,
-            length_m: 1.0,
-            stress_cost: 1.0,
-            speed_factor: f32::NAN,
-            road_type_factor: f32::NAN,
-            infrastructure_factor: f32::NAN,
-            tunnel_factor: f32::NAN,
-            surface_factor: f32::NAN,
-            lighting_factor: f32::NAN,
-            physical_cost: f32::NAN,
-            intersection_cost: f32::NAN,
-            crash_cost: f32::NAN,
+    fn node(osm_id: u64, lon: f64, lat: f64, is_intersection: bool) -> Node {
+        Node {
+            osm_id,
+            lon,
+            lat,
+            is_intersection,
         }
     }
 
     #[test]
-    fn three_node_chain_no_intersections() {
-        // 0 → 1 → 2 (each node has degree 2 at most)
+    fn reads_intersection_flag_from_nodes() {
+        // is_intersection now comes straight off the node record rather
+        // than being derived from degree.
         let mut g = empty_graph();
-        g.strings = vec!["seg".into()];
         g.nodes = vec![
-            Node {
-                osm_id: 1,
-                lon: 0.0,
-                lat: 0.0,
-            },
-            Node {
-                osm_id: 2,
-                lon: 1.0,
-                lat: 0.0,
-            },
-            Node {
-                osm_id: 3,
-                lon: 2.0,
-                lat: 0.0,
-            },
+            node(1, 0.0, 0.0, false),
+            node(2, 1.0, 0.0, true),
+            node(3, 2.0, 0.0, false),
         ];
-        g.edges = vec![nan_edge(1), nan_edge(2)];
-        g.csr_offsets = vec![0, 1, 2, 2];
-
-        let idx = IndexedGraph::build(g);
-        assert!(!idx.is_intersection(0));
-        assert!(!idx.is_intersection(1));
-        assert!(!idx.is_intersection(2));
-    }
-
-    #[test]
-    fn three_way_junction_is_intersection() {
-        // 0 → 1, 1 → 2, 1 → 3 (node 1 has out-degree 2, in-degree 1, total 3)
-        let mut g = empty_graph();
-        g.strings = vec!["seg".into()];
-        g.nodes = vec![
-            Node {
-                osm_id: 1,
-                lon: 0.0,
-                lat: 0.0,
-            },
-            Node {
-                osm_id: 2,
-                lon: 1.0,
-                lat: 0.0,
-            },
-            Node {
-                osm_id: 3,
-                lon: 2.0,
-                lat: 0.0,
-            },
-            Node {
-                osm_id: 4,
-                lon: 1.0,
-                lat: 1.0,
-            },
-        ];
-        g.edges = vec![nan_edge(1), nan_edge(2), nan_edge(3)];
-        g.csr_offsets = vec![0, 1, 3, 3, 3];
+        g.csr_offsets = vec![0, 0, 0, 0];
 
         let idx = IndexedGraph::build(g);
         assert!(!idx.is_intersection(0));
         assert!(idx.is_intersection(1));
         assert!(!idx.is_intersection(2));
-        assert!(!idx.is_intersection(3));
     }
 
     #[test]
     fn nearest_node_basic() {
         let mut g = empty_graph();
         g.nodes = vec![
-            Node {
-                osm_id: 10,
-                lon: -87.6298,
-                lat: 41.8781,
-            },
-            Node {
-                osm_id: 20,
-                lon: -87.6500,
-                lat: 41.8800,
-            },
-            Node {
-                osm_id: 30,
-                lon: -87.6100,
-                lat: 41.8700,
-            },
+            node(10, -87.6298, 41.8781, false),
+            node(20, -87.6500, 41.8800, false),
+            node(30, -87.6100, 41.8700, false),
         ];
         g.csr_offsets = vec![0, 0, 0, 0];
 
@@ -220,5 +127,29 @@ mod tests {
         // Query close to node 0
         let nn = idx.nearest_node(41.8780, -87.6299);
         assert_eq!(nn, 0);
+    }
+
+    #[test]
+    fn segment_geometry_lookup_indexes_by_str_idx() {
+        use crate::format::SegmentGeometry;
+
+        let mut g = empty_graph();
+        g.nodes = vec![node(1, 0.0, 0.0, false)];
+        g.csr_offsets = vec![0, 0];
+        g.segment_geometries = vec![
+            SegmentGeometry {
+                segment_id_str_idx: 7,
+                coords: vec![(1.0, 2.0)],
+            },
+            SegmentGeometry {
+                segment_id_str_idx: 3,
+                coords: vec![(3.0, 4.0)],
+            },
+        ];
+
+        let idx = IndexedGraph::build(g);
+        assert_eq!(idx.segment_geometry(7).unwrap().coords, vec![(1.0, 2.0)]);
+        assert_eq!(idx.segment_geometry(3).unwrap().coords, vec![(3.0, 4.0)]);
+        assert!(idx.segment_geometry(99).is_none());
     }
 }

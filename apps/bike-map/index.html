@@ -1698,11 +1698,6 @@ function clearRoute() {
 // ── Route segment popup builder ──────────────────────────
 const ROUTE_SEGMENT_COLOR = '#a5b4fc';
 
-function fmtMultiplier(v) {
-  if (v == null) return null;
-  return `×${(+v).toFixed(2)}`;
-}
-
 function fmtMeters(v) {
   if (v == null) return null;
   return `${(+v).toFixed(1)} m`;
@@ -1720,19 +1715,18 @@ function buildRouteSegmentPopupHTML(props) {
     ['Infra', props.infra_type],
   ].filter(([, v]) => v != null && v !== '');
 
-  const factorRows = [
-    ['Speed',          fmtMultiplier(cc.speed_factor)],
-    ['Road type',      fmtMultiplier(cc.road_type_factor)],
-    ['Infrastructure', fmtMultiplier(cc.infrastructure_factor)],
-    ['Tunnel',         fmtMultiplier(cc.tunnel_factor)],
-    ['Surface',        fmtMultiplier(cc.surface_factor)],
-    ['Lighting',       fmtMultiplier(cc.lighting_factor)],
-  ];
-
-  const penaltyRows = [
-    ['Crash penalty',     fmtMeters(cc.crash_cost)],
-    ['Intersection penalty',   fmtMeters(cc.intersection_cost)],
-    ['Left-turn penalty', fmtMeters(cc.left_turn_penalty)],
+  // New additive cost model. stress_cost is the routing weight; the rows
+  // below are its parts, in "stress-equivalent meters". physical_cost is
+  // always present (it's length × base-stress + surface/tunnel/lighting
+  // penalties, already composed); the rest show only when they bit into
+  // this segment's cost. left_turn_penalty is applied at the junction
+  // during routing, so it can make the parts sum slightly above the
+  // displayed stress cost — that's expected, not a rounding bug.
+  const breakdownRows = [
+    ['Physical',     fmtMeters(cc.physical_cost)],
+    ['Intersection', fmtMeters(cc.intersection_cost)],
+    ['Crash',        fmtMeters(cc.crash_cost)],
+    ['Left turn',    fmtMeters(cc.left_turn_penalty)],
   ].filter(([, v]) => v != null && parseFloat(v) > 0);
 
   function renderRows(rows) {
@@ -1742,11 +1736,8 @@ function buildRouteSegmentPopupHTML(props) {
   }
 
   const headerSection = headerRows.length ? renderRows(headerRows) : '';
-  const factorsSection = factorRows.length
-    ? `<div class="popup-section-title">Multipliers</div>${renderRows(factorRows)}`
-    : '';
-  const penaltiesSection = penaltyRows.length
-    ? `<div class="popup-section-title">Penalties</div>${renderRows(penaltyRows)}`
+  const breakdownSection = breakdownRows.length
+    ? `<div class="popup-section-title">Cost breakdown</div>${renderRows(breakdownRows)}`
     : '';
 
   return `
@@ -1754,8 +1745,7 @@ function buildRouteSegmentPopupHTML(props) {
     ${headerSection}
     <div class="popup-row"><span class="popup-key">Length</span><span class="popup-val">${fmtMeters(props.length_m)}</span></div>
     <div class="popup-row"><span class="popup-key">Stress cost</span><span class="popup-val">${fmtMeters(props.stress_cost)}</span></div>
-    ${factorsSection}
-    ${penaltiesSection}
+    ${breakdownSection}
   `;
 }
 

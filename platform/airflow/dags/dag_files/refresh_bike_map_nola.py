@@ -29,6 +29,8 @@ CITY_LAYER_DISPLAYS: list[LayerDisplayConfig] = [
 
 CITY_ROUTE_TESTS: list[RouteTestCase] = []
 
+ROUTABLE_ORIGIN_DEST_PAIR = ((29.9268, -90.0814), (29.9574, -90.0628))
+
 CITY_SPEC = CityBuildSpec(
     city="nola",
     bbox=NEW_ORLEANS_BBOX,
@@ -40,6 +42,7 @@ CITY_SPEC = CityBuildSpec(
     layer_displays=CITY_LAYER_DISPLAYS,
     weights_dbt_select=f"+{CITY}_bike_stress_weighted_segments",
     route_tests=CITY_ROUTE_TESTS,
+    synthetic_check_fixture=ROUTABLE_ORIGIN_DEST_PAIR,
 )
 
 

@@ -1,72 +1,46 @@
 version: 2
-
 models:
-  # ==================================================================
-  # chicago_bike_stress_weighted_segments
-  # ==================================================================
   - name: chicago_bike_stress_weighted_segments
-    description: >
-      Stress-weighted directed segments for bike routing. One row per
-      directed edge (u, v, key). stress_cost is the primary routing
-      weight, combining length, speed, infrastructure, surface,
-      lighting, crash history, and traffic control penalties.
-
-    # ── Model-level tests ──
+    description: Stress-weighted segments for bike routing. One row per undirected
+      segment; direction is carried as a column. Exposes physical_cost, crash_cost,
+      and intersection costs at BOTH endpoints. The graph exporter composes per-direction
+      stress when expanding each row into one or two directed edges (forward edges
+      pay intersection_cost_at_end; backward edges pay intersection_cost_at_start).
     data_tests:
-      # Primary key: each directed edge is unique
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
               - start_node_id
               - end_node_id
               - way_id
-
-      # stress_cost must never be negative (A* correctness)
       - dbt_utils.expression_is_true:
           arguments:
-            expression: "stress_cost >= 0"
+            expression: physical_cost >= length_m
           config:
-            name: stress_cost_non_negative
-
-
-      # crash_cost must be non-negative (it's an additive cost)
+            name: chicago_stress_weighted_physical_cost_at_least_length
       - dbt_utils.expression_is_true:
           arguments:
-            expression: "crash_cost >= 0"
+            expression: crash_cost >= 0
           config:
-            name: crash_cost_non_negative
-
-      # Every edge from the source network must be present.
+            name: chicago_crash_cost_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: intersection_cost_at_start >= 0
+          config:
+            name: chicago_intersection_cost_at_start_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: intersection_cost_at_end >= 0
+          config:
+            name: chicago_intersection_cost_at_end_non_negative
       - dbt_utils.equal_rowcount:
           arguments:
             compare_model: ref('stg_chicago_bike_segments')
-
-      # stress_cost should always be >= length_m * min possible factor product
-      # (0.5 * 1.0 * 1.0 * 1.0 = 0.5), so stress_cost >= length_m * 0.5.
-      # We test a weaker version: stress_cost > 0 for non-zero-length edges.
-      - dbt_expectations.expect_column_pair_values_A_to_be_greater_than_B:
-          arguments:
-            column_A: stress_cost
-            column_B: length_m
-            or_equal: false
-            row_condition: >
-              length_m > 1
-              and infrastructure_factor > 1.0
-              and speed_factor > 1.0
-            config:
-              # This is a sanity check, not a hard constraint — crash penalty
-              # and traffic control penalty are additive so stress_cost can
-              # exceed length_m even at factor=1.0. We test the subset where
-              # factors are elevated.
-              severity: warn
-      - compare_aggregations:
-          arguments:
-            other_model: "ref('chicago_bike_crash_hotspots')"
-            this_model_agg: "sum(crash_count)"
-            other_model_agg: "count(distinct crash_record_id)"
-            assertion: "this_model_agg / other_model_agg::float between 0.98 and 1.0"
-
     columns:
+      - name: segment_id
+        data_tests:
+          - not_null
+          - unique
       - name: start_node_id
         data_tests:
           - not_null
@@ -83,37 +57,51 @@ models:
               arguments:
                 min_value: 0
                 strictly: true
-      - name: stress_cost
+      - name: geom
         data_tests:
           - not_null
-      - name: speed_factor
-        data_tests:
-          - not_null
-      - name: infrastructure_factor
-        data_tests:
-          - not_null
-      - name: surface_factor
-        data_tests:
-          - not_null
-      - name: lighting_factor
+      - name: physical_cost
         data_tests:
           - not_null
       - name: crash_cost
         data_tests:
           - not_null
-      - name: intersection_cost
+      - name: intersection_cost_at_start
+        description: Intersection cost at the start of the segment. Paid by backward-direction
+          edges (which approach the start).
         data_tests:
           - not_null
-      - name: geom
+      - name: intersection_cost_at_end
+        description: Intersection cost at the end of the segment. Paid by forward-direction
+          edges (which approach the end).
         data_tests:
           - not_null
-
-  # ==================================================================
-  # chicago_bike_crash_hotspots
-  # ==================================================================
+      - name: start_is_intersection
+        description: True iff start_node_id appears in chicago_intersection_costs.
+          Propagated through the graph format so the routing service doesn't have
+          to re-derive it from edge degree.
+        data_tests:
+          - not_null
+      - name: end_is_intersection
+        data_tests:
+          - not_null
+      - name: base_stress_per_meter
+        data_tests:
+          - not_null
+      - name: surface_penalty
+        data_tests:
+          - not_null
+      - name: enclosed_penalty
+        data_tests:
+          - not_null
+      - name: lighting_penalty
+        data_tests:
+          - not_null
   - name: chicago_bike_crash_hotspots
-    description: >
-      Bike crash data with severity scores, deduplicated to one row per crash.
+    description: 'Bike crash data with severity scores, deduplicated to one row per
+      crash.
+
+      '
     columns:
       - name: crash_record_id
         tests:
@@ -132,35 +120,30 @@ models:
       - name: crash_date
         tests:
           - not_null
-
-  # ==================================================================
-  # chicago_intersection_costs
-  # ==================================================================
   - name: chicago_intersection_costs
-    description: >
-      Logical bike-network intersections with stress penalties.
-      A row exists for each node where >= 2 distinct OSM ways meet
-      AND >= 1 of those ways carries cars. Joined into
-      chicago_bike_stress_weighted_segments on end_node_id.
+    description: Logical bike-network intersections with stress penalties. One row
+      per node where >= 2 distinct OSM ways meet. The cost depends on the top two
+      way classes meeting at the node and the traffic-control tag. Joined into chicago_bike_stress_weighted_segments
+      on BOTH endpoints (start_node_id and end_node_id) so the graph exporter can
+      pick the right one per traversal direction.
     columns:
       - name: osmid
         description: OSM node id (unique).
-        tests:
+        data_tests:
           - not_null
           - unique
           - dbt_utils.relationships_where:
               arguments:
                 to: source('osm', 'chicago_osm_bike_network_nodes')
                 field: osm_id
-                from_condition: "traffic_control is not null"
-                to_condition: "osm_type = 'node' and valid_to is null"
+                from_condition: traffic_control is not null
+                to_condition: osm_type = 'node' and valid_to is null
               config:
                 severity: warn
       - name: traffic_control
-        description: >
-          Raw OSM 'highway' tag value on the node, or NULL for
-          uncontrolled intersections.
-        tests:
+        description: Raw OSM 'highway' tag value on the node, or NULL for uncontrolled
+          intersections.
+        data_tests:
           - accepted_values:
               arguments:
                 values:
@@ -172,23 +155,169 @@ models:
                   - turning_circle
                   - turning_loop
                 quote: true
-      - name: max_road_class
-        description: Worst road class among car-carrying ways at this node.
-        tests:
+              config:
+                severity: warn
+      - name: max_class
+        description: Highest stress class among the ways meeting at this node. Drives
+          the base intersection cost lookup.
+        data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['primary', 'secondary', 'tertiary', 'minor']
-
-      - name: max_road_rank
-        description: Numeric form of max_road_class (1-4).
-        tests:
+                values:
+                  - motorway
+                  - primary
+                  - secondary
+                  - tertiary
+                  - local
+                  - service
+                  - quiet
+      - name: second_max_class
+        description: Second-highest stress class. Used as a tie-break override for
+          local-and-below intersections (e.g. local x service is cheaper than local
+          x local).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - motorway
+                  - primary
+                  - secondary
+                  - tertiary
+                  - local
+                  - service
+                  - quiet
+      - name: way_count
+        description: Number of distinct ways meeting at this node.
+        data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments:
-                min_value: 1
-                max_value: 4
-      - name: intersection_cost
-        description: Stress cost added to a route for traversing through this intersection.
-        tests:
+                min_value: 2
+      - name: base_cost
+        description: Base intersection cost from the (max_class, second_max_class)
+          lookup, before applying the traffic-control multiplier.
+        data_tests:
           - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: intersection_cost
+        description: Final intersection cost = base_cost * traffic_control_multiplier.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+  - name: chicago_segment_costs
+    description: "Per-segment intrinsic stress costs from OSM physical attributes.\
+      \ physical_cost = length_m * (base_stress_per_meter + surface_penalty + enclosed_penalty\
+      \ + lighting_penalty), where base_stress_per_meter is at least 1.0 \u2014 so\
+      \ physical_cost is always at least length_m."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - segment_id
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: physical_cost >= length_m
+          config:
+            name: chicago_segment_costs_physical_cost_at_least_length
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_chicago_bike_segments')
+    columns:
+      - name: segment_id
+        data_tests:
+          - not_null
+          - unique
+      - name: way_id
+        data_tests:
+          - not_null
+      - name: start_node_id
+        data_tests:
+          - not_null
+      - name: end_node_id
+        data_tests:
+          - not_null
+      - name: length_m
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: geom
+        data_tests:
+          - not_null
+      - name: highway_class
+        description: Bucketed OSM highway value. Drives base_stress_per_meter.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - quiet
+                  - service
+                  - local
+                  - tertiary
+                  - secondary
+                  - primary
+                  - motorway
+      - name: infra_tier
+        description: Bucketed bike-infra quality. Drives base_stress_per_meter.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - protected
+                  - lane
+                  - shared_path
+                  - sharrow
+                  - none
+      - name: base_stress_per_meter
+        description: Per-meter stress cost from the (highway_class, infra_tier) lookup.
+          Minimum 1.0 (cycleway / quiet path).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1.0
+      - name: surface_penalty
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0.0
+      - name: enclosed_penalty
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0.0
+      - name: lighting_penalty
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0.0
+      - name: physical_cost
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: infra_category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - separated
+                  - on_road
+                  - shared
+                  - path
+              config:
+                where: infra_category is not null

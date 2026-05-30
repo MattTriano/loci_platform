@@ -8,6 +8,16 @@ matching the format specified in services/routing/docs/graph-format.md.
 The contract document is the spec; this module implements it. Any
 change here requires a corresponding change in the Rust reader and a
 bump of FORMAT_VERSION.
+
+Format v2 changes from v1:
+  - Node coordinates promoted from f32 to f64.
+  - Node record gains an is_intersection u8 flag and padding to 32 bytes.
+  - Segment geometry coordinates promoted from f32 to f64.
+  - Edge record drops the six legacy multiplicative factor fields
+    (speed/road_type/infrastructure/tunnel/surface/lighting), shrinking
+    from 68 to 44 bytes. The additive cost model that replaced them
+    keeps only physical_cost, intersection_cost, and crash_cost.
+The header, string table, and CSR offsets are unchanged.
 """
 
 from __future__ import annotations
@@ -18,7 +28,7 @@ from dataclasses import dataclass
 from typing import IO
 
 MAGIC = b"LOCI"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 NULL_STR_IDX = 0xFFFFFFFF
 EDGE_FLAG_FORWARD = 0b0000_0001
 
@@ -29,6 +39,11 @@ _U64_LE = struct.Struct("<Q")
 _F32_LE = struct.Struct("<f")
 _F64_LE = struct.Struct("<d")
 
+# Node record is padded to 32 bytes so each one's f64 fields land at
+# 8-byte-aligned offsets. Layout: 8 (osm_id) + 8 (lon) + 8 (lat)
+# + 1 (is_intersection) + 7 (padding) = 32.
+_NODE_PADDING = b"\x00" * 7
+
 
 @dataclass
 class WriteNode:
@@ -37,6 +52,7 @@ class WriteNode:
     osm_id: int
     lon: float
     lat: float
+    is_intersection: bool
 
 
 @dataclass
@@ -50,6 +66,10 @@ class WriteEdge:
     `source_node_idx` is included for ordering / CSR construction but
     not written to disk; the writer derives implicit source nodes from
     the position in the edge table.
+
+    `stress_cost` is the per-direction routing weight A* minimizes;
+    physical_cost / intersection_cost / crash_cost are its components,
+    carried for inspection and the route-segment popup.
     """
 
     source_node_idx: int
@@ -61,13 +81,6 @@ class WriteEdge:
     forward: bool
     length_m: float
     stress_cost: float
-    # Optional f32 attributes; pass math.nan for SQL NULL.
-    speed_factor: float
-    road_type_factor: float
-    infrastructure_factor: float
-    tunnel_factor: float
-    surface_factor: float
-    lighting_factor: float
     physical_cost: float
     intersection_cost: float
     crash_cost: float
@@ -76,7 +89,7 @@ class WriteEdge:
 @dataclass
 class WriteSegmentGeometry:
     segment_id_str_idx: int
-    coords: list[tuple[float, float]]  # (lon, lat) pairs
+    coords: list[tuple[float, float]]  # (lon, lat) pairs, written as f64
 
 
 def write_graph(
@@ -119,8 +132,10 @@ def write_graph(
     out.write(_U32_LE.pack(len(nodes)))
     for n in nodes:
         out.write(_U64_LE.pack(n.osm_id))
-        out.write(_F32_LE.pack(n.lon))
-        out.write(_F32_LE.pack(n.lat))
+        out.write(_F64_LE.pack(n.lon))
+        out.write(_F64_LE.pack(n.lat))
+        out.write(bytes([1 if n.is_intersection else 0]))
+        out.write(_NODE_PADDING)
 
     # --- Edge table + CSR offsets ---
     # CSR offsets are computed during the edge write pass: we record
@@ -156,8 +171,8 @@ def write_graph(
         out.write(_U32_LE.pack(g.segment_id_str_idx))
         out.write(_U32_LE.pack(len(g.coords)))
         for lon, lat in g.coords:
-            out.write(_F32_LE.pack(lon))
-            out.write(_F32_LE.pack(lat))
+            out.write(_F64_LE.pack(lon))
+            out.write(_F64_LE.pack(lat))
 
 
 def _write_edge(out: IO[bytes], e: WriteEdge) -> None:
@@ -170,12 +185,6 @@ def _write_edge(out: IO[bytes], e: WriteEdge) -> None:
     out.write(b"\x00\x00\x00")  # 3-byte padding
     out.write(_F32_LE.pack(e.length_m))
     out.write(_F32_LE.pack(e.stress_cost))
-    out.write(_F32_LE.pack(e.speed_factor))
-    out.write(_F32_LE.pack(e.road_type_factor))
-    out.write(_F32_LE.pack(e.infrastructure_factor))
-    out.write(_F32_LE.pack(e.tunnel_factor))
-    out.write(_F32_LE.pack(e.surface_factor))
-    out.write(_F32_LE.pack(e.lighting_factor))
     out.write(_F32_LE.pack(e.physical_cost))
     out.write(_F32_LE.pack(e.intersection_cost))
     out.write(_F32_LE.pack(e.crash_cost))

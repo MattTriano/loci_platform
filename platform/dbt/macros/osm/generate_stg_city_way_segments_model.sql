@@ -63,6 +63,8 @@ select
     w.lit,
     w.bridge,
     w.tunnel,
+    w.layer,
+    w.covered,
     w.cycleway_buffer,
     w.cycleway_left_buffer,
     w.cycleway_right_buffer,

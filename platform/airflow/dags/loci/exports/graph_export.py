@@ -9,10 +9,13 @@ direction column.
 The output format is documented in services/routing/docs/graph-format.md
 and consumed by the Rust routing-core library (Lambda + CLI).
 
-This module previously emitted a gzip-pickled NetworkX DiGraph; the
-Rust reimplementation introduced its own binary format that doesn't
-require Python on the read side. The query, component filtering, and
-heuristic floor computation are unchanged.
+The exporter uses a `nx.MultiDiGraph` as scratch storage so that
+parallel segments (multiple OSM ways connecting the same pair of
+intersection nodes — divided highways, frontage roads, bike paths
+running parallel to a road) are preserved instead of overwriting each
+other. The pure helpers `build_node_table`, `build_edges_and_strings`,
+and `build_segment_geometries` operate on a MultiDiGraph and are
+testable without a database.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import gzip
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import networkx as nx
 from loci.db.core import PostgresEngine
@@ -35,7 +39,7 @@ from loci.exports.graph_format import (
 
 logger = logging.getLogger(__name__)
 
-# Output S3 key for the new format. Kept here so callers
+# Output S3 key for the binary format. Kept here so callers
 # (loci.environments, the Airflow deploy task, tofu env vars) can
 # import a single constant rather than duplicating the path string.
 GRAPH_S3_KEY = "graph/routing_graph.bin.gz"
@@ -65,30 +69,37 @@ class RoutingGraphExporter:
             highway,
             infra_type,
             length_m,
-            stress_cost,
-            speed_factor,
-            road_type_factor,
-            infrastructure_factor,
-            tunnel_factor,
-            surface_factor,
-            lighting_factor,
             physical_cost,
-            intersection_cost,
             crash_cost,
+            intersection_cost_at_start,
+            intersection_cost_at_end,
+            start_is_intersection,
+            end_is_intersection,
+            highway_class,
+            infra_tier,
+            base_stress_per_meter,
+            surface_penalty,
+            enclosed_penalty,
+            lighting_penalty,
             ST_AsGeoJSON(ST_Simplify(geom, 0.00005)) as geom_geojson,
             ST_X(ST_StartPoint(geom)) as start_lon,
             ST_Y(ST_StartPoint(geom)) as start_lat,
             ST_X(ST_EndPoint(geom)) as end_lon,
             ST_Y(ST_EndPoint(geom)) as end_lat
         from {marts_schema}.{city}_bike_stress_weighted_segments
-        where stress_cost is not null
+        where physical_cost is not null
         order by way_id, start_position
     """
 
+    # Floor for the A* heuristic. Computed from per-meter components
+    # only — intersection_cost is per-endpoint and is NOT included
+    # here. If it were, the heuristic could overestimate distance-only
+    # cost for edges arriving at cheap intersections, breaking
+    # admissibility.
     _HEURISTIC_FLOOR_QUERY = """
-        select min(stress_cost / length_m) as floor
+        select min((physical_cost + coalesce(crash_cost, 0)) / length_m) as floor
         from {marts_schema}.{city}_bike_stress_weighted_segments
-        where length_m > 0 and stress_cost is not null
+        where length_m > 0 and physical_cost is not null
     """
 
     def __init__(
@@ -124,7 +135,7 @@ class RoutingGraphExporter:
         return output_path
 
     # ------------------------------------------------------------------
-    # Graph construction (unchanged from the gzip-pickle implementation)
+    # Graph construction
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -141,39 +152,21 @@ class RoutingGraphExporter:
         except (json.JSONDecodeError, TypeError, IndexError):
             return None
 
-    @staticmethod
-    def _normalize_highway(highway: str | None) -> str | None:
-        """Normalize the OSM highway value.
-
-        Historically the value sometimes arrived as a stringified list
-        (e.g. "['residential', 'tertiary']") for ways with multiple tags.
-        The current OSM collector should produce a single string per
-        segment; this normalization is defensive and logs a warning if
-        it ever fires, so we can confirm whether the upstream fix held
-        and the helper can be retired.
-        """
-        if highway is None or not highway.startswith("["):
-            return highway
-
-        logger.warning("highway value arrived as stringified list, normalizing: %r", highway)
-        # Strip "[", "]", quotes, then take the first comma-separated value.
-        cleaned = highway.strip("[]'\" ").split("'")[0].split(",")[0].strip()
-        return cleaned or None
-
-    def _build_graph(self) -> nx.DiGraph:
+    def _build_graph(self) -> nx.MultiDiGraph:
         """Stream segments and expand into directed edges.
 
-        Builds a NetworkX DiGraph as scratch storage so the existing
-        component-filtering step (which uses
-        nx.weakly_connected_components) can run unchanged. The final
-        serialization walks this graph and emits the binary format.
+        Uses MultiDiGraph as scratch storage so parallel segments
+        (multiple ways between the same pair of intersection nodes)
+        are preserved. The component-filtering step uses
+        `nx.weakly_connected_components`, which works identically on
+        MultiDiGraph. The final serialization is in `_write_binary`.
 
         Geometry is stored once per undirected segment in
         G.graph['segment_geometry'] keyed by segment_id (string).
         """
         query = self._SEGMENT_QUERY.format(city=self.city, marts_schema=self.marts_schema)
 
-        G = nx.DiGraph()
+        G: nx.MultiDiGraph = nx.MultiDiGraph()
         segment_geometry: dict[str, tuple] = {}
         G.graph["segment_geometry"] = segment_geometry
 
@@ -192,26 +185,40 @@ class RoutingGraphExporter:
                     segment_geometry[segment_id] = geom_coords
 
                 if start_node not in G:
-                    G.add_node(start_node, x=row["start_lon"], y=row["start_lat"])
+                    G.add_node(
+                        start_node,
+                        x=row["start_lon"],
+                        y=row["start_lat"],
+                        is_intersection=bool(row["start_is_intersection"]),
+                    )
                 if end_node not in G:
-                    G.add_node(end_node, x=row["end_lon"], y=row["end_lat"])
+                    G.add_node(
+                        end_node,
+                        x=row["end_lon"],
+                        y=row["end_lat"],
+                        is_intersection=bool(row["end_is_intersection"]),
+                    )
 
                 base_attrs = {
                     "segment_id": segment_id,
                     "length_m": _f(row["length_m"]),
-                    "stress_cost": _f(row["stress_cost"]),
                     "name": row["name"],
-                    "highway": self._normalize_highway(row["highway"]),
+                    "highway": row["highway"],
                     "infra_type": row["infra_type"],
-                    "speed_factor": _f(row["speed_factor"]),
-                    "road_type_factor": _f(row["road_type_factor"]),
-                    "infrastructure_factor": _f(row["infrastructure_factor"]),
-                    "tunnel_factor": _f(row["tunnel_factor"]),
-                    "surface_factor": _f(row["surface_factor"]),
-                    "lighting_factor": _f(row["lighting_factor"]),
                     "physical_cost": _f(row["physical_cost"]),
-                    "intersection_cost": _f(row["intersection_cost"]),
                     "crash_cost": _f(row["crash_cost"]),
+                    "intersection_cost_at_start": _f(row["intersection_cost_at_start"]),
+                    "intersection_cost_at_end": _f(row["intersection_cost_at_end"]),
+                    # Carried as graph attributes for the heuristic-floor
+                    # pass and possible future use; not written to the
+                    # binary edge record (which carries only the composed
+                    # stress_cost and its physical/intersection/crash parts).
+                    "highway_class": row["highway_class"],
+                    "infra_tier": row["infra_tier"],
+                    "base_stress_per_meter": _f(row["base_stress_per_meter"]),
+                    "surface_penalty": _f(row["surface_penalty"]),
+                    "enclosed_penalty": _f(row["enclosed_penalty"]),
+                    "lighting_penalty": _f(row["lighting_penalty"]),
                 }
 
                 if direction in ("forward", "bidirectional"):
@@ -261,7 +268,7 @@ class RoutingGraphExporter:
         )
         return G
 
-    def _filter_small_components(self, G: nx.DiGraph) -> nx.DiGraph:
+    def _filter_small_components(self, G: nx.MultiDiGraph) -> nx.MultiDiGraph:
         if self.min_component_size <= 1:
             return G
 
@@ -323,105 +330,173 @@ class RoutingGraphExporter:
     # Binary serialization
     # ------------------------------------------------------------------
 
-    def _write_binary(self, G: nx.DiGraph, output_path: Path) -> None:
+    def _write_binary(self, G: nx.MultiDiGraph, output_path: Path) -> None:
         """Walk the NetworkX graph and emit the binary format.
 
-        Steps:
-          1. Assign a contiguous NodeIdx (0..N-1) to each NetworkX node.
-             OSM node IDs become the `osm_id` field on each node record.
-          2. Build a deduplicated string table from all segment_ids,
-             names, highway values, and infra_type values.
-          3. Build WriteEdge records ordered by source NodeIdx (CSR order).
-             A backward edge in NetworkX is identified by its `forward=False`
-             attribute; the writer sets the EDGE_FLAG_FORWARD bit accordingly.
-          4. Build WriteSegmentGeometry records from G.graph['segment_geometry'].
-          5. Write everything via write_graph, gzipping the output.
+        Composition of the pure helpers below — exists to wire them
+        together and own the gzip / file handle. The helpers are
+        directly testable with hand-built MultiDiGraphs.
         """
-        # 1. NodeIdx assignment
-        osm_to_idx: dict[int, int] = {}
-        nodes: list[WriteNode] = []
-        for osm_id, attrs in G.nodes(data=True):
-            osm_to_idx[osm_id] = len(nodes)
-            nodes.append(WriteNode(osm_id=osm_id, lon=attrs["x"], lat=attrs["y"]))
+        nodes, osm_to_idx = build_node_table(G)
+        edges, strings = build_edges_and_strings(G, osm_to_idx)
+        geom_records = build_segment_geometries(G.graph.get("segment_geometry", {}), strings)
 
-        # 2. String table — deduplicated. We use a dict to preserve
-        # first-insertion order, which makes the output deterministic
-        # for a given input. Index 0 goes to whatever string is seen first.
-        strings: dict[str, int] = {}
-
-        def intern(s: str | None, *, nullable: bool) -> int:
-            if s is None:
-                if not nullable:
-                    raise ValueError("non-nullable string field had None value")
-                return NULL_STR_IDX
-            existing = strings.get(s)
-            if existing is not None:
-                return existing
-            idx = len(strings)
-            strings[s] = idx
-            return idx
-
-        # 3. Edges — collect with source NodeIdx, then sort by it.
-        # NetworkX's edge iteration order is insertion order, which is
-        # whatever order rows came back from the SELECT. We re-sort
-        # explicitly here to enforce the CSR invariant the writer
-        # validates.
-        edge_records: list[WriteEdge] = []
-        for u_osm, v_osm, data in G.edges(data=True):
-            edge_records.append(
-                WriteEdge(
-                    source_node_idx=osm_to_idx[u_osm],
-                    target_node_idx=osm_to_idx[v_osm],
-                    segment_id_str_idx=intern(data["segment_id"], nullable=False),
-                    name_str_idx=intern(data.get("name"), nullable=True),
-                    highway_str_idx=intern(data.get("highway"), nullable=True),
-                    infra_type_str_idx=intern(data.get("infra_type"), nullable=True),
-                    forward=bool(data.get("forward", True)),
-                    length_m=f32_or_nan(data.get("length_m")),
-                    stress_cost=f32_or_nan(data.get("stress_cost")),
-                    speed_factor=f32_or_nan(data.get("speed_factor")),
-                    road_type_factor=f32_or_nan(data.get("road_type_factor")),
-                    infrastructure_factor=f32_or_nan(data.get("infrastructure_factor")),
-                    tunnel_factor=f32_or_nan(data.get("tunnel_factor")),
-                    surface_factor=f32_or_nan(data.get("surface_factor")),
-                    lighting_factor=f32_or_nan(data.get("lighting_factor")),
-                    physical_cost=f32_or_nan(data.get("physical_cost")),
-                    intersection_cost=f32_or_nan(data.get("intersection_cost")),
-                    crash_cost=f32_or_nan(data.get("crash_cost")),
-                )
-            )
-        edge_records.sort(key=lambda e: e.source_node_idx)
-
-        # 4. Segment geometries
-        geom_records: list[WriteSegmentGeometry] = []
-        for seg_id, coords in G.graph.get("segment_geometry", {}).items():
-            seg_idx = strings.get(seg_id)
-            if seg_idx is None:
-                # The segment had geometry but no edge referenced it —
-                # shouldn't happen after component pruning, but skip
-                # safely rather than emit a dangling geometry.
-                continue
-            geom_records.append(
-                WriteSegmentGeometry(
-                    segment_id_str_idx=seg_idx,
-                    coords=[(float(lon), float(lat)) for lon, lat in coords],
-                )
-            )
-
-        # 5. Write — strings dict is ordered, so list(strings) is the
-        # canonical order matching the assigned indices.
         with gzip.open(output_path, "wb") as gz:
             write_graph(
                 gz,
                 heuristic_floor=G.graph.get("heuristic_floor", 0.0),
                 strings=list(strings),
                 nodes=nodes,
-                edges=edge_records,
+                edges=edges,
                 segment_geometries=geom_records,
             )
 
 
-def _f(value):
+# ----------------------------------------------------------------------
+# Pure helpers — no DB, no file I/O. Operate on a MultiDiGraph built
+# either by `_build_graph` or by a test fixture.
+# ----------------------------------------------------------------------
+
+
+def build_node_table(
+    G: nx.MultiDiGraph,
+) -> tuple[list[WriteNode], dict[int, int]]:
+    """Assign NodeIdx 0..N-1 in G.nodes iteration order.
+
+    Returns the WriteNode list (in NodeIdx order) and a mapping from
+    OSM node id to its assigned NodeIdx. `is_intersection` is read
+    from the node attribute set during graph construction; nodes
+    without the attribute default to False.
+    """
+    osm_to_idx: dict[int, int] = {}
+    nodes: list[WriteNode] = []
+    for osm_id, attrs in G.nodes(data=True):
+        osm_to_idx[osm_id] = len(nodes)
+        nodes.append(
+            WriteNode(
+                osm_id=osm_id,
+                lon=float(attrs["x"]),
+                lat=float(attrs["y"]),
+                is_intersection=bool(attrs.get("is_intersection", False)),
+            )
+        )
+    return nodes, osm_to_idx
+
+
+def build_edges_and_strings(
+    G: nx.MultiDiGraph,
+    osm_to_idx: dict[int, int],
+) -> tuple[list[WriteEdge], dict[str, int]]:
+    """Build WriteEdge records sorted by source_node_idx, with a
+    deduplicated string table.
+
+    Per-direction stress composition:
+      forward edge:  physical_cost + crash_cost + intersection_cost_at_end
+      backward edge: physical_cost + crash_cost + intersection_cost_at_start
+
+    The returned `strings` dict preserves first-insertion order; its
+    keys form the canonical string table (the writer takes `list(strings)`
+    to get the ordered table). Indices are the dict values.
+
+    Edge attribute fields that are missing on the NX graph default to
+    `None`, which `f32_or_nan` maps to NaN for the binary format.
+    """
+    strings: dict[str, int] = {}
+
+    def intern(s: str | None, *, nullable: bool) -> int:
+        if s is None:
+            if not nullable:
+                raise ValueError("non-nullable string field had None value")
+            return NULL_STR_IDX
+        existing = strings.get(s)
+        if existing is not None:
+            return existing
+        idx = len(strings)
+        strings[s] = idx
+        return idx
+
+    edges: list[WriteEdge] = []
+    # Iterate all edges including parallels. We don't need the
+    # MultiDiGraph key — it's just a disambiguator for parallel edges.
+    for u_osm, v_osm, data in G.edges(data=True):
+        forward = bool(data.get("forward", True))
+
+        # Per-direction stress composition. Missing cost components
+        # are treated as 0 here (not NaN) so summation is well-defined.
+        physical = _coerce_cost(data.get("physical_cost"))
+        crash = _coerce_cost(data.get("crash_cost"))
+        if forward:
+            intersection = _coerce_cost(data.get("intersection_cost_at_end"))
+        else:
+            intersection = _coerce_cost(data.get("intersection_cost_at_start"))
+        stress_cost = physical + crash + intersection
+
+        edges.append(
+            WriteEdge(
+                source_node_idx=osm_to_idx[u_osm],
+                target_node_idx=osm_to_idx[v_osm],
+                segment_id_str_idx=intern(data["segment_id"], nullable=False),
+                name_str_idx=intern(data.get("name"), nullable=True),
+                highway_str_idx=intern(data.get("highway"), nullable=True),
+                infra_type_str_idx=intern(data.get("infra_type"), nullable=True),
+                forward=forward,
+                length_m=f32_or_nan(data.get("length_m")),
+                stress_cost=f32_or_nan(stress_cost),
+                physical_cost=f32_or_nan(data.get("physical_cost")),
+                # `intersection_cost` is the value that was actually
+                # applied for this edge's direction. Matches what's
+                # baked into `stress_cost`.
+                intersection_cost=f32_or_nan(intersection),
+                crash_cost=f32_or_nan(data.get("crash_cost")),
+            )
+        )
+
+    # Stable sort by source_node_idx. Python's sort is stable, so
+    # parallel edges from the same source preserve their insertion order.
+    edges.sort(key=lambda e: e.source_node_idx)
+    return edges, strings
+
+
+def build_segment_geometries(
+    segment_geometry: dict[str, tuple],
+    strings: dict[str, int],
+) -> list[WriteSegmentGeometry]:
+    """Build geometry records for segments referenced by the string table.
+
+    Segments not in `strings` (orphaned by component filtering before
+    we got here, or never referenced by an edge) are skipped silently.
+    """
+    records: list[WriteSegmentGeometry] = []
+    for seg_id, coords in segment_geometry.items():
+        seg_idx = strings.get(seg_id)
+        if seg_idx is None:
+            continue
+        records.append(
+            WriteSegmentGeometry(
+                segment_id_str_idx=seg_idx,
+                coords=[(float(lon), float(lat)) for lon, lat in coords],
+            )
+        )
+    return records
+
+
+def _coerce_cost(value: Any) -> float:
+    """Coerce a cost component value for arithmetic.
+
+    None and NaN both map to 0.0 so the stress-cost summation produces
+    a usable value when components are missing. (We don't propagate
+    NaN through the sum because A* needs a finite cost to make
+    progress.)
+    """
+    if value is None:
+        return 0.0
+    value = float(value)
+    if value != value:  # NaN check
+        return 0.0
+    return value
+
+
+def _f(value: Any) -> float | None:
     """Coerce numeric DB values (Decimal/None) to native float.
 
     Decimal values from psycopg are larger than floats and aren't
