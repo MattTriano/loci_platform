@@ -19,7 +19,7 @@ def _get_collector(conn_id: str, task_logger: Logger) -> CKANCollector:
 @task
 def run_full_update(update_config: DatasetUpdateConfig, conn_id: str, task_logger: Logger) -> bool:
     collector = _get_collector(conn_id, task_logger)
-    summary_results = collector.full_refresh(spec=update_config.spec)
+    summary_results = collector.collect(spec=update_config.spec, force=True)
     task_logger.info("Collection summary", extra={"payload": summary_results})
     return True
 
@@ -30,6 +30,9 @@ def update_ckan_table(
     conn_id: str,
     task_logger: Logger,
 ) -> None:
+    # CKAN is full-refresh-only: there is no incremental mode to branch to,
+    # so this task group stays single-path (no choose_update_mode), unlike
+    # the other sources. This is a deliberate divergence, not an oversight.
     _full_update = run_full_update(
         conn_id=conn_id, update_config=update_config, task_logger=task_logger
     )

@@ -207,13 +207,11 @@ class CKANMetadata:
 
         Raises ValueError if the resource is not in the DataStore.
         """
-        data = self._get(
-            "datastore_search",
-            params={"resource_id": resource_id, "limit": "0"},
-        )
+        data = self._get("datastore_search", params={"resource_id": resource_id, "limit": "0"})
         fields = data["result"].get("fields", [])
-        # Filter out the internal _id field that CKAN adds automatically
-        return [f for f in fields if f.get("id") != "_id"]
+        # Filter CKAN's internal columns: _id (auto-increment) and _full_text (tsvector).
+        internal = {"_id", "_full_text"}
+        return [f for f in fields if f.get("id") not in internal]
 
     def get_datastore_row_count(self, resource_id: str) -> int:
         """Return the total number of rows in a DataStore resource."""

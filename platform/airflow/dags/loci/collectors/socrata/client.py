@@ -142,3 +142,21 @@ class SocrataClient:
                 resp.text[max(0, e.pos - 200) : e.pos + 200],
             )
             raise
+
+    def find_dupes(self, domain: str, dataset_id: str, columns: list[str]):
+        cols = ", ".join(columns)
+        params = {
+            "$select": f"{cols}, count(*) as n",
+            "$group": cols,
+            "$having": "n > 1",
+            "$limit": 5,
+        }
+        headers = {"X-App-Token": self.app_token} if self.app_token else {}
+        r = requests.get(
+            f"https://{domain}/resource/{dataset_id}.json",
+            params=params,
+            headers=headers,
+            timeout=60,
+        )
+        r.raise_for_status()
+        return r.json()
