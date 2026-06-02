@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/ckan/collector.py
 from __future__ import annotations
 
 import csv

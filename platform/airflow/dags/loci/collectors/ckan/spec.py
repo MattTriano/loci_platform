@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/ckan/spec.py
 """
 CKANDatasetSpec — defines a CKAN dataset to collect.
 

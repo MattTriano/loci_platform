@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/sources/update_configs.py
 from dataclasses import dataclass
 
 from loci.collectors.base_spec import DatasetSpec
@@ -37,8 +38,6 @@ class DatasetUpdateConfig:
         specify it again here (and risk the cron/Pendulum off-by-one).
     full_update_months : tuple[int, ...]
         Which months full refreshes are allowed in. Defaults to all 12.
-    full_update_mode : str
-        "api" or "file_download".
     """
 
     spec: DatasetSpec
@@ -46,7 +45,6 @@ class DatasetUpdateConfig:
     full_update_week_of_month: int
     full_update_day_of_week: int | None = None
     full_update_months: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
-    full_update_mode: str = "api"  # "api" or "file_download"
 
 
 ###############################################################################
@@ -57,77 +55,66 @@ BOSTON_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.BOSTON_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 1 * * 0",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 CHICAGO_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 1 * * 1",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DENVER_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.DENVER_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 2 * * 0",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DETROIT_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 2 * * 1",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 MADISON_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.MADISON_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 3 * * 0",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.NEW_ORLEANS_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 3 * * 1",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NYC_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.NYC_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 PORTLAND_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 4 * * 0",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 SAN_FRANCISCO_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.SAN_FRANCISCO_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 4 * * 1",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 TORONTO_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 5 * * 0",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 WASHINGTON_DC_BIKEINDEX_BIKE_THEFTS_UC = DatasetUpdateConfig(
     spec=specs.WASHINGTON_DC_BIKEINDEX_BIKE_THEFTS_SPEC,
     update_cron="0 5 * * 1",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 ###############################################################################
@@ -139,7 +126,6 @@ STATE_TIGER_UC = DatasetUpdateConfig(
     update_cron="0 2 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 COUNTY_TIGER_UC = DatasetUpdateConfig(
@@ -147,7 +133,6 @@ COUNTY_TIGER_UC = DatasetUpdateConfig(
     update_cron="5 2 22 10 2",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 ZCTA_TIGER_UC = DatasetUpdateConfig(
@@ -155,7 +140,6 @@ ZCTA_TIGER_UC = DatasetUpdateConfig(
     update_cron="10 2 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 TRACT_TIGER_UC = DatasetUpdateConfig(
@@ -163,7 +147,6 @@ TRACT_TIGER_UC = DatasetUpdateConfig(
     update_cron="15 2 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 BLOCK_GROUP_UC = DatasetUpdateConfig(
@@ -171,7 +154,6 @@ BLOCK_GROUP_UC = DatasetUpdateConfig(
     update_cron="25 2 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 ADDR_TIGER_UC = DatasetUpdateConfig(
@@ -179,7 +161,6 @@ ADDR_TIGER_UC = DatasetUpdateConfig(
     update_cron="20 2 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 COASTLINE_TIGER_UC = DatasetUpdateConfig(
@@ -187,7 +168,6 @@ COASTLINE_TIGER_UC = DatasetUpdateConfig(
     update_cron="40 2 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 RAILS_TIGER_UC = DatasetUpdateConfig(
@@ -195,7 +175,6 @@ RAILS_TIGER_UC = DatasetUpdateConfig(
     update_cron="0 3 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 PRIMARY_ROADS_TIGER_UC = DatasetUpdateConfig(
@@ -203,7 +182,6 @@ PRIMARY_ROADS_TIGER_UC = DatasetUpdateConfig(
     update_cron="20 3 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 PRIMARY_SECONDARY_ROADS_TIGER_UC = DatasetUpdateConfig(
@@ -211,7 +189,6 @@ PRIMARY_SECONDARY_ROADS_TIGER_UC = DatasetUpdateConfig(
     update_cron="40 3 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 ALL_ROADS_TIGER_UC = DatasetUpdateConfig(
@@ -219,7 +196,6 @@ ALL_ROADS_TIGER_UC = DatasetUpdateConfig(
     update_cron="0 4 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 AREAWATER_TIGER_UC = DatasetUpdateConfig(
@@ -227,7 +203,6 @@ AREAWATER_TIGER_UC = DatasetUpdateConfig(
     update_cron="20 4 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 LINEARWATER_TIGER_UC = DatasetUpdateConfig(
@@ -235,7 +210,6 @@ LINEARWATER_TIGER_UC = DatasetUpdateConfig(
     update_cron="40 4 22 10 *",
     full_update_week_of_month=4,
     full_update_day_of_week=3,
-    full_update_mode="file_download",
 )
 
 ###############################################################################
@@ -248,7 +222,6 @@ ACS5__HOUSING_CHARACTERISTICS_BY_TRACT_UC = DatasetUpdateConfig(
     full_update_week_of_month=4,
     full_update_day_of_week=4,
     full_update_months=(3, 6, 9, 12),
-    full_update_mode="api",
 )
 
 ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UC = DatasetUpdateConfig(
@@ -257,7 +230,6 @@ ACS5__OCCUPATIONS_BY_SEX_BY_TRACT_UC = DatasetUpdateConfig(
     full_update_week_of_month=4,
     full_update_day_of_week=4,
     full_update_months=(3, 6, 9, 12),
-    full_update_mode="api",
 )
 
 ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UC = DatasetUpdateConfig(
@@ -266,7 +238,6 @@ ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_AGE_SEX_RACE_BY_TRACT_UC = DatasetUpdateConfig
     full_update_week_of_month=4,
     full_update_day_of_week=4,
     full_update_months=(3, 6, 9, 12),
-    full_update_mode="api",
 )
 
 ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_UC = DatasetUpdateConfig(
@@ -275,7 +246,6 @@ ACS5__MEANS_OF_TRANSPO_TO_WORK_BY_ECON_CHARS_BY_TRACT_UC = DatasetUpdateConfig(
     full_update_week_of_month=4,
     full_update_day_of_week=4,
     full_update_months=(3, 6, 9, 12),
-    full_update_mode="api",
 )
 
 ACS5__INTERNET_UTILIZATION_BY_TRACT_UC = DatasetUpdateConfig(
@@ -284,7 +254,6 @@ ACS5__INTERNET_UTILIZATION_BY_TRACT_UC = DatasetUpdateConfig(
     full_update_week_of_month=4,
     full_update_day_of_week=4,
     full_update_months=(3, 6, 9, 12),
-    full_update_mode="api",
 )
 
 ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UC = DatasetUpdateConfig(
@@ -293,7 +262,6 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT_UC = DatasetUpdateConfig(
     full_update_week_of_month=4,
     full_update_day_of_week=4,
     full_update_months=(3, 6, 9, 12),
-    full_update_mode="api",
 )
 
 ###############################################################################
@@ -305,7 +273,6 @@ CHICAGO_CITY_BOUNDARY_UC = DatasetUpdateConfig(
     update_cron="0 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_BIKE_RACKS_UC = DatasetUpdateConfig(
@@ -313,7 +280,6 @@ CHICAGO_BIKE_RACKS_UC = DatasetUpdateConfig(
     update_cron="1 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_COMMUNITY_AREAS_UC = DatasetUpdateConfig(
@@ -321,7 +287,6 @@ CHICAGO_COMMUNITY_AREAS_UC = DatasetUpdateConfig(
     update_cron="2 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_POLICE_DISTRICT_UC = DatasetUpdateConfig(
@@ -329,7 +294,6 @@ CHICAGO_POLICE_DISTRICT_UC = DatasetUpdateConfig(
     update_cron="3 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_WARD_PRECINCTS_UC = DatasetUpdateConfig(
@@ -337,7 +301,6 @@ CHICAGO_WARD_PRECINCTS_UC = DatasetUpdateConfig(
     update_cron="4 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_PEDWAY_ROUTE_UC = DatasetUpdateConfig(
@@ -345,7 +308,6 @@ CHICAGO_PEDWAY_ROUTE_UC = DatasetUpdateConfig(
     update_cron="5 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_LIBRARIES_UC = DatasetUpdateConfig(
@@ -353,7 +315,6 @@ CHICAGO_LIBRARIES_UC = DatasetUpdateConfig(
     update_cron="6 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_BIKE_ROUTES_UC = DatasetUpdateConfig(
@@ -361,7 +322,6 @@ CHICAGO_BIKE_ROUTES_UC = DatasetUpdateConfig(
     update_cron="7 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_BUILDING_FOOTPRINTS_UC = DatasetUpdateConfig(
@@ -369,7 +329,6 @@ CHICAGO_BUILDING_FOOTPRINTS_UC = DatasetUpdateConfig(
     update_cron="8 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CTA_BUS_STOP_UC = DatasetUpdateConfig(
@@ -377,7 +336,6 @@ CTA_BUS_STOP_UC = DatasetUpdateConfig(
     update_cron="15 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CTA_BUS_ROUTES_UC = DatasetUpdateConfig(
@@ -385,7 +343,6 @@ CTA_BUS_ROUTES_UC = DatasetUpdateConfig(
     update_cron="16 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_STREET_CENTER_LINES_UC = DatasetUpdateConfig(
@@ -393,7 +350,6 @@ CHICAGO_STREET_CENTER_LINES_UC = DatasetUpdateConfig(
     update_cron="0 3 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=2,
-    full_update_mode="api",
 )
 
 CTA_STATIONS_UC = DatasetUpdateConfig(
@@ -401,7 +357,6 @@ CTA_STATIONS_UC = DatasetUpdateConfig(
     update_cron="17 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_PARKS_UC = DatasetUpdateConfig(
@@ -409,7 +364,6 @@ CHICAGO_PARKS_UC = DatasetUpdateConfig(
     update_cron="18 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_MURAL_REGISTRY_UC = DatasetUpdateConfig(
@@ -417,7 +371,6 @@ CHICAGO_MURAL_REGISTRY_UC = DatasetUpdateConfig(
     update_cron="19 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_LANDMARK_UC = DatasetUpdateConfig(
@@ -425,7 +378,6 @@ CHICAGO_LANDMARK_UC = DatasetUpdateConfig(
     update_cron="20 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_VACANT_ABANDONED_BUILDINGS_UC = DatasetUpdateConfig(
@@ -433,7 +385,6 @@ CHICAGO_VACANT_ABANDONED_BUILDINGS_UC = DatasetUpdateConfig(
     update_cron="21 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_BUILDING_SCOFFLAW_LIST_UC = DatasetUpdateConfig(
@@ -441,7 +392,6 @@ CHICAGO_BUILDING_SCOFFLAW_LIST_UC = DatasetUpdateConfig(
     update_cron="22 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_POTHOLES_PATCHED_UC = DatasetUpdateConfig(
@@ -449,7 +399,6 @@ CHICAGO_POTHOLES_PATCHED_UC = DatasetUpdateConfig(
     update_cron="23 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_RELOCATED_VEHICLES_UC = DatasetUpdateConfig(
@@ -457,7 +406,6 @@ CHICAGO_RELOCATED_VEHICLES_UC = DatasetUpdateConfig(
     update_cron="24 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_LIBRARY_EVENTS_UC = DatasetUpdateConfig(
@@ -465,7 +413,6 @@ CHICAGO_LIBRARY_EVENTS_UC = DatasetUpdateConfig(
     update_cron="25 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_UC = DatasetUpdateConfig(
@@ -473,7 +420,6 @@ CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_UC = DatasetUpdateConfig(
     update_cron="26 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_BUILDING_PERMITS_UC = DatasetUpdateConfig(
@@ -481,7 +427,6 @@ CHICAGO_BUILDING_PERMITS_UC = DatasetUpdateConfig(
     update_cron="0 6 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
-    full_update_mode="api",
 )
 
 CHICAGO_FOOD_INSPECTIONS_UC = DatasetUpdateConfig(
@@ -489,7 +434,6 @@ CHICAGO_FOOD_INSPECTIONS_UC = DatasetUpdateConfig(
     update_cron="0 5 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_SIDEWALK_CAFE_PERMITS_UC = DatasetUpdateConfig(
@@ -497,7 +441,6 @@ CHICAGO_SIDEWALK_CAFE_PERMITS_UC = DatasetUpdateConfig(
     update_cron="5 5 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_SPEED_CAMERA_VIOLATION_UC = DatasetUpdateConfig(
@@ -512,7 +455,6 @@ CHICAGO_DIVVY_BICYCLE_STATIONS_UC = DatasetUpdateConfig(
     update_cron="15 4 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_RED_LIGHT_CAMERA_VIOLATION_UC = DatasetUpdateConfig(
@@ -520,7 +462,6 @@ CHICAGO_RED_LIGHT_CAMERA_VIOLATION_UC = DatasetUpdateConfig(
     update_cron="20 4 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_UC = DatasetUpdateConfig(
@@ -528,15 +469,13 @@ OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_UC = DatasetUpdateConfig(
     update_cron="5 2 * * 2,5",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_311_SERVICE_REQUESTS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_311_SERVICE_REQUESTS_SPEC,
-    update_cron="30 4 * * 1,4",
+    update_cron="30 4 10 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="file_download",
 )
 
 CHICAGO_TOWED_VEHICLES_UC = DatasetUpdateConfig(
@@ -544,7 +483,6 @@ CHICAGO_TOWED_VEHICLES_UC = DatasetUpdateConfig(
     update_cron="0 4 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_TRAFFIC_CRASHES_CRASHES_UC = DatasetUpdateConfig(
@@ -552,7 +490,6 @@ CHICAGO_TRAFFIC_CRASHES_CRASHES_UC = DatasetUpdateConfig(
     update_cron="10 3 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_TRAFFIC_CRASHES_PEOPLE_UC = DatasetUpdateConfig(
@@ -560,7 +497,6 @@ CHICAGO_TRAFFIC_CRASHES_PEOPLE_UC = DatasetUpdateConfig(
     update_cron="40 2 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_TRAFFIC_CRASHES_VEHICLES_UC = DatasetUpdateConfig(
@@ -568,7 +504,6 @@ CHICAGO_TRAFFIC_CRASHES_VEHICLES_UC = DatasetUpdateConfig(
     update_cron="50 2 * * 1,4",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CTA_RIDERSHIP_DAILY_BOARDING_TOTALS_UC = DatasetUpdateConfig(
@@ -576,7 +511,6 @@ CTA_RIDERSHIP_DAILY_BOARDING_TOTALS_UC = DatasetUpdateConfig(
     update_cron="30 22 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING_UC = DatasetUpdateConfig(
@@ -584,7 +518,6 @@ CHICAGO_LENDING_EQUITY_RESIDENTIAL_LENDING_UC = DatasetUpdateConfig(
     update_cron="40 4 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS_UC = DatasetUpdateConfig(
@@ -592,23 +525,20 @@ CHICAGO_ADDITIONAL_DWELLING_UNIT_PREAPPROVAL_APPLICATIONS_UC = DatasetUpdateConf
     update_cron="50 4 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_RESIDENTIAL_CONDOMINIUM_UNIT_CHARACTERISTICS_SPEC,
-    update_cron="10 5 * * *",
+    update_cron="10 5 1 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=5,
-    full_update_mode="file_download",
 )
 
 COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_SINGLE_AND_MULTI_FAMILY_IMPROVEMENT_CHARACTERISTICS_SPEC,
-    update_cron="20 5 * * *",
+    update_cron="20 5 2 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=5,
-    full_update_mode="file_download",
 )
 
 COOK_COUNTY_COMMERCIAL_VALUATION_DATA_UC = DatasetUpdateConfig(
@@ -616,7 +546,6 @@ COOK_COUNTY_COMMERCIAL_VALUATION_DATA_UC = DatasetUpdateConfig(
     update_cron="30 5 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=5,
-    full_update_mode="api",
 )
 
 COOK_COUNTY_PARCEL_SALES_UC = DatasetUpdateConfig(
@@ -624,15 +553,13 @@ COOK_COUNTY_PARCEL_SALES_UC = DatasetUpdateConfig(
     update_cron="40 5 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 COOK_COUNTY_ASSESSED_PARCEL_VALUES_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_ASSESSED_PARCEL_VALUES_SPEC,
-    update_cron="30 1 * * 1,4",
+    update_cron="30 1 4 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=0,
-    full_update_mode="file_download",
 )
 
 COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_UC = DatasetUpdateConfig(
@@ -640,15 +567,13 @@ COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_UC = DatasetUpdateConfig(
     update_cron="50 5 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 COOK_COUNTY_PARCEL_ADDRESSES_UC = DatasetUpdateConfig(
     spec=specs.COOK_COUNTY_PARCEL_ADDRESSES_SPEC,
-    update_cron="50 5 * * *",
+    update_cron="50 5 5 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="file_download",
 )
 
 CHICAGO_ARRESTS_UC = DatasetUpdateConfig(
@@ -656,15 +581,13 @@ CHICAGO_ARRESTS_UC = DatasetUpdateConfig(
     update_cron="20 1 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=0,
-    full_update_mode="api",
 )
 
 CHICAGO_CRIMES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_CRIMES_SPEC,
-    update_cron="10 1 * * 1",
+    update_cron="10 1 7 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=0,
-    full_update_mode="file_download",
 )
 
 CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_UC = DatasetUpdateConfig(
@@ -672,7 +595,6 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_UC = DatasetUpdateConfig(
     update_cron="0 1 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
-    full_update_mode="api",
 )
 
 #######################################################################################
@@ -684,7 +606,6 @@ BOSTON_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     update_cron="50 1 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 BOSTON_OSM_TRANSIT_UC = DatasetUpdateConfig(
@@ -692,7 +613,6 @@ BOSTON_OSM_TRANSIT_UC = DatasetUpdateConfig(
     update_cron="52 1 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_BARS_UC = DatasetUpdateConfig(
@@ -700,7 +620,6 @@ CHICAGO_BARS_UC = DatasetUpdateConfig(
     update_cron="0 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
@@ -708,7 +627,6 @@ CHICAGO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     update_cron="1 6 * * 3",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_CAFES_UC = DatasetUpdateConfig(
@@ -716,7 +634,6 @@ CHICAGO_OSM_CAFES_UC = DatasetUpdateConfig(
     update_cron="2 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_CLOTHING_UC = DatasetUpdateConfig(
@@ -724,7 +641,6 @@ CHICAGO_OSM_CLOTHING_UC = DatasetUpdateConfig(
     update_cron="3 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_CULTURE_UC = DatasetUpdateConfig(
@@ -732,7 +648,6 @@ CHICAGO_OSM_CULTURE_UC = DatasetUpdateConfig(
     update_cron="4 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_FITNESS_UC = DatasetUpdateConfig(
@@ -740,7 +655,6 @@ CHICAGO_OSM_FITNESS_UC = DatasetUpdateConfig(
     update_cron="5 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_FOOD_AND_DRINK_UC = DatasetUpdateConfig(
@@ -748,7 +662,6 @@ CHICAGO_OSM_FOOD_AND_DRINK_UC = DatasetUpdateConfig(
     update_cron="6 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_FOOD_RETAIL_UC = DatasetUpdateConfig(
@@ -756,7 +669,6 @@ CHICAGO_OSM_FOOD_RETAIL_UC = DatasetUpdateConfig(
     update_cron="7 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_TREES_UC = DatasetUpdateConfig(
@@ -764,7 +676,6 @@ CHICAGO_OSM_TREES_UC = DatasetUpdateConfig(
     update_cron="8 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_TRANSIT_UC = DatasetUpdateConfig(
@@ -772,21 +683,18 @@ CHICAGO_OSM_TRANSIT_UC = DatasetUpdateConfig(
     update_cron="9 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 DENVER_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.DENVER_OSM_BIKE_PARKING_SPEC,
     update_cron="35 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DETROIT_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_OSM_BIKE_PARKING_SPEC,
     update_cron="10 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DETROIT_OSM_TRANSIT_UC = DatasetUpdateConfig(
@@ -794,7 +702,6 @@ DETROIT_OSM_TRANSIT_UC = DatasetUpdateConfig(
     update_cron="12 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 MADISON_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
@@ -802,7 +709,6 @@ MADISON_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     update_cron="20 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
@@ -810,49 +716,42 @@ MADISON_OSM_TRANSIT_UC = DatasetUpdateConfig(
     update_cron="22 2 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 NEW_ORLEANS_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.NEW_ORLEANS_OSM_BIKE_PARKING_SPEC,
     update_cron="41 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NYC_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.NYC_OSM_BIKE_PARKING_SPEC,
     update_cron="37 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 PORTLAND_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_OSM_BIKE_PARKING_SPEC,
     update_cron="25 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 SAN_FRANCISCO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.SAN_FRANCISCO_OSM_BIKE_PARKING_SPEC,
     update_cron="28 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 TORONTO_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_OSM_BIKE_PARKING_SPEC,
     update_cron="31 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 WASHINGTON_DC_OSM_BIKE_PARKING_UC = DatasetUpdateConfig(
     spec=specs.WASHINGTON_DC_OSM_BIKE_PARKING_SPEC,
     update_cron="34 2 * * 2",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 
@@ -864,154 +763,132 @@ BOSTON_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.BOSTON_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="6 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 BOSTON_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.BOSTON_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="8 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="10 0 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 CHICAGO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="12 0 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DENVER_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.DENVER_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="14 0 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DENVER_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.DENVER_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="16 0 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DETROIT_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="2 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 DETROIT_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.DETROIT_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="4 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 MADISON_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.MADISON_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="10 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 MADISON_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.MADISON_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="12 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.NEW_ORLEANS_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="14 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="16 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NYC_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.NYC_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="32 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 NYC_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.NYC_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="35 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 PORTLAND_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="18 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 PORTLAND_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="20 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 SAN_FRANCISCO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.SAN_FRANCISCO_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="30 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 SAN_FRANCISCO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.SAN_FRANCISCO_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="32 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 TORONTO_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="22 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 TORONTO_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.TORONTO_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="24 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_UC = DatasetUpdateConfig(
     spec=specs.WASHINGTON_DC_OSM_BIKE_NETWORK_EDGES_SPEC,
     update_cron="26 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_UC = DatasetUpdateConfig(
     spec=specs.WASHINGTON_DC_OSM_BIKE_NETWORK_NODES_SPEC,
     update_cron="28 1 * * 3",
     full_update_week_of_month=1,
-    full_update_mode="api",
 )
 
 #######################################################################################
@@ -1023,7 +900,6 @@ OSMNX_CHICAGO_BIKE_NETWORK_UC = DatasetUpdateConfig(
     update_cron="45 6 * * 4",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 OSMNX_DETROIT_BIKE_NETWORK_UC = DatasetUpdateConfig(
@@ -1031,7 +907,6 @@ OSMNX_DETROIT_BIKE_NETWORK_UC = DatasetUpdateConfig(
     update_cron="55 6 * * 4",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 #######################################################################################
@@ -1043,7 +918,6 @@ TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_UC = DatasetUpdateConfig(
     update_cron="0 6 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 TORONTO_BICYCLE_PARKING_RACKS_UC = DatasetUpdateConfig(
@@ -1051,7 +925,6 @@ TORONTO_BICYCLE_PARKING_RACKS_UC = DatasetUpdateConfig(
     update_cron="3 6 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 
@@ -1064,7 +937,6 @@ TORONTO_TRAFFIC_COLLISIONS_UC = DatasetUpdateConfig(
     update_cron="0 3 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 DETROIT_BIKE_LANES_UC = DatasetUpdateConfig(
@@ -1072,7 +944,6 @@ DETROIT_BIKE_LANES_UC = DatasetUpdateConfig(
     update_cron="4 3 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 DETROIT_BIKE_PARKING_UC = DatasetUpdateConfig(
@@ -1080,7 +951,6 @@ DETROIT_BIKE_PARKING_UC = DatasetUpdateConfig(
     update_cron="7 3 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 DETROIT_BOUNDARY_UC = DatasetUpdateConfig(
@@ -1088,7 +958,6 @@ DETROIT_BOUNDARY_UC = DatasetUpdateConfig(
     update_cron="6 3 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )
 
 DETROIT_TRAFFIC_CRASHES_UC = DatasetUpdateConfig(
@@ -1096,5 +965,4 @@ DETROIT_TRAFFIC_CRASHES_UC = DatasetUpdateConfig(
     update_cron="10 3 * * 2",
     full_update_week_of_month=1,
     full_update_day_of_week=4,
-    full_update_mode="api",
 )

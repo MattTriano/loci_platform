@@ -1,6 +1,5 @@
-import shutil
+# /loci_platform/platform/airflow/dags/loci/collectors/ckan/taskflow.py
 from logging import Logger
-from pathlib import Path
 
 from airflow.sdk import task, task_group
 from airflow.sdk.bases.operator import chain

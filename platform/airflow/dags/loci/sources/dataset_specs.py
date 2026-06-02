@@ -1,3 +1,4 @@
+# loci_platform/platform/airflow/dags/loci/sources/dataset_specs.py
 from loci.collectors.arcgishub.spec import ArcGISHubDatasetSpec
 from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
 from loci.collectors.census.spec import CensusDatasetSpec
@@ -1505,7 +1506,6 @@ COOK_COUNTY_ASSESSED_PARCEL_VALUES_SPEC = SocrataDatasetSpec(
     target_schema="raw_data",
     entity_key=["row_id"],
     full_update_mode="file_download",
-    max_rows=1_500_000,
 )
 
 COOK_COUNTY_NEIGHBORHOOD_BOUNDARIES_SPEC = SocrataDatasetSpec(
