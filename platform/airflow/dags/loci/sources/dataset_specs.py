@@ -1523,6 +1523,7 @@ COOK_COUNTY_PARCEL_ADDRESSES_SPEC = SocrataDatasetSpec(
     target_table="cook_county_parcel_addresses",
     target_schema="raw_data",
     entity_key=["row_id"],
+    max_rows=3_000_000,
     full_update_mode="file_download",
 )
 
