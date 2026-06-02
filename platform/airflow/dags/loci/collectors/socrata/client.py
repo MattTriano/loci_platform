@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import requests
-from requests.exceptions import ConnectionError, ReadTimeout
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
     retry,
@@ -108,7 +108,9 @@ class SocrataClient:
         return self._request(domain, dataset_id, params, include_system_fields)
 
     @retry(
-        retry=retry_if_exception_type((json.JSONDecodeError, ConnectionError, ReadTimeout)),
+        retry=retry_if_exception_type(
+            (json.JSONDecodeError, ConnectionError, ReadTimeout, ChunkedEncodingError)
+        ),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         before_sleep=before_sleep_log(logger, logging.WARNING),
