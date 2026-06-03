@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/arcgishub/client.py
 """HTTP client for ArcGIS Hub data portals."""
 
 from __future__ import annotations

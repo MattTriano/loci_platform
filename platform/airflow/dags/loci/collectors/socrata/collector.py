@@ -1,9 +1,11 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/socrata/collector.py
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import tempfile
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +16,6 @@ from loci.collectors.socrata.metadata import SocrataTableMetadata
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.parsers.csv_parser import parse_csv
 from loci.parsers.geojson import parse_geojson
-from loci.sources.update_configs import DatasetUpdateConfig
 from loci.tracking.ingestion_tracker import IngestionTracker
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
@@ -31,6 +32,20 @@ logger = logging.getLogger(__name__)
 class SocrataCollector:
     """
     High-level orchestrator for Socrata dataset ingestion.
+
+    Public surface matches the other collectors (OSM, ArcGIS Hub, Bike Index):
+
+        collector.collect(spec, force=False)  # force=True -> full, False -> incremental
+        collector.generate_ddl(spec)
+
+    Dispatch (driven entirely by the spec):
+        - spec.full_update_mode == "file_download":
+              every run is a full file refresh. File exports carry no Socrata
+              system fields and aren't incrementally queryable, so `force` is
+              ignored — there are no API incrementals for these tables.
+        - spec.full_update_mode == "api":
+              force=True  -> full refresh via paginated SODA API
+              force=False -> incremental update via :updated_at high-water mark
     """
 
     SOURCE_NAME = "socrata"
@@ -81,6 +96,93 @@ class SocrataCollector:
             )
         return self._client
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def collect(self, spec: SocrataDatasetSpec, force: bool = False) -> dict[str, Any]:
+        """
+        Collect data for a spec and merge into the target table.
+
+        See the class docstring for dispatch rules. Returns a summary dict.
+        """
+        dataset_id = spec.dataset_id
+        target_table = spec.target_table
+        target_schema = spec.target_schema
+        entity_key = spec.entity_key
+
+        if spec.full_update_mode == "file_download":
+            if not force:
+                self.logger.info(
+                    "%s is file_download mode; running a full file refresh "
+                    "(file exports aren't incrementally queryable, so force is ignored).",
+                    spec.name,
+                )
+            mode = "full_refresh_file"
+            rows_merged = self.full_refresh_via_file(
+                dataset_id=dataset_id,
+                target_table=target_table,
+                target_schema=target_schema,
+                entity_key=entity_key,
+            )
+        elif force:
+            mode = "full_refresh_api"
+            rows_merged = self.full_refresh_via_api(
+                dataset_id=dataset_id,
+                target_table=target_table,
+                target_schema=target_schema,
+                entity_key=entity_key,
+            )
+        else:
+            mode = "incremental"
+            rows_merged = self.incremental_update(
+                dataset_id=dataset_id,
+                target_table=target_table,
+                target_schema=target_schema,
+                config=IncrementalConfig(
+                    incremental_column=spec.incremental_column,
+                    entity_key=entity_key or [],
+                ),
+                entity_key=entity_key,
+                max_rows=spec.max_rows,
+            )
+
+        summary = {
+            "spec_name": spec.name,
+            "mode": mode,
+            "rows_merged": rows_merged,
+        }
+        self.logger.info("Collection complete for %r: %s", spec.name, summary)
+        return summary
+
+    def generate_ddl(self, spec: SocrataDatasetSpec) -> str:
+        """Generate the CREATE TABLE script for a spec (delegates to metadata)."""
+        return self._get_metadata(spec.dataset_id).generate_ddl(spec)
+
+    def print_ddl(self, spec: SocrataDatasetSpec) -> None:
+        """Generate and print DDL for easy copy-paste into a migration script."""
+        print(self.generate_ddl(spec))
+
+    def preview(
+        self,
+        dataset_id: str,
+        limit: int = 5,
+        columns: list[str] | None = None,
+        include_system_fields: bool = True,
+    ) -> list[dict[str, Any]]:
+        meta = self._get_metadata(dataset_id)
+        return self.client.query(
+            domain=meta.domain,
+            dataset_id=dataset_id,
+            select=", ".join(columns) if columns else None,
+            limit=limit,
+            include_system_fields=include_system_fields,
+        )
+
+    # ------------------------------------------------------------------
+    # Metadata / table helpers
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _add_system_field_defaults(
         rows: list[dict[str, Any]], timestamp: str
@@ -122,42 +224,56 @@ class SocrataCollector:
             self.logger.warning("Dropped columns not in target table: %s", dropped)
         return rows
 
-    def full_refresh(
+    # ------------------------------------------------------------------
+    # Full refresh via file download
+    # ------------------------------------------------------------------
+
+    def _peek_csv_columns(self, url: str) -> set[str]:
+        """
+        Return the column set from a CSV export's header row without
+        downloading the whole file.
+
+        Streams the response and reads only the first line, so this pulls
+        a few KB rather than the full export.
+        """
+        with self.client._session.get(url, stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            resp.encoding = "utf-8"
+            header_line = next(resp.iter_lines(decode_unicode=True), None)
+        if not header_line:
+            raise ValueError(f"No header row in CSV export at {url}")
+        header_line = header_line.lstrip("\ufeff")  # strip BOM if present
+        return set(next(csv.reader([header_line])))
+
+    def _preflight_file_columns(
         self,
         dataset_id: str,
         target_table: str,
-        target_schema: str = "raw_data",
-        config: DatasetUpdateConfig | None = None,
-    ) -> int:
+        target_schema: str,
+        raise_on_drift: bool = False,
+    ) -> None:
         """
-        Dispatch a full refresh based on config.full_update_mode.
+        Validate the export's columns against the target table before the
+        download begins.
 
-        Args:
-            dataset_id:     Socrata 4x4 identifier.
-            target_table:   Target table name.
-            target_schema:  Target schema name.
-            config:         DatasetUpdateConfig. If None, defaults to API mode.
+        Always peeks the CSV header (even for GeoJSON-ingested datasets):
+        Socrata renders every export format from one canonical schema, so the
+        CSV header is a complete, single-line, dependency-free view of the
+        column universe — and unlike GeoJSON properties it also includes the
+        geometry column.
 
-        Returns:
-            Number of rows merged.
+        Starts in warn-first mode (raise_on_drift=False): flip the default to
+        True once the set of benign export-only extras is confirmed.
         """
-        mode = config.full_update_mode if config else "api"
-        entity_key = config.spec.entity_key if config else None
-
-        if mode == "file_download":
-            return self.full_refresh_via_file(
-                dataset_id=dataset_id,
-                target_table=target_table,
-                target_schema=target_schema,
-                entity_key=entity_key,
-            )
-        else:
-            return self.full_refresh_via_api(
-                dataset_id=dataset_id,
-                target_table=target_table,
-                target_schema=target_schema,
-                entity_key=entity_key,
-            )
+        meta = self._get_metadata(dataset_id)
+        csv_url = f"https://{meta.domain}/api/views/{dataset_id}/rows.csv?accessType=DOWNLOAD"
+        raw_cols = self._peek_csv_columns(csv_url)
+        rename_map = meta.column_rename_map
+        renamed = {rename_map.get(c, c) for c in raw_cols}
+        source_cols = {c for c in renamed if not c.startswith(":@computed_region")}
+        self._preflight_column_check(
+            source_cols, target_table, target_schema, raise_on_drift=raise_on_drift
+        )
 
     def full_refresh_via_file(
         self,
@@ -173,8 +289,6 @@ class SocrataCollector:
         System fields (socrata_updated_at) are set to the current timestamp
         since they are not available in bulk exports.
         """
-        from datetime import datetime
-
         meta = self._get_metadata(dataset_id)
         download_url = meta.data_download_url
         download_format = meta.download_format
@@ -195,6 +309,9 @@ class SocrataCollector:
         )
 
         with self.tracker.track(self.SOURCE_NAME, dataset_id, fqn, metadata=run_metadata) as run:
+            # Validate columns against the target before the (potentially huge)
+            # download. Warn-first for now; flip raise_on_drift=True to enforce.
+            self._preflight_file_columns(dataset_id, target_table, target_schema)
             filepath = self._download_to_tempfile(download_url, download_format)
 
             try:
@@ -326,6 +443,10 @@ class SocrataCollector:
         meta = self._get_metadata(dataset_id)
         return {col.field_name for col in meta.columns if col.datatype in ("location", "point")}
 
+    # ------------------------------------------------------------------
+    # Full refresh via API
+    # ------------------------------------------------------------------
+
     def full_refresh_via_api(
         self,
         dataset_id: str,
@@ -365,11 +486,15 @@ class SocrataCollector:
         source_columns: set[str],
         target_table: str,
         target_schema: str,
+        raise_on_drift: bool = True,
     ) -> None:
         """
         Compare source columns against the target table schema.
-        Raises on new columns (schema drift). Logs warnings for
-        columns present in the table but missing from the source.
+
+        Logs warnings for columns present in the table but missing from the
+        source. For columns present in the source but not the table (schema
+        drift), raises SchemaDriftError when raise_on_drift is True (the API
+        path), or logs a warning when False (the file path's warn-first mode).
         """
         table_columns = self._get_table_columns(target_table, target_schema)
 
@@ -389,10 +514,13 @@ class SocrataCollector:
             )
 
         if new_in_source:
-            raise SchemaDriftError(
+            message = (
                 f"Source has columns not in {target_schema}.{target_table}: "
                 f"{new_in_source}. Add them via migration, then re-run."
             )
+            if raise_on_drift:
+                raise SchemaDriftError(message)
+            self.logger.warning("Schema drift (warn-only): %s", message)
 
     def _get_hwm_from_table(
         self, target_table: str, target_schema: str
@@ -451,6 +579,9 @@ class SocrataCollector:
 
         If entity_key is provided, uses SCD2 merge (hash-based versioning).
         Otherwise, uses simple INSERT with optional ON CONFLICT from config.
+
+        Passing high_water_mark_override="" forces a full scan of the dataset
+        from the beginning (this is how full_refresh_via_api works).
         """
         if high_water_mark_override is not None:
             raw_hwm = high_water_mark_override
@@ -472,8 +603,10 @@ class SocrataCollector:
         fqn = f"{target_schema}.{target_table}"
         inc_col = config.incremental_column
 
+        is_full_refresh_api = high_water_mark_override == ""
+
         run_metadata = {
-            "mode": "incremental" if not high_water_mark_override == "" else "full_refresh_api",
+            "mode": "full_refresh_api" if is_full_refresh_api else "incremental",
             "incremental_column": inc_col,
             "entity_key": entity_key,
             "prior_high_water_mark": f"{hwm_value}|{hwm_id}" if hwm_id else hwm_value,
@@ -484,7 +617,7 @@ class SocrataCollector:
         # A full refresh via API forces high_water_mark_override="" to restart from
         # the beginning of the dataset on every run. Combining that with max_rows
         # would re-ingest the same prefix on each run and never reach the tail.
-        if effective_max_rows is not None and high_water_mark_override == "":
+        if effective_max_rows is not None and is_full_refresh_api:
             raise ValueError(
                 "max_rows cannot be used with full_refresh_via_api: a capped full "
                 "refresh would re-ingest the same prefix on every run. Use "
@@ -604,27 +737,3 @@ class SocrataCollector:
             return None, None
         best = max(values, key=lambda x: (x[0], x[1]))
         return str(best[0]), best[1]
-
-    # ------------------------------------------------------------------
-    # Convenience
-    # ------------------------------------------------------------------
-
-    def preview(
-        self,
-        dataset_id: str,
-        limit: int = 5,
-        columns: list[str] | None = None,
-        include_system_fields: bool = True,
-    ) -> list[dict[str, Any]]:
-        meta = self._get_metadata(dataset_id)
-        return self.client.query(
-            domain=meta.domain,
-            dataset_id=dataset_id,
-            select=", ".join(columns) if columns else None,
-            limit=limit,
-            include_system_fields=include_system_fields,
-        )
-
-    def print_ddl(self, spec: SocrataDatasetSpec) -> None:
-        """Generate and print DDL for easy copy-paste into a migration script."""
-        print(self.generate_ddl(spec))

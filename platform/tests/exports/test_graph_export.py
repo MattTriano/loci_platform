@@ -568,7 +568,7 @@ def _row(
         "infra_tier": "none",
         "base_stress_per_meter": 1.8,
         "surface_penalty": 0.0,
-        "tunnel_penalty": 0.0,
+        "enclosed_penalty": 0.0,
         "lighting_penalty": 0.0,
         "geom_geojson": geom,
         "start_lon": start_lon,
