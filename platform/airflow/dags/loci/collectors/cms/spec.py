@@ -1,11 +1,11 @@
 # /loci_platform/platform/airflow/dags/loci/collectors/cms/spec.py
 """
-CMSSpec — defines a data.cms.gov dataset to collect.
+CMSDatasetSpec — defines a data.cms.gov dataset to collect.
 
 Usage:
-    from loci.collectors.cms.spec import CMSSpec
+    from loci.collectors.cms.spec import CMSDatasetSpec
 
-    spec = CMSSpec(
+    spec = CMSDatasetSpec(
         name="medicare_inpatient_by_provider_and_service",
         dataset_title="Medicare Inpatient Hospitals - by Provider and Service",
         target_table="medicare_inpatient_by_provider_and_service",
@@ -22,7 +22,7 @@ from loci.collectors.base_spec import DatasetSpec
 
 
 @dataclass
-class CMSSpec(DatasetSpec):
+class CMSDatasetSpec(DatasetSpec):
     """
     Defines a data.cms.gov dataset to collect.
 

@@ -9,13 +9,11 @@ behavior under test.
 
 from __future__ import annotations
 
-import contextlib
 import csv
 import uuid as uuid_module
 from pathlib import Path
-from types import SimpleNamespace
 
-from loci.collectors.cms.spec import CMSSpec
+from loci.collectors.cms.spec import CMSDatasetSpec
 
 DATASET_TITLE = "Fake Medicare Payments - by Provider and Service"
 DATA_API_BASE = "https://data.cms.gov/data-api/v1/dataset"
@@ -149,25 +147,6 @@ class FakeCMSClient:
         raise KeyError(f"No fake CSV at {url}")
 
 
-class NoopTracker:
-    """Tracker stand-in: records runs, touches no database."""
-
-    def __init__(self):
-        self.runs: list[tuple[str, SimpleNamespace]] = []
-
-    @contextlib.contextmanager
-    def track(self, source, dataset_id, target_table, metadata=None):
-        run = SimpleNamespace(
-            metadata=metadata or {},
-            rows_staged=0,
-            rows_merged=0,
-            rows_ingested=0,
-            high_water_mark=None,
-        )
-        self.runs.append((dataset_id, run))
-        yield run
-
-
 # ---------------------------------------------------------------------
 # Test data helpers
 # ---------------------------------------------------------------------
@@ -196,8 +175,10 @@ def seeded_source() -> FakeCMSSource:
     return source
 
 
-def make_spec(schema: str, retrieval: str = "api", vintages: list[str] | None = None) -> CMSSpec:
-    return CMSSpec(
+def make_spec(
+    schema: str, retrieval: str = "api", vintages: list[str] | None = None
+) -> CMSDatasetSpec:
+    return CMSDatasetSpec(
         name="fake_payments",
         dataset_title=DATASET_TITLE,
         target_table="fake_payments",

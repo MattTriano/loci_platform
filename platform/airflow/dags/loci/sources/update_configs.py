@@ -929,6 +929,44 @@ TORONTO_BICYCLE_PARKING_RACKS_UC = DatasetUpdateConfig(
 
 
 #######################################################################################
+#    CMS                                                                              #
+#######################################################################################
+
+MEDICARE_INPATIENT_BY_PROVIDER_AND_SERVICE_UC = DatasetUpdateConfig(
+    spec=specs.MEDICARE_INPATIENT_BY_PROVIDER_AND_SERVICE_SPEC,
+    update_cron="1 0 1 * *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=2,
+)
+
+MEDICARE_PHYSICIANS_BY_PROVIDER_AND_SERVICE_UC = DatasetUpdateConfig(
+    spec=specs.MEDICARE_PHYSICIANS_BY_PROVIDER_AND_SERVICE_SPEC,
+    update_cron="1 10 1 * *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=2,
+)
+
+
+#######################################################################################
+#    DKAN                                                                             #
+#######################################################################################
+
+PDC_HOSPITAL_GENERAL_INFORMATION_UC = DatasetUpdateConfig(
+    spec=specs.PDC_HOSPITAL_GENERAL_INFORMATION_SPEC,
+    update_cron="1 0 2 * *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=2,
+)
+
+OPENPAYMENTS_GENERAL_PAYMENTS_UC = DatasetUpdateConfig(
+    spec=specs.OPENPAYMENTS_GENERAL_PAYMENTS_SPEC,
+    update_cron="1 10 2 * *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=2,
+)
+
+
+#######################################################################################
 #    ArcGIS Hub                                                                       #
 #######################################################################################
 

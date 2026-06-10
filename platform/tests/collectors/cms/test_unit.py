@@ -8,16 +8,10 @@ from __future__ import annotations
 import pytest
 from loci.collectors.cms.collector import CMSCollector
 from loci.collectors.cms.metadata import CMSMetadata, vintage_from_temporal
-from loci.collectors.cms.spec import CMSSpec
+from loci.collectors.cms.spec import CMSDatasetSpec
 
-from .helpers import (
-    DATASET_TITLE,
-    FakeCMSClient,
-    FakeCMSSource,
-    NoopTracker,
-    make_rows,
-    make_spec,
-)
+from ..common import NoopTracker
+from .helpers import DATASET_TITLE, FakeCMSClient, FakeCMSSource, make_rows, make_spec
 
 # ---------------------------------------------------------------------
 # Behavior: specs that would corrupt SCD2 history or can't be executed
@@ -27,7 +21,7 @@ from .helpers import (
 
 def test_spec_rejects_entity_key_without_vintage():
     with pytest.raises(ValueError, match="vintage"):
-        CMSSpec(
+        CMSDatasetSpec(
             name="x",
             dataset_title="X",
             target_table="x",
@@ -37,12 +31,12 @@ def test_spec_rejects_entity_key_without_vintage():
 
 def test_spec_requires_entity_key():
     with pytest.raises(ValueError, match="entity_key"):
-        CMSSpec(name="x", dataset_title="X", target_table="x")
+        CMSDatasetSpec(name="x", dataset_title="X", target_table="x")
 
 
 def test_spec_rejects_unknown_retrieval_mode():
     with pytest.raises(ValueError, match="retrieval"):
-        CMSSpec(
+        CMSDatasetSpec(
             name="x",
             dataset_title="X",
             target_table="x",

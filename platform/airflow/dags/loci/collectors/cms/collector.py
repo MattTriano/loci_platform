@@ -49,7 +49,7 @@ from typing import Any
 
 from loci.collectors.cms.client import CMSClient
 from loci.collectors.cms.metadata import CMSDatasetVersion, CMSMetadata
-from loci.collectors.cms.spec import CMSSpec
+from loci.collectors.cms.spec import CMSDatasetSpec
 from loci.parsers.csv_parser import parse_csv
 from loci.tracking.ingestion_tracker import IngestionTracker
 
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 class CMSCollector:
     """
     Orchestrates collecting and ingesting data.cms.gov datasets defined
-    by a CMSSpec.
+    by a CMSDatasetSpec.
 
     Parameters
     ----------
@@ -95,13 +95,13 @@ class CMSCollector:
     # Public API
     # ------------------------------------------------------------------
 
-    def collect(self, spec: CMSSpec, force: bool = False) -> dict[str, Any]:
+    def collect(self, spec: CMSDatasetSpec, force: bool = False) -> dict[str, Any]:
         """
-        Collect and ingest all vintages defined by a CMSSpec.
+        Collect and ingest all vintages defined by a CMSDatasetSpec.
 
         Parameters
         ----------
-        spec : CMSSpec
+        spec : CMSDatasetSpec
         force : bool
             If True, skip freshness checks and recollect every vintage.
 
@@ -140,9 +140,9 @@ class CMSCollector:
         self.logger.info("Collection complete for %r: %s", spec.name, summary)
         return summary
 
-    def generate_ddl(self, spec: CMSSpec) -> str:
+    def generate_ddl(self, spec: CMSDatasetSpec) -> str:
         """
-        Generate a CREATE TABLE statement for a CMSSpec.
+        Generate a CREATE TABLE statement for a CMSDatasetSpec.
 
         Samples one row from every vintage in scope and unions the
         column sets (newest first), so columns that appear or disappear
@@ -175,7 +175,7 @@ class CMSCollector:
 
         return "\n".join(lines)
 
-    def print_ddl(self, spec: CMSSpec) -> None:
+    def print_ddl(self, spec: CMSDatasetSpec) -> None:
         """Generate and print DDL for easy copy-paste into a migration script."""
         print(self.generate_ddl(spec))
 
@@ -183,7 +183,7 @@ class CMSCollector:
     # Version resolution / freshness
     # ------------------------------------------------------------------
 
-    def _resolve_versions(self, spec: CMSSpec) -> list[CMSDatasetVersion]:
+    def _resolve_versions(self, spec: CMSDatasetSpec) -> list[CMSDatasetVersion]:
         """Resolve the spec's dataset title to its in-scope versions."""
         dataset = self.metadata.get_dataset(spec.dataset_title)
         versions = self.metadata.versions(dataset)
@@ -201,7 +201,7 @@ class CMSCollector:
             versions = [v for v in versions if v.vintage in wanted]
         return versions
 
-    def _already_ingested(self, spec: CMSSpec, version: CMSDatasetVersion) -> bool:
+    def _already_ingested(self, spec: CMSDatasetSpec, version: CMSDatasetVersion) -> bool:
         """
         Return True if this vintage is fully ingested and the source
         hasn't been re-released since. See the module docstring for the
@@ -255,7 +255,7 @@ class CMSCollector:
     # Collection
     # ------------------------------------------------------------------
 
-    def _collect_version(self, spec: CMSSpec, version: CMSDatasetVersion) -> tuple[int, int]:
+    def _collect_version(self, spec: CMSDatasetSpec, version: CMSDatasetVersion) -> tuple[int, int]:
         """
         Fetch and ingest one vintage. Returns (rows_staged, rows_merged).
         """
@@ -318,7 +318,7 @@ class CMSCollector:
         )
         return stager.rows_staged, stager.rows_merged
 
-    def _iter_batches(self, spec: CMSSpec, version: CMSDatasetVersion):
+    def _iter_batches(self, spec: CMSDatasetSpec, version: CMSDatasetVersion):
         """Yield batches of raw source rows via the spec's retrieval mode."""
         if spec.retrieval == "api":
             if not version.api_uuid:
@@ -365,7 +365,7 @@ class CMSCollector:
         """Lowercase column names so they're queryable without quotes."""
         return name.strip().lstrip("\ufeff").lower().replace(" ", "_")
 
-    def _advance_source_modified(self, spec: CMSSpec, version: CMSDatasetVersion) -> None:
+    def _advance_source_modified(self, spec: CMSDatasetSpec, version: CMSDatasetVersion) -> None:
         """
         Advance _source_modified on the vintage's current rows.
 
@@ -391,7 +391,7 @@ class CMSCollector:
     # Table / column helpers
     # ------------------------------------------------------------------
 
-    def _resolve_columns(self, spec: CMSSpec) -> list[str]:
+    def _resolve_columns(self, spec: CMSDatasetSpec) -> list[str]:
         """
         Union the normalized column sets across all in-scope vintages,
         preserving newest-version column order, for DDL generation.
