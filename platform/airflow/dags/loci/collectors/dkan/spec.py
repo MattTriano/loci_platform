@@ -104,3 +104,7 @@ class DKANDatasetSpec(DatasetSpec):
                 "multi-dataset family, staging holds one sibling at a time, so "
                 "invalidation would close out every other sibling's rows."
             )
+
+    @property
+    def dataset_id(self) -> str:
+        return self.target_table

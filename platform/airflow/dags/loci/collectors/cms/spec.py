@@ -76,3 +76,7 @@ class CMSDatasetSpec(DatasetSpec):
                 "entity_key must include 'vintage' — without it, rows from "
                 "different published versions collide as one entity."
             )
+
+    @property
+    def dataset_id(self) -> str:
+        return self.target_table

@@ -941,7 +941,7 @@ MEDICARE_INPATIENT_BY_PROVIDER_AND_SERVICE_UC = DatasetUpdateConfig(
 
 MEDICARE_PHYSICIANS_BY_PROVIDER_AND_SERVICE_UC = DatasetUpdateConfig(
     spec=specs.MEDICARE_PHYSICIANS_BY_PROVIDER_AND_SERVICE_SPEC,
-    update_cron="1 10 1 * *",
+    update_cron="2 0 1 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=2,
 )
@@ -960,7 +960,7 @@ PDC_HOSPITAL_GENERAL_INFORMATION_UC = DatasetUpdateConfig(
 
 OPENPAYMENTS_GENERAL_PAYMENTS_UC = DatasetUpdateConfig(
     spec=specs.OPENPAYMENTS_GENERAL_PAYMENTS_SPEC,
-    update_cron="1 10 2 * *",
+    update_cron="2 0 2 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=2,
 )
