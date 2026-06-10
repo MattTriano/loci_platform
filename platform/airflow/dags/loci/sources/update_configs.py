@@ -466,7 +466,7 @@ CHICAGO_RED_LIGHT_CAMERA_VIOLATION_UC = DatasetUpdateConfig(
 
 OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_UC = DatasetUpdateConfig(
     spec=specs.OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_SPEC,
-    update_cron="5 2 * * 2,5",
+    update_cron="5 2 12 * *",
     full_update_week_of_month=1,
     full_update_day_of_week=6,
 )

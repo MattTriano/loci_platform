@@ -1388,7 +1388,7 @@ OPEN_AIR_CHICAGO_INDIVIDUAL_MEASUREMENTS_SPEC = SocrataDatasetSpec(
     target_table="open_air_chicago_individual_measurements",
     target_schema="raw_data",
     entity_key=["record_id"],
-    full_update_mode="api",
+    full_update_mode="file_download",
 )
 
 CHICAGO_311_SERVICE_REQUESTS_SPEC = SocrataDatasetSpec(
