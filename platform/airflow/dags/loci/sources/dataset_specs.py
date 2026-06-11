@@ -9,6 +9,7 @@ from loci.collectors.osm.query import OverpassAPIQuery
 from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
+from loci.collectors.static.spec import FileRef, StaticFileDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 from loci.geo import BBox
 
@@ -1709,4 +1710,39 @@ DETROIT_TRAFFIC_CRASHES_SPEC = ArcGISHubDatasetSpec(
     layer_index="all",
     layer_column="source_layer",
     entity_key=["crash_id"],
+)
+
+#######################################################################################
+#    Static Files                                                                     #
+#######################################################################################
+
+AHRQ_BASE = "https://www.ahrq.gov/sites/default/files/wysiwyg/chsp/compendium"
+
+# CCN -> health system membership, one row per hospital.
+# entity_key includes vintage because each edition is a distinct annual
+# snapshot, not an update to the prior edition's records.
+# TODO: confirm the CCN column is named "ccn" after the first download
+# (generate_ddl will show the real header); the technical documentation
+# is at {_BASE}/2023-hospital-linkage-techdoc.pdf
+AHRQ_HOSPITAL_LINKAGE = StaticFileDatasetSpec(
+    name="ahrq_chsp_hospital_linkage",
+    target_table="ahrq_chsp_hospital_linkage",
+    entity_key=["ccn", "vintage"],
+    files=[
+        FileRef(
+            url=f"{AHRQ_BASE}/chsp-hospital-linkage-2023.csv", vintage="2023", encoding="cp1252"
+        ),
+    ],
+)
+
+# One row per health system (~639 in 2023): AHRQ system id, name, home
+# office location, size counts, teaching/safety-net/insurance-product
+# flags, ownership, and hospital revenue totals.
+AHRQ_HEALTH_SYSTEMS = StaticFileDatasetSpec(
+    name="ahrq_chsp_health_systems",
+    target_table="ahrq_chsp_health_systems",
+    entity_key=["health_sys_id", "vintage"],
+    files=[
+        FileRef(url=f"{AHRQ_BASE}/chsp-compendium-2023-rev.csv", vintage="2023", encoding="cp1252"),
+    ],
 )
