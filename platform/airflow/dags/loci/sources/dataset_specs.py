@@ -9,8 +9,58 @@ from loci.collectors.osm.query import OverpassAPIQuery
 from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
+from loci.collectors.static.spec import FileRef, StaticFileDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 from loci.geo import BBox
+
+#######################################################################################
+#    ArcGIS Hub                                                                       #
+#######################################################################################
+
+
+TORONTO_TRAFFIC_COLLISIONS_SPEC = ArcGISHubDatasetSpec(
+    name="toronto_traffic_collisions",
+    base_url="https://data.tps.ca",
+    item_id="bc4c72a793014a55a674984ef175a6f3",
+    target_table="toronto_traffic_collisions",
+    entity_key=["event_unique_id"],
+)
+
+DETROIT_BIKE_LANES_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_bike_lanes",
+    base_url="https://data.detroitmi.gov",
+    item_id="1a461925a1a242b9b4512380e32516c1",
+    target_table="detroit_bike_lanes",
+    entity_key=["bike_route_id"],
+)
+
+DETROIT_BIKE_PARKING_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_bike_parking",
+    base_url="https://data.detroitmi.gov",
+    item_id="88f5f270fbf64e818dc391e143cd96ab",
+    target_table="detroit_bike_parking",
+    entity_key=["geom"],
+    layer_index=1,
+)
+
+DETROIT_BOUNDARY_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_boundary",
+    base_url="https://data.detroitmi.gov",
+    item_id="86b221bb68ca4364afe81d156e54f95c",
+    target_table="detroit_boundary",
+    entity_key=["fid"],
+)
+
+DETROIT_TRAFFIC_CRASHES_SPEC = ArcGISHubDatasetSpec(
+    name="detroit_traffic_crashes",
+    base_url="https://data.detroitmi.gov",
+    item_id="d837b05bdd9643698be30dfedbab0272",
+    target_table="detroit_traffic_crashes",
+    layer_index="all",
+    layer_column="source_layer",
+    entity_key=["crash_id"],
+)
+
 
 #######################################################################################
 #    Bike Index                                                                       #
@@ -409,6 +459,114 @@ ACS5__SEX_BY_AGE_RACE_AND_CITIZENSHIP_BY_TRACT = CensusDatasetSpec(
     target_schema="raw_data",
     target_table="acs5__sex_by_age_race_and_citizenship_by_tract",
 )
+
+
+#######################################################################################
+#    CKAN                                                                             #
+#######################################################################################
+
+TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_SPEC = CKANDatasetSpec(
+    name="toronto_serious_motor_vehicle_collisions",
+    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
+    dataset_id="motor-vehicle-collisions-involving-killed-or-seriously-injured-persons",
+    target_table="toronto_serious_motor_vehicle_collisions",
+    target_schema="raw_data",
+    entity_key=["collision_id", "per_no"],
+    resource_ids=["f8faf384-a96d-4dff-af59-db40f777c7d3"],
+)
+
+TORONTO_BICYCLE_PARKING_RACKS_SPEC = CKANDatasetSpec(
+    name="toronto_bicycle_parking_racks",
+    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
+    dataset_id="bicycle-parking-racks",
+    target_table="toronto_bicycle_parking_racks",
+    target_schema="raw_data",
+    entity_key=["objectid"],
+    resource_ids=["4d105465-6e64-4a69-957b-6e0eee5bca8b"],
+)
+
+
+#######################################################################################
+#    CMS                                                                              #
+#######################################################################################
+
+
+# Medicare fee-for-service inpatient payments by hospital x DRG x year.
+# ~150-210k rows per vintage, so the paged API is fine.
+# Grain: one row per (provider CCN, DRG code) per vintage.
+MEDICARE_INPATIENT_BY_PROVIDER_AND_SERVICE_SPEC = CMSDatasetSpec(
+    name="medicare_inpatient_by_provider_and_service",
+    dataset_title="Medicare Inpatient Hospitals - by Provider and Service",
+    target_table="medicare_inpatient_by_provider_and_service",
+    entity_key=["rndrng_prvdr_ccn", "drg_cd", "vintage"],
+    retrieval="api",
+)
+
+# Medicare payments by clinician NPI x HCPCS code x place of service x year.
+# ~9-10M rows per vintage — use the CSV distribution, not the paged API.
+# NOTE: verify the entity key grain before the first run (documented grain
+# is NPI x HCPCS x place of service; confirm no duplicates with a sample
+# query against one vintage).
+MEDICARE_PHYSICIANS_BY_PROVIDER_AND_SERVICE_SPEC = CMSDatasetSpec(
+    name="medicare_physicians_by_provider_and_service",
+    dataset_title="Medicare Physician & Other Practitioners - by Provider and Service",
+    target_table="medicare_physicians_by_provider_and_service",
+    entity_key=["rndrng_npi", "hcpcs_cd", "place_of_srvc", "vintage"],
+    retrieval="csv",
+)
+
+
+#######################################################################################
+#    DKAN                                                                             #
+#######################################################################################
+
+
+# Care Compare hospital dimension: one row per facility CCN. Joins to
+# raw_data.medicare_inpatient_by_provider_and_service on
+# facility_id = rndrng_prvdr_ccn. ~5.4k rows, refreshed in place
+# (roughly quarterly). invalidate_missing=False for now (project
+# default); flipping it to True is the correct semantics here —
+# a facility absent from a refresh has been delisted from Care
+# Compare — once you're comfortable with the behavior.
+PDC_HOSPITAL_GENERAL_INFORMATION_SPEC = DKANDatasetSpec(
+    name="pdc_hospital_general_information",
+    base_url="https://data.cms.gov/provider-data",
+    dataset_identifiers=["xubh-q36u"],
+    target_table="pdc_hospital_general_information",
+    entity_key=["facility_id"],
+    retrieval="datastore",
+)
+
+# Open Payments General Payments: one metastore dataset per program
+# year, ~11M rows / ~6 GB each, all republished together every January
+# (so expect an annual recollection of every year listed). Identifiers
+# verified against the live catalog 2026-06.
+OPENPAYMENTS_GENERAL_PAYMENT_DATASETS = {
+    "2018": "f003634c-c103-568f-876c-73017fa83be0",
+    "2019": "4e54dd6c-30f8-4f86-86a7-3c109a89528e",
+    "2020": "a08c4b30-5cf3-4948-ad40-36f404619019",
+    "2021": "0380bbeb-aea1-58b6-b708-829f92a48202",
+    "2022": "df01c2f8-dc1f-4e79-96cb-8208beaf143c",
+    "2023": "fb3a65aa-c901-4a38-a813-b04b00dfa2a9",
+    "2024": "e6b17c6a-2534-4207-a4a1-6746a14911ff",
+}
+
+# Start with the two most recent program years (~22M rows, ~12 GB of
+# downloads); widen the year list once the first load looks right.
+# program_year is in the entity key because record_id uniqueness is
+# only guaranteed within a program year's dataset.
+OPENPAYMENTS_GENERAL_PAYMENTS_SPEC = DKANDatasetSpec(
+    name="openpayments_general_payments",
+    base_url="https://openpaymentsdata.cms.gov",
+    dataset_identifiers=[
+        OPENPAYMENTS_GENERAL_PAYMENT_DATASETS["2023"],
+        OPENPAYMENTS_GENERAL_PAYMENT_DATASETS["2024"],
+    ],
+    target_table="openpayments_general_payments",
+    entity_key=["record_id", "program_year"],
+    retrieval="file",
+)
+
 
 #######################################################################################
 #    OpenStreetMaps                                                                   #
@@ -1558,155 +1716,36 @@ CHICAGO_HOMICIDE_AND_NON_FATAL_SHOOTING_VICTIMIZATIONS_SPEC = SocrataDatasetSpec
 
 
 #######################################################################################
-#    CKAN                                                                             #
+#    Static Files                                                                     #
 #######################################################################################
 
-TORONTO_SERIOUS_MOTOR_VEHICLE_COLLISIONS_SPEC = CKANDatasetSpec(
-    name="toronto_serious_motor_vehicle_collisions",
-    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
-    dataset_id="motor-vehicle-collisions-involving-killed-or-seriously-injured-persons",
-    target_table="toronto_serious_motor_vehicle_collisions",
-    target_schema="raw_data",
-    entity_key=["collision_id", "per_no"],
-    resource_ids=["f8faf384-a96d-4dff-af59-db40f777c7d3"],
-)
+AHRQ_BASE = "https://www.ahrq.gov/sites/default/files/wysiwyg/chsp/compendium"
 
-TORONTO_BICYCLE_PARKING_RACKS_SPEC = CKANDatasetSpec(
-    name="toronto_bicycle_parking_racks",
-    base_url="https://ckan0.cf.opendata.inter.prod-toronto.ca",
-    dataset_id="bicycle-parking-racks",
-    target_table="toronto_bicycle_parking_racks",
-    target_schema="raw_data",
-    entity_key=["objectid"],
-    resource_ids=["4d105465-6e64-4a69-957b-6e0eee5bca8b"],
-)
-
-
-#######################################################################################
-#    CMS                                                                              #
-#######################################################################################
-
-
-# Medicare fee-for-service inpatient payments by hospital x DRG x year.
-# ~150-210k rows per vintage, so the paged API is fine.
-# Grain: one row per (provider CCN, DRG code) per vintage.
-MEDICARE_INPATIENT_BY_PROVIDER_AND_SERVICE_SPEC = CMSDatasetSpec(
-    name="medicare_inpatient_by_provider_and_service",
-    dataset_title="Medicare Inpatient Hospitals - by Provider and Service",
-    target_table="medicare_inpatient_by_provider_and_service",
-    entity_key=["rndrng_prvdr_ccn", "drg_cd", "vintage"],
-    retrieval="api",
-)
-
-# Medicare payments by clinician NPI x HCPCS code x place of service x year.
-# ~9-10M rows per vintage — use the CSV distribution, not the paged API.
-# NOTE: verify the entity key grain before the first run (documented grain
-# is NPI x HCPCS x place of service; confirm no duplicates with a sample
-# query against one vintage).
-MEDICARE_PHYSICIANS_BY_PROVIDER_AND_SERVICE_SPEC = CMSDatasetSpec(
-    name="medicare_physicians_by_provider_and_service",
-    dataset_title="Medicare Physician & Other Practitioners - by Provider and Service",
-    target_table="medicare_physicians_by_provider_and_service",
-    entity_key=["rndrng_npi", "hcpcs_cd", "place_of_srvc", "vintage"],
-    retrieval="csv",
-)
-
-
-#######################################################################################
-#    DKAN                                                                             #
-#######################################################################################
-
-
-# Care Compare hospital dimension: one row per facility CCN. Joins to
-# raw_data.medicare_inpatient_by_provider_and_service on
-# facility_id = rndrng_prvdr_ccn. ~5.4k rows, refreshed in place
-# (roughly quarterly). invalidate_missing=False for now (project
-# default); flipping it to True is the correct semantics here —
-# a facility absent from a refresh has been delisted from Care
-# Compare — once you're comfortable with the behavior.
-PDC_HOSPITAL_GENERAL_INFORMATION_SPEC = DKANDatasetSpec(
-    name="pdc_hospital_general_information",
-    base_url="https://data.cms.gov/provider-data",
-    dataset_identifiers=["xubh-q36u"],
-    target_table="pdc_hospital_general_information",
-    entity_key=["facility_id"],
-    retrieval="datastore",
-)
-
-# Open Payments General Payments: one metastore dataset per program
-# year, ~11M rows / ~6 GB each, all republished together every January
-# (so expect an annual recollection of every year listed). Identifiers
-# verified against the live catalog 2026-06.
-OPENPAYMENTS_GENERAL_PAYMENT_DATASETS = {
-    "2018": "f003634c-c103-568f-876c-73017fa83be0",
-    "2019": "4e54dd6c-30f8-4f86-86a7-3c109a89528e",
-    "2020": "a08c4b30-5cf3-4948-ad40-36f404619019",
-    "2021": "0380bbeb-aea1-58b6-b708-829f92a48202",
-    "2022": "df01c2f8-dc1f-4e79-96cb-8208beaf143c",
-    "2023": "fb3a65aa-c901-4a38-a813-b04b00dfa2a9",
-    "2024": "e6b17c6a-2534-4207-a4a1-6746a14911ff",
-}
-
-# Start with the two most recent program years (~22M rows, ~12 GB of
-# downloads); widen the year list once the first load looks right.
-# program_year is in the entity key because record_id uniqueness is
-# only guaranteed within a program year's dataset.
-OPENPAYMENTS_GENERAL_PAYMENTS_SPEC = DKANDatasetSpec(
-    name="openpayments_general_payments",
-    base_url="https://openpaymentsdata.cms.gov",
-    dataset_identifiers=[
-        OPENPAYMENTS_GENERAL_PAYMENT_DATASETS["2023"],
-        OPENPAYMENTS_GENERAL_PAYMENT_DATASETS["2024"],
+# CCN -> health system membership, one row per hospital.
+# entity_key includes vintage because each edition is a distinct annual
+# snapshot, not an update to the prior edition's records.
+# TODO: confirm the CCN column is named "ccn" after the first download
+# (generate_ddl will show the real header); the technical documentation
+# is at {_BASE}/2023-hospital-linkage-techdoc.pdf
+AHRQ_HOSPITAL_LINKAGE_SPEC = StaticFileDatasetSpec(
+    name="ahrq_chsp_hospital_linkage",
+    target_table="ahrq_chsp_hospital_linkage",
+    entity_key=["ccn", "vintage"],
+    files=[
+        FileRef(
+            url=f"{AHRQ_BASE}/chsp-hospital-linkage-2023.csv", vintage="2023", encoding="cp1252"
+        ),
     ],
-    target_table="openpayments_general_payments",
-    entity_key=["record_id", "program_year"],
-    retrieval="file",
 )
 
-
-#######################################################################################
-#    ArcGIS Hub                                                                       #
-#######################################################################################
-
-TORONTO_TRAFFIC_COLLISIONS_SPEC = ArcGISHubDatasetSpec(
-    name="toronto_traffic_collisions",
-    base_url="https://data.tps.ca",
-    item_id="bc4c72a793014a55a674984ef175a6f3",
-    target_table="toronto_traffic_collisions",
-    entity_key=["event_unique_id"],
-)
-
-DETROIT_BIKE_LANES_SPEC = ArcGISHubDatasetSpec(
-    name="detroit_bike_lanes",
-    base_url="https://data.detroitmi.gov",
-    item_id="1a461925a1a242b9b4512380e32516c1",
-    target_table="detroit_bike_lanes",
-    entity_key=["bike_route_id"],
-)
-
-DETROIT_BIKE_PARKING_SPEC = ArcGISHubDatasetSpec(
-    name="detroit_bike_parking",
-    base_url="https://data.detroitmi.gov",
-    item_id="88f5f270fbf64e818dc391e143cd96ab",
-    target_table="detroit_bike_parking",
-    entity_key=["geom"],
-    layer_index=1,
-)
-
-DETROIT_BOUNDARY_SPEC = ArcGISHubDatasetSpec(
-    name="detroit_boundary",
-    base_url="https://data.detroitmi.gov",
-    item_id="86b221bb68ca4364afe81d156e54f95c",
-    target_table="detroit_boundary",
-    entity_key=["fid"],
-)
-
-DETROIT_TRAFFIC_CRASHES_SPEC = ArcGISHubDatasetSpec(
-    name="detroit_traffic_crashes",
-    base_url="https://data.detroitmi.gov",
-    item_id="d837b05bdd9643698be30dfedbab0272",
-    target_table="detroit_traffic_crashes",
-    layer_index="all",
-    layer_column="source_layer",
-    entity_key=["crash_id"],
+# One row per health system (~639 in 2023): AHRQ system id, name, home
+# office location, size counts, teaching/safety-net/insurance-product
+# flags, ownership, and hospital revenue totals.
+AHRQ_HEALTH_SYSTEMS_SPEC = StaticFileDatasetSpec(
+    name="ahrq_chsp_health_systems",
+    target_table="ahrq_chsp_health_systems",
+    entity_key=["health_sys_id", "vintage"],
+    files=[
+        FileRef(url=f"{AHRQ_BASE}/chsp-compendium-2023-rev.csv", vintage="2023", encoding="cp1252"),
+    ],
 )
