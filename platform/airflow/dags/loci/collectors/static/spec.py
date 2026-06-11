@@ -123,3 +123,7 @@ class StaticFileDatasetSpec(DatasetSpec):
                 f"spec {self.name!r} has duplicate vintages in its manifest; "
                 "each FileRef needs a distinct vintage label"
             )
+
+    @property
+    def dataset_id(self) -> str:
+        return self.target_table
