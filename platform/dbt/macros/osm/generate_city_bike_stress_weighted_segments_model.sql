@@ -25,7 +25,7 @@
       include_crashes: when true, joins crash costs. Set to false for
         cities without a bike-crash data source.
 #}
-{% macro generate_city_bike_stress_weighted_segments_model(city, include_crashes=true) %}
+{% macro generate_city_bike_stress_weighted_segments_model(city, include_crashes=true, include_elevation=false) %}
 
 with segment_costs as (
     select * from {{ ref(city ~ '_segment_costs') }}
@@ -33,6 +33,11 @@ with segment_costs as (
 {% if include_crashes %}
 crash_costs as (
     select * from {{ ref(city ~ '_segment_crash_costs') }}
+),
+{% endif %}
+{% if include_elevation %}
+elevation_costs as (
+    select * from {{ ref(city ~ '_segment_elevation_costs') }}
 ),
 {% endif %}
 intersection_costs as (
@@ -98,6 +103,22 @@ select
     0 as crash_cost,
     {% endif %}
 
+    -- Elevation: directional costs selected by the exporter per direction.
+    -- start/end elevation and grade carried for tuning visibility.
+    {% if include_elevation %}
+    ec.start_elevation_m,
+    ec.end_elevation_m,
+    ec.grade_forward,
+    coalesce(ec.elevation_cost_forward, 0)  as elevation_cost_forward,
+    coalesce(ec.elevation_cost_backward, 0) as elevation_cost_backward,
+    {% else %}
+    null::double precision as start_elevation_m,
+    null::double precision as end_elevation_m,
+    null::double precision as grade_forward,
+    0 as elevation_cost_forward,
+    0 as elevation_cost_backward,
+    {% endif %}
+
     -- Intersection costs at both endpoints. The exporter selects the
     -- right one per direction. NULL endpoints (nodes that aren't
     -- logical intersections) default to 0.
@@ -114,6 +135,9 @@ select
 from segment_costs sc
 {% if include_crashes %}
 left join crash_costs cc on cc.segment_id = sc.segment_id
+{% endif %}
+{% if include_elevation %}
+left join elevation_costs ec on ec.segment_id = sc.segment_id
 {% endif %}
 left join intersection_costs ic_start on ic_start.osmid = sc.start_node_id
 left join intersection_costs ic_end   on ic_end.osmid   = sc.end_node_id
