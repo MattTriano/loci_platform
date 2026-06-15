@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/collectors/cms/helpers.py
 """
 Fakes and test-data helpers for the CMS collector tests.
 

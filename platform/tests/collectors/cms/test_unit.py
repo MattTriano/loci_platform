@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/collectors/cms/test_unit.py
 """
 Unit behaviors of the CMS tooling that need neither a database nor HTTP:
 spec validation, catalog version parsing, and the DDL contract.

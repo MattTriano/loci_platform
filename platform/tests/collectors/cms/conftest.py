@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/collectors/cms/conftest.py
 """
 CMS-specific fixtures. Shared fixtures (engine, schema) come from the
 parent conftest; shared code (NoopTracker) from ..common.

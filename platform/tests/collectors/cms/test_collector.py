@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/collectors/cms/test_collector.py
 """
 Critical observable behaviors of CMSCollector, tested end to end against
 a real Postgres (real StagedIngest SCD2 semantics) with a fake CMS API.
