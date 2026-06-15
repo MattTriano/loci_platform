@@ -2,7 +2,7 @@
 """
 USGS 3DEP elevation collection orchestrator.
 
-Wires ThreeDEPSpec + ThreeDEPClient + the raster ingestion tooling into
+Wires ThreeDEPDatasetSpec + ThreeDEPClient + the raster ingestion tooling into
 the standard collector surface: collect(spec, force) and
 generate_ddl(spec), all ingestion via StagedIngest (SCD2, keyed on
 tile_id).
@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from loci.collectors.threedep.client import ThreeDEPClient, tiles_for_bbox
-from loci.collectors.threedep.spec import THREEDEP_SRID, ThreeDEPSpec
+from loci.collectors.threedep.spec import THREEDEP_SRID, ThreeDEPDatasetSpec
 from loci.raster.ingest import ingest_raster_file, raster_table_ddl
 from loci.tracking.ingestion_tracker import IngestionTracker
 
@@ -92,7 +92,7 @@ class ThreeDEPCollector:
     # Public API
     # ------------------------------------------------------------------
 
-    def collect(self, spec: ThreeDEPSpec, force: bool = False) -> dict[str, Any]:
+    def collect(self, spec: ThreeDEPDatasetSpec, force: bool = False) -> dict[str, Any]:
         """
         Collect 3DEP tiles covering spec.bbox into the target table.
 
@@ -172,11 +172,11 @@ class ThreeDEPCollector:
         self.logger.info("Collection complete for %r: %s", spec.name, summary)
         return summary
 
-    def generate_ddl(self, spec: ThreeDEPSpec) -> str:
+    def generate_ddl(self, spec: ThreeDEPDatasetSpec) -> str:
         """CREATE TABLE for a 3DEP raster tile table (NAD83)."""
         return raster_table_ddl(spec.target_schema, spec.target_table, THREEDEP_SRID)
 
-    def print_ddl(self, spec: ThreeDEPSpec) -> None:
+    def print_ddl(self, spec: ThreeDEPDatasetSpec) -> None:
         """Generate and print DDL for copy-paste into a migration."""
         print(self.generate_ddl(spec))
 
@@ -184,7 +184,9 @@ class ThreeDEPCollector:
     # Per-tile collection
     # ------------------------------------------------------------------
 
-    def _collect_tile(self, spec: ThreeDEPSpec, name: str, ingested_at: datetime) -> dict[str, int]:
+    def _collect_tile(
+        self, spec: ThreeDEPDatasetSpec, name: str, ingested_at: datetime
+    ) -> dict[str, int]:
         """Download one 1-degree tile to a temp file and ingest it, clipped to the bbox."""
         tmp = tempfile.NamedTemporaryFile(suffix=".tif", prefix=f"3dep_{name}_", delete=False)
         tmp.close()
@@ -209,7 +211,7 @@ class ThreeDEPCollector:
     # Target-table probes
     # ------------------------------------------------------------------
 
-    def _table_exists(self, spec: ThreeDEPSpec) -> bool:
+    def _table_exists(self, spec: ThreeDEPDatasetSpec) -> bool:
         df = self.engine.query(
             """
             select 1 from information_schema.tables
@@ -220,7 +222,7 @@ class ThreeDEPCollector:
         )
         return not df.empty
 
-    def _tile_present(self, spec: ThreeDEPSpec, name: str) -> bool:
+    def _tile_present(self, spec: ThreeDEPDatasetSpec, name: str) -> bool:
         """True if any current sub-tile of this 1-degree tile exists in the target."""
         fqn = f"{spec.target_schema}.{spec.target_table}"
         df = self.engine.query(
@@ -234,7 +236,7 @@ class ThreeDEPCollector:
         return not df.empty
 
 
-def _bbox_bounds(spec: ThreeDEPSpec) -> tuple[float, float, float, float]:
+def _bbox_bounds(spec: ThreeDEPDatasetSpec) -> tuple[float, float, float, float]:
     """(min_x, min_y, max_x, max_y) clip extent in the tiles' CRS (NAD83)."""
     b = spec.bbox
     return (b.west, b.south, b.east, b.north)

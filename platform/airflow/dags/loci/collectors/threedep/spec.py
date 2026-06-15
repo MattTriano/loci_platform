@@ -2,14 +2,14 @@
 """
 Dataset specification for USGS 3DEP elevation collection.
 
-A ThreeDEPSpec declares which region to collect (a BBox), which seamless
+A ThreeDEPDatasetSpec declares which region to collect (a BBox), which seamless
 product, and where to land it. One instance per city; the raster lands
 in a per-city table, mirroring the per-city OSM raw tables. SCD2 keying
 is fixed to ["tile_id"] — the raster ingestion path keys every sub-tile
 on its tile_id, so this is not a caller choice.
 
 Example:
-    spec = ThreeDEPSpec(
+    spec = ThreeDEPDatasetSpec(
         name="chicago_elevation",
         target_table="chicago_elevation",
         bbox=BBox(south=41.62, west=-87.97, north=42.05, east=-87.5),
@@ -32,7 +32,7 @@ _RASTER_ENTITY_KEY = ["tile_id"]
 
 
 @dataclass
-class ThreeDEPSpec(DatasetSpec):
+class ThreeDEPDatasetSpec(DatasetSpec):
     """
     Specification for a 3DEP elevation dataset.
 

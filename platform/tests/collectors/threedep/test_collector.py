@@ -69,8 +69,12 @@ def test_first_collect_ingests_clips_and_samples(engine, schema, warehouse):
     assert len(rows) > 0
     b = SINGLE_TILE_BBOX
     for r in rows:
-        assert not (r["max_x"] < b.west or r["min_x"] > b.east
-                    or r["max_y"] < b.south or r["min_y"] > b.north)
+        assert not (
+            r["max_x"] < b.west
+            or r["min_x"] > b.east
+            or r["max_y"] < b.south
+            or r["min_y"] > b.north
+        )
 
     cx, cy = (b.west + b.east) / 2, (b.south + b.north) / 2
     assert sample_elev(engine, schema, cx, cy) is not None
@@ -133,8 +137,8 @@ def test_restaged_tile_versions_then_resettles(engine, schema, warehouse):
     source.set_tile("n42w088", base_value=5000.0)  # USGS re-stages with new values
     summary = collector.collect(spec, force=True)
 
-    assert summary["rows_merged"] == current_before          # every sub-tile changed
-    assert current_count(engine, schema) == current_before   # one current per sub-tile
+    assert summary["rows_merged"] == current_before  # every sub-tile changed
+    assert current_count(engine, schema) == current_before  # one current per sub-tile
     assert total_count(engine, schema) == total_before + current_before  # old versions kept
 
     assert collector.collect(spec, force=True)["rows_merged"] == 0  # resettled

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from loci.collectors.threedep.spec import ThreeDEPSpec
+from loci.collectors.threedep.spec import ThreeDEPDatasetSpec
 from loci.geo import BBox
 from rasterio.transform import from_origin
 
@@ -91,9 +91,16 @@ def _write_synthetic_tile(dest_path, name: str, base_value: float) -> None:
     cols = np.arange(PX).reshape(1, -1)
     arr = (base_value + rows + cols).astype("float32")
     with rasterio.open(
-        dest_path, "w", driver="GTiff", height=PX, width=PX, count=1,
-        dtype="float32", crs=f"EPSG:{SRID}",
-        transform=from_origin(west, north, res, res), nodata=NODATA,
+        dest_path,
+        "w",
+        driver="GTiff",
+        height=PX,
+        width=PX,
+        count=1,
+        dtype="float32",
+        crs=f"EPSG:{SRID}",
+        transform=from_origin(west, north, res, res),
+        nodata=NODATA,
     ) as dst:
         dst.write(arr, 1)
 
@@ -110,7 +117,9 @@ def seeded_source(tiles=("n42w088",), base_value: float = 1000.0) -> FakeThreeDE
     return source
 
 
-def make_elevation_spec(schema: str, bbox: BBox = SINGLE_TILE_BBOX, **overrides) -> ThreeDEPSpec:
+def make_elevation_spec(
+    schema: str, bbox: BBox = SINGLE_TILE_BBOX, **overrides
+) -> ThreeDEPDatasetSpec:
     kwargs = dict(
         name="fake_elevation",
         target_table="fake_elevation",
@@ -118,4 +127,4 @@ def make_elevation_spec(schema: str, bbox: BBox = SINGLE_TILE_BBOX, **overrides)
         bbox=bbox,
     )
     kwargs.update(overrides)
-    return ThreeDEPSpec(**kwargs)
+    return ThreeDEPDatasetSpec(**kwargs)
