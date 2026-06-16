@@ -216,7 +216,7 @@ class RoutingGraphExporter:
                     # Carried as graph attributes for the heuristic-floor
                     # pass and possible future use; not written to the
                     # binary edge record (which carries only the composed
-                    # stress_cost and its physical/intersection/crash parts).
+                    # stress_cost and its physical/intersection/crash/elevation parts).
                     "highway_class": row["highway_class"],
                     "infra_tier": row["infra_tier"],
                     "base_stress_per_meter": _f(row["base_stress_per_meter"]),
@@ -395,8 +395,8 @@ def build_edges_and_strings(
     deduplicated string table.
 
     Per-direction stress composition:
-      forward edge:  physical_cost + crash_cost + intersection_cost_at_end
-      backward edge: physical_cost + crash_cost + intersection_cost_at_start
+      forward edge:  physical_cost + crash_cost + intersection_cost_at_end + elevation_cost_forward
+      backward edge: physical_cost + crash_cost + intersection_cost_at_start + elevation_cost_backward
 
     The returned `strings` dict preserves first-insertion order; its
     keys form the canonical string table (the writer takes `list(strings)`
