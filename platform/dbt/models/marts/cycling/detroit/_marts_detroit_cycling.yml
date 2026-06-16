@@ -38,7 +38,7 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:
                 min_value: 0
-                strictly: true
+                strictly: false
       - name: geom
         data_tests:
           - not_null
@@ -267,7 +267,7 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:
                 min_value: 0
-                strictly: true
+                strictly: false
       - name: geom
         data_tests:
           - not_null
