@@ -5,6 +5,7 @@ sources:
     tags:
       - raw
     tables:
+      - name: Chicago_3dep_elevation
       - name: boston_3dep_elevation
       - name: chicago_3dep_elevation
       - name: dc_3dep_elevation

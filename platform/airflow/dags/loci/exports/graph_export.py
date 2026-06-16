@@ -73,6 +73,8 @@ class RoutingGraphExporter:
             crash_cost,
             intersection_cost_at_start,
             intersection_cost_at_end,
+            elevation_cost_forward,
+            elevation_cost_backward,
             start_is_intersection,
             end_is_intersection,
             highway_class,
@@ -209,6 +211,8 @@ class RoutingGraphExporter:
                     "crash_cost": _f(row["crash_cost"]),
                     "intersection_cost_at_start": _f(row["intersection_cost_at_start"]),
                     "intersection_cost_at_end": _f(row["intersection_cost_at_end"]),
+                    "elevation_cost_forward": _f(row["elevation_cost_forward"]),
+                    "elevation_cost_backward": _f(row["elevation_cost_backward"]),
                     # Carried as graph attributes for the heuristic-floor
                     # pass and possible future use; not written to the
                     # binary edge record (which carries only the composed
@@ -427,9 +431,11 @@ def build_edges_and_strings(
         crash = _coerce_cost(data.get("crash_cost"))
         if forward:
             intersection = _coerce_cost(data.get("intersection_cost_at_end"))
+            elevation = _coerce_cost(data.get("elevation_cost_forward"))
         else:
             intersection = _coerce_cost(data.get("intersection_cost_at_start"))
-        stress_cost = physical + crash + intersection
+            elevation = _coerce_cost(data.get("elevation_cost_backward"))
+        stress_cost = physical + crash + intersection + elevation
 
         edges.append(
             WriteEdge(
@@ -448,6 +454,7 @@ def build_edges_and_strings(
                 # baked into `stress_cost`.
                 intersection_cost=f32_or_nan(intersection),
                 crash_cost=f32_or_nan(data.get("crash_cost")),
+                elevation_cost=f32_or_nan(elevation),
             )
         )
 

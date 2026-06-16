@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/kdtree.rs
 //! Static 2D KD-tree for nearest-node lookup.
 //!
 //! Built once from a slice of points; queried with `nearest`. Operates

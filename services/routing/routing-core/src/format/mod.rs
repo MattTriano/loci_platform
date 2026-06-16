@@ -16,9 +16,10 @@ pub use types::{Edge, Graph, GraphFormatError, Node, SegmentGeometry};
 /// Magic bytes at the start of every graph file: b"LOCI".
 pub const MAGIC: [u8; 4] = *b"LOCI";
 
-/// Format version. Bumped to 2 for the f64-coordinate +
+/// Format version. Bumped to 3 to add elevation costs.
+/// Bumped to 2 for the f64-coordinate +
 /// per-node is_intersection layout (was 1 for the f32 layout).
-pub const FORMAT_VERSION: u16 = 2;
+pub const FORMAT_VERSION: u16 = 3;
 
 /// Sentinel string index meaning "no string" (SQL NULL). u32::MAX so it
 /// can never collide with a real index into the string table.
