@@ -66,3 +66,51 @@ models:
       - segment_geom_endpoints_match_node_positions:
           arguments:
             ways_model: ref('stg_denver_bike_ways')
+  - name: stg_denver_elevation_tiles
+    description: Precomputed convex-hull footprints for the current 3DEP sub-tiles,
+      used for indexed node-to-tile resolution during elevation sampling. One row
+      per current tile_id.
+    columns:
+      - name: tile_id
+        description: Sub-tile identifier, namespaced by 1-degree tile (<name>/<row>_<col>).
+        data_tests:
+          - not_null
+          - unique
+      - name: hull
+        description: Tile convex hull (geometry, 4269). NULL would silently drop the
+          tile's coverage.
+        data_tests:
+          - not_null
+  - name: stg_denver_node_elevations
+    description: 'One row per routing-graph node with its bare-earth elevation sampled
+      from the city''s 3DEP DEM. elevation_m is intentionally nullable: a node outside
+      coverage or on a nodata pixel (e.g. open water) is NULL and treated as flat
+      downstream.'
+    columns:
+      - name: node_id
+        description: OSM node id. unique is the regression guard for the one-row-per-node
+          grain the lateral limit-1 resolution guarantees.
+        data_tests:
+          - not_null
+          - unique
+      - name: geom
+        data_tests:
+          - not_null
+      - name: elevation_m
+        description: 'NAVD88 meters, or NULL on a coverage gap. The range bound catches
+          nodata sentinels (-9999, +/-3.4e38) leaking through as numbers and gross
+          unit errors; checked only on non-null rows. Bounds are loose on purpose:
+          they span every target metro (Denver sits near 1600 m), so they flag sentinels,
+          not tight validation.'
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -100
+                max_value: 4500
+              config:
+                where: elevation_m is not null
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.98
+              config:
+                severity: warn

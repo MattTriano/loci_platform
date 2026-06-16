@@ -9,5 +9,4 @@
     ]
 ) }}
 
-
 {{ generate_stg_city_bike_segments_model('detroit') }}

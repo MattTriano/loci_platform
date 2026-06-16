@@ -394,7 +394,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
     ]
 ) }}}}
 
-{{{{ generate_city_bike_stress_weighted_segments_model('{city}', include_crashes={include_crashes}) }}}}
+{{{{ generate_city_bike_stress_weighted_segments_model('{city}', include_crashes={include_crashes}, include_elevation={include_elevation}) }}}}
 """,
     }
 
@@ -816,6 +816,22 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                 },
                 {
                     "dbt_utils.expression_is_true": {
+                        "arguments": {"expression": "elevation_cost_forward >= 0"},
+                        "config": {
+                            "name": "{city}_stress_weighted_elevation_cost_forward_non_negative",
+                        },
+                    },
+                },
+                {
+                    "dbt_utils.expression_is_true": {
+                        "arguments": {"expression": "elevation_cost_backward >= 0"},
+                        "config": {
+                            "name": "{city}_stress_weighted_elevation_cost_backward_non_negative",
+                        },
+                    },
+                },
+                {
+                    "dbt_utils.expression_is_true": {
                         "arguments": {"expression": "intersection_cost_at_start >= 0"},
                         "config": {
                             "name": "{city}_intersection_cost_at_start_non_negative",
@@ -855,6 +871,8 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
                 {"name": "geom", "data_tests": ["not_null"]},
                 {"name": "physical_cost", "data_tests": ["not_null"]},
                 {"name": "crash_cost", "data_tests": ["not_null"]},
+                {"name": "elevation_cost_forward", "data_tests": ["not_null"]},
+                {"name": "elevation_cost_backward", "data_tests": ["not_null"]},
                 {
                     "name": "intersection_cost_at_start",
                     "description": (
@@ -898,6 +916,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
         city: str,
         include_crashes: bool,
         include_all_sidewalks: bool,
+        include_elevation: bool = True,
         overwrite: bool = False,
         overwrite_tests: bool = False,
     ) -> list[Path]:
@@ -927,6 +946,7 @@ class BikeStressPipelineBuilder(CityPipelineBuilder):
             fmt_kwargs={
                 "include_crashes": jinja_bool(include_crashes),
                 "include_all_sidewalks": jinja_bool(include_all_sidewalks),
+                "include_elevation": jinja_bool(include_elevation),
             },
             marts_models=marts_models,
         )
@@ -1030,6 +1050,224 @@ class OsmBikeParkingPipelineBuilder(CityPipelineBuilder):
             overwrite: when True, overwrite existing .sql files.
         """
         return self._generate_pipeline(city=city, overwrite=overwrite)
+
+
+class ElevationCostPipelineBuilder(CityPipelineBuilder):
+    """Generates the dbt model files and test ymls for a city's elevation-cost
+    pipeline.
+
+    Pipeline shape: two staging models that lift the city's 3DEP raster into a
+    GiST-indexed tile-footprint lookup and a per-node elevation table, then one
+    marts model that turns endpoint elevation deltas into directional,
+    quadratic-in-grade elevation costs. All steps delegate to parameterized
+    dbt macros.
+
+    This is a separate stream from the bike-stress pipeline: it reads
+    stg_<city>_bike_segments (for node geometry) and produces
+    <city>_segment_elevation_costs, which the bike-stress assembly model joins
+    in when generated with include_elevation=True. Run this builder for a city
+    in addition to BikeStressPipelineBuilder; dbt refs sequence the two streams.
+
+    Usage:
+        builder = ElevationCostPipelineBuilder("/path/to/dbt")
+        builder.generate(city="portland")
+    """
+
+    DOMAIN = "cycling"
+    SOURCE_NAME = "threedep"
+    SOURCE_TABLES = ["{city}_3dep_elevation"]
+
+    STAGING_MODELS: dict[str, str] = {
+        "stg_{city}_elevation_tiles": """\
+{{{{ config(
+    materialized='table',
+    post_hook=[
+        "CREATE INDEX ON {{{{ this }}}} USING GIST (hull)",
+        "ANALYZE {{{{ this }}}}"
+    ]
+) }}}}
+
+{{{{ generate_stg_city_elevation_tiles_model('{city}') }}}}
+""",
+        "stg_{city}_node_elevations": """\
+{{{{ config(materialized='table') }}}}
+
+{{{{ generate_stg_city_node_elevations_model('{city}') }}}}
+""",
+    }
+
+    MARTS_MODELS: dict[str, str] = {
+        "{city}_segment_elevation_costs": """\
+{{{{ config(materialized='table') }}}}
+
+{{{{ generate_city_segment_elevation_costs_model('{city}') }}}}
+""",
+    }
+
+    STAGING_TESTS: list[dict] = [
+        {
+            "name": "stg_{city}_elevation_tiles",
+            "description": (
+                "Precomputed convex-hull footprints for the current 3DEP "
+                "sub-tiles, used for indexed node-to-tile resolution during "
+                "elevation sampling. One row per current tile_id."
+            ),
+            "columns": [
+                {
+                    "name": "tile_id",
+                    "description": (
+                        "Sub-tile identifier, namespaced by 1-degree tile (<name>/<row>_<col>)."
+                    ),
+                    "data_tests": ["not_null", "unique"],
+                },
+                {
+                    "name": "hull",
+                    "description": (
+                        "Tile convex hull (geometry, 4269). NULL would silently "
+                        "drop the tile's coverage."
+                    ),
+                    "data_tests": ["not_null"],
+                },
+            ],
+        },
+        {
+            "name": "stg_{city}_node_elevations",
+            "description": (
+                "One row per routing-graph node with its bare-earth elevation "
+                "sampled from the city's 3DEP DEM. elevation_m is intentionally "
+                "nullable: a node outside coverage or on a nodata pixel (e.g. "
+                "open water) is NULL and treated as flat downstream."
+            ),
+            "columns": [
+                {
+                    "name": "node_id",
+                    "description": (
+                        "OSM node id. unique is the regression guard for the "
+                        "one-row-per-node grain the lateral limit-1 resolution "
+                        "guarantees."
+                    ),
+                    "data_tests": ["not_null", "unique"],
+                },
+                {"name": "geom", "data_tests": ["not_null"]},
+                {
+                    "name": "elevation_m",
+                    "description": (
+                        "NAVD88 meters, or NULL on a coverage gap. The range "
+                        "bound catches nodata sentinels (-9999, +/-3.4e38) "
+                        "leaking through as numbers and gross unit errors; "
+                        "checked only on non-null rows. Bounds are loose on "
+                        "purpose: they span every target metro (Denver sits near "
+                        "1600 m), so they flag sentinels, not tight validation."
+                    ),
+                    "data_tests": [
+                        {
+                            "dbt_utils.accepted_range": {
+                                "arguments": {"min_value": -100, "max_value": 4500},
+                                "config": {"where": "elevation_m is not null"},
+                            },
+                        },
+                        {
+                            "dbt_utils.not_null_proportion": {
+                                "arguments": {"at_least": 0.98},
+                                "config": {"severity": "warn"},
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    MARTS_TESTS: list[dict] = [
+        {
+            "name": "{city}_segment_elevation_costs",
+            "description": (
+                "Directional elevation cost per segment from the endpoint "
+                "elevation delta, quadratic in grade with separate up/down "
+                "coefficients. One row per segment_id. Costs coalesce to 0 on a "
+                "coverage gap (treated as flat)."
+            ),
+            "data_tests": [
+                {
+                    "dbt_utils.equal_rowcount": {
+                        "arguments": {"compare_model": "ref('stg_{city}_bike_segments')"},
+                    },
+                },
+                {
+                    "dbt_utils.expression_is_true": {
+                        "arguments": {"expression": "elevation_cost_forward >= 0"},
+                        "config": {
+                            "name": "{city}_elevation_cost_forward_non_negative",
+                        },
+                    },
+                },
+                {
+                    "dbt_utils.expression_is_true": {
+                        "arguments": {"expression": "elevation_cost_backward >= 0"},
+                        "config": {
+                            "name": "{city}_elevation_cost_backward_non_negative",
+                        },
+                    },
+                },
+            ],
+            "columns": [
+                {"name": "segment_id", "data_tests": ["not_null", "unique"]},
+                {
+                    "name": "start_node_id",
+                    "description": (
+                        "Completeness check — every endpoint must resolve in node_elevations."
+                    ),
+                    "data_tests": [
+                        "not_null",
+                        {
+                            "relationships": {
+                                "arguments": {
+                                    "to": "ref('stg_{city}_node_elevations')",
+                                    "field": "node_id",
+                                },
+                            },
+                        },
+                    ],
+                },
+                {
+                    "name": "end_node_id",
+                    "data_tests": [
+                        "not_null",
+                        {
+                            "relationships": {
+                                "arguments": {
+                                    "to": "ref('stg_{city}_node_elevations')",
+                                    "field": "node_id",
+                                },
+                            },
+                        },
+                    ],
+                },
+                {"name": "elevation_cost_forward", "data_tests": ["not_null"]},
+                {"name": "elevation_cost_backward", "data_tests": ["not_null"]},
+            ],
+        },
+    ]
+
+    def generate(
+        self,
+        city: str,
+        overwrite: bool = False,
+        overwrite_tests: bool = False,
+    ) -> list[Path]:
+        """Generate all dbt files for a city's elevation-cost pipeline.
+
+        Args:
+            city: city name.
+            overwrite: when True, overwrite existing .sql files.
+            overwrite_tests: when True, replace existing yml model entries whose
+                name matches an entry in STAGING_TESTS / MARTS_TESTS.
+        """
+        return self._generate_pipeline(
+            city=city,
+            overwrite=overwrite,
+            overwrite_tests=overwrite_tests,
+        )
 
 
 # =====================================================================

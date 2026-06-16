@@ -226,6 +226,16 @@ models:
             name: detroit_crash_cost_non_negative
       - dbt_utils.expression_is_true:
           arguments:
+            expression: elevation_cost_forward >= 0
+          config:
+            name: detroit_stress_weighted_elevation_cost_forward_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: elevation_cost_backward >= 0
+          config:
+            name: detroit_stress_weighted_elevation_cost_backward_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
             expression: intersection_cost_at_start >= 0
           config:
             name: detroit_intersection_cost_at_start_non_negative
@@ -267,6 +277,12 @@ models:
       - name: crash_cost
         data_tests:
           - not_null
+      - name: elevation_cost_forward
+        data_tests:
+          - not_null
+      - name: elevation_cost_backward
+        data_tests:
+          - not_null
       - name: intersection_cost_at_start
         description: Intersection cost at the start of the segment. Paid by backward-direction
           edges (which approach the start).
@@ -296,5 +312,49 @@ models:
         data_tests:
           - not_null
       - name: lighting_penalty
+        data_tests:
+          - not_null
+  - name: detroit_segment_elevation_costs
+    description: Directional elevation cost per segment from the endpoint elevation
+      delta, quadratic in grade with separate up/down coefficients. One row per segment_id.
+      Costs coalesce to 0 on a coverage gap (treated as flat).
+    data_tests:
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_detroit_bike_segments')
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: elevation_cost_forward >= 0
+          config:
+            name: detroit_elevation_cost_forward_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: elevation_cost_backward >= 0
+          config:
+            name: detroit_elevation_cost_backward_non_negative
+    columns:
+      - name: segment_id
+        data_tests:
+          - not_null
+          - unique
+      - name: start_node_id
+        description: "Completeness check \u2014 every endpoint must resolve in node_elevations."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_detroit_node_elevations')
+                field: node_id
+      - name: end_node_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_detroit_node_elevations')
+                field: node_id
+      - name: elevation_cost_forward
+        data_tests:
+          - not_null
+      - name: elevation_cost_backward
         data_tests:
           - not_null

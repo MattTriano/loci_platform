@@ -1,0 +1,16 @@
+sources:
+  - name: threedep
+    database: loci
+    schema: raw_data
+    tags:
+      - raw
+    tables:
+      - name: boston_3dep_elevation
+      - name: chicago_3dep_elevation
+      - name: dc_3dep_elevation
+      - name: denver_3dep_elevation
+      - name: detroit_3dep_elevation
+      - name: madison_3dep_elevation
+      - name: nola_3dep_elevation
+      - name: portland_3dep_elevation
+      - name: sf_3dep_elevation
