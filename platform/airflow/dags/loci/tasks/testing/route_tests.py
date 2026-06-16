@@ -31,6 +31,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from loci.geo import Gate
+
 logger = logging.getLogger(__name__)
 
 # Path inside the Airflow worker where chunk 7's compose mount lands.
@@ -51,6 +53,8 @@ class RouteTestCase:
         destination: (lat, lon) tuple.
         must_use: Street names the route MUST include (any partial match).
         must_avoid: Street names the route must NOT include (any partial match).
+        must_cross: the route must pass through every gate listed.
+        must_not_cross: the route must pass through none of them.
         max_cost: Optional upper bound on total_cost (catches cost explosions).
     """
 
@@ -59,6 +63,8 @@ class RouteTestCase:
     destination: tuple[float, float]
     must_use: list[str] = field(default_factory=list)
     must_avoid: list[str] = field(default_factory=list)
+    must_cross: list[Gate] = field(default_factory=list)
+    must_not_cross: list[Gate] = field(default_factory=list)
     max_cost: float | None = None
 
 
@@ -251,6 +257,18 @@ def _check_single_assertions(case: RouteTestCase, cli_result: dict) -> TestResul
         if _street_name_matches(street_names, forbidden):
             failures.append(f"Route should avoid {forbidden!r} but it was used")
 
+    for i, gate in enumerate(case.must_cross):
+        if not _route_crosses_gate(route, gate):
+            failures.append(
+                f"Expected route to cross gate {i} ({gate.start} -> {gate.end}) but it didn't"
+            )
+
+    for i, gate in enumerate(case.must_not_cross):
+        if _route_crosses_gate(route, gate):
+            failures.append(
+                f"Route should not cross gate {i} ({gate.start} -> {gate.end}) but it did"
+            )
+
     if case.max_cost is not None:
         total_cost = float(route.get("total_cost", float("inf")))
         if total_cost > case.max_cost:
@@ -281,3 +299,62 @@ def _street_name_matches(route_names: set[str], pattern: str) -> bool:
     """Case-insensitive substring match against the route's street names."""
     pattern_lower = pattern.lower()
     return any(pattern_lower in name.lower() for name in route_names)
+
+
+def _segments_cross(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    d: tuple[float, float],
+) -> bool:
+    """True if open segment a-b transversally crosses open segment c-d.
+
+    All points are (x, y). We find where the two infinite lines meet,
+    expressed as a fraction along each segment — t along a-b, u along c-d —
+    then the segments cross iff that point lies strictly inside both
+    (0 < t < 1 and 0 < u < 1).
+
+    Strict inequalities make this transversal-only: a leg that merely
+    touches a gate's endpoint, or runs collinear with it, does NOT count.
+    A gate is meant to be crossed cleanly; ambiguous grazes should be fixed
+    by moving the gate, not resolved here. Parallel segments (zero
+    denominator) never cross.
+
+    Planar assumption: over a single route leg and a hand-placed gate (tens
+    to hundreds of meters) the error from ignoring earth curvature is far
+    below the precision at which gates are placed. This mirrors the planar
+    assumption the Rust KD-tree already makes for nearest-node lookup.
+    """
+    (ax, ay), (bx, by) = a, b
+    (cx, cy), (dx, dy) = c, d
+
+    # Direction vectors of each segment.
+    r = (bx - ax, by - ay)
+    s = (dx - cx, dy - cy)
+
+    denom = r[0] * s[1] - r[1] * s[0]
+    if denom == 0.0:
+        return False  # parallel or collinear
+
+    # Vector from a to c, and the two fractional positions of the crossing.
+    ac = (cx - ax, cy - ay)
+    t = (ac[0] * s[1] - ac[1] * s[0]) / denom
+    u = (ac[0] * r[1] - ac[1] * r[0]) / denom
+
+    return 0.0 < t < 1.0 and 0.0 < u < 1.0
+
+
+def _route_crosses_gate(route: dict, gate: Gate) -> bool:
+    """True if any leg of the route's geometry crosses `gate`."""
+    # Gate endpoints are (lat, lon); route coordinates are (lon, lat) per
+    # the graph format. Convert the gate once, here, to (lon, lat) so the
+    # primitive works in a single consistent coordinate order.
+    g1 = (gate.start[1], gate.start[0])
+    g2 = (gate.end[1], gate.end[0])
+
+    for seg in route.get("segments", []):
+        coords = seg.get("coordinates", [])
+        for p1, p2 in zip(coords, coords[1:], strict=False):
+            if _segments_cross(tuple(p1), tuple(p2), g1, g2):
+                return True
+    return False

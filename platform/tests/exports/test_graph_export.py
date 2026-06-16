@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/exports/test_graph_export.py
 """
 Tests for the routing graph exporter (graph_export.py).
 
@@ -540,6 +541,8 @@ def _row(
     physical_cost,
     intersection_cost_at_start=0.0,
     intersection_cost_at_end=0.0,
+    elevation_cost_forward=0.0,
+    elevation_cost_backward=0.0,
     crash_cost=0.0,
     length_m=100.0,
     name=None,
@@ -562,6 +565,8 @@ def _row(
         "crash_cost": crash_cost,
         "intersection_cost_at_start": intersection_cost_at_start,
         "intersection_cost_at_end": intersection_cost_at_end,
+        "elevation_cost_forward": elevation_cost_forward,
+        "elevation_cost_backward": elevation_cost_backward,
         "start_is_intersection": start_is_intersection,
         "end_is_intersection": end_is_intersection,
         "highway_class": "local",
@@ -624,11 +629,11 @@ def _decode_graph(path):
         nodes.append({"osm_id": osm_id, "is_intersection": is_intersection})
         pos += 32
 
-    # Edge table (44 bytes each)
+    # Edge table (48 bytes each)
     edge_count = u32()
     edges = []
     for _ in range(edge_count):
-        rec = buf[pos : pos + 44]
+        rec = buf[pos : pos + 48]
         edges.append(
             {
                 "target": struct.unpack_from("<I", rec, 0)[0],
@@ -638,9 +643,10 @@ def _decode_graph(path):
                 "physical_cost": struct.unpack_from("<f", rec, 32)[0],
                 "intersection_cost": struct.unpack_from("<f", rec, 36)[0],
                 "crash_cost": struct.unpack_from("<f", rec, 40)[0],
+                "elevation_cost": struct.unpack_from("<f", rec, 44)[0],
             }
         )
-        pos += 44
+        pos += 48
 
     return {
         "version": version,
@@ -683,6 +689,7 @@ def test_export_end_to_end(tmp_path):
             start_is_intersection=True,
             end_is_intersection=False,
             physical_cost=200.0,
+            elevation_cost_forward=30.0,
         ),
     ]
     engine = _FakeEngine(rows, floor=0.02)
@@ -699,7 +706,7 @@ def test_export_end_to_end(tmp_path):
 
     decoded = _decode_graph(out_path)
 
-    assert decoded["version"] == 2
+    assert decoded["version"] == 3
     # heuristic_floor = raw floor * 0.95 safety margin.
     assert decoded["heuristic_floor"] == pytest.approx(0.02 * 0.95)
 
@@ -725,6 +732,10 @@ def test_export_end_to_end(tmp_path):
 
     assert bwd_ba["intersection_cost"] == pytest.approx(0.0)
     assert bwd_ba["stress_cost"] == pytest.approx(100.0)
+
+    fwd_bc = next(e for e in decoded["edges"] if e["forward"] and e["target"] == idx[30])
+    assert fwd_bc["elevation_cost"] == pytest.approx(30.0)
+    assert fwd_bc["stress_cost"] == pytest.approx(200.0 + 30.0)  # physical + elevation
 
 
 def test_export_falls_back_to_zero_floor_when_query_empty(tmp_path):
