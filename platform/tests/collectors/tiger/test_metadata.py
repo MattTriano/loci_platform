@@ -170,6 +170,7 @@ class TestListCartographicFiles:
 # ------------------------------------------------------------------ #
 
 
+@pytest.mark.network
 class TestGetDownloadUrl:
     """Test that constructed URLs match the Census naming conventions."""
 

@@ -13,6 +13,7 @@ pandas
 psycopg2-binary
 pyarrow
 PyMySQL
+rasterio
 requests
 scipy
 shapely

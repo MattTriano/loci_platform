@@ -168,6 +168,12 @@ There are some tests that actually make network calls, and this can be somewhat 
 uv run pytest -m "not network"
 ```
 
+To run tests that depend on env-vars, you can define those env-vars in a `.env` file and specify it when having `uv` run the tests.
+
+```console
+uv run --env-file .env_test pytest platform/tests/collectors/cms -v
+```
+
 # Local Postgres Overrides
 
 To override the default `postgresql.conf` file and tune the database for your hardware, create a `.conf` file in directory `<project_root>/platform/podman/storage/conf.d/` and override the Postgres configs you want to tweak. I'd recommend copying the content in the `.../storage/postgresql.conf` file up until the "LOCAL OVERRIDES" section, pasting that into a `.../storage/conf.d/postgresql.local.conf` file and then adjust values based on the hardware you're running this project on.

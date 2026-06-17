@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/arcgishub/spec.py
 """
 ArcGISHubDatasetSpec — defines an ArcGIS Hub dataset to collect.
 

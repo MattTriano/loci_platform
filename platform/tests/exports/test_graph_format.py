@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/exports/test_graph_format.py
 """
 Tests for the routing graph binary format writer.
 
@@ -32,7 +33,7 @@ from loci.exports.graph_format import (
 # Layout constants from the spec — used to compute offsets in tests.
 HEADER_SIZE = 16
 NODE_RECORD_SIZE = 32
-EDGE_RECORD_SIZE = 44
+EDGE_RECORD_SIZE = 48
 GEOM_COORD_SIZE = 16  # f64 lon + f64 lat
 
 
@@ -63,6 +64,7 @@ def _make_simple_writes():
             physical_cost=250.0,
             intersection_cost=0.0,
             crash_cost=0.0,
+            elevation_cost=0.0,
         ),
         # source 1 → target 2, S1, unnamed, residential, forward
         WriteEdge(
@@ -78,6 +80,7 @@ def _make_simple_writes():
             physical_cost=200.0,
             intersection_cost=0.0,
             crash_cost=0.0,
+            elevation_cost=0.0,
         ),
         # source 1 → target 0, S0 backward sibling
         WriteEdge(
@@ -93,6 +96,7 @@ def _make_simple_writes():
             physical_cost=250.0,
             intersection_cost=0.0,
             crash_cost=0.0,
+            elevation_cost=0.0,
         ),
         # source 2 → target 0, S2 forward
         WriteEdge(
@@ -108,6 +112,7 @@ def _make_simple_writes():
             physical_cost=150.0,
             intersection_cost=0.0,
             crash_cost=0.0,
+            elevation_cost=0.0,
         ),
     ]
     geoms = [
@@ -138,7 +143,7 @@ def test_header_layout():
     # Header is the first 16 bytes:
     assert payload[0:4] == MAGIC
     assert struct.unpack_from("<H", payload, 4)[0] == FORMAT_VERSION
-    assert FORMAT_VERSION == 2  # Reminder: bump triggers reader update
+    assert FORMAT_VERSION == 3  # Reminder: bump triggers reader update
     assert struct.unpack_from("<H", payload, 6)[0] == 0  # flags reserved
     assert struct.unpack_from("<d", payload, 8)[0] == pytest.approx(0.0001)
 
@@ -191,8 +196,8 @@ def test_node_table_layout():
         cursor += NODE_RECORD_SIZE
 
 
-def test_edge_table_records_are_44_bytes():
-    """Edge record shrank to 44 bytes in v2 — the six legacy factor fields were removed."""
+def test_edge_table_records_are_48_bytes():
+    """Edge record shrank to 44 bytes in v2 and grew to 48 in v3."""
     strings, nodes, edges, geoms = _make_simple_writes()
     payload = _write_to_bytes(strings, nodes, edges, geoms)
 
@@ -216,6 +221,7 @@ def test_edge_table_records_are_44_bytes():
         physical = struct.unpack_from("<f", record, 32)[0]
         intersection = struct.unpack_from("<f", record, 36)[0]
         crash = struct.unpack_from("<f", record, 40)[0]
+        elevation = struct.unpack_from("<f", record, 44)[0]
 
         assert padding == b"\x00\x00\x00", "edge padding must be zero"
         assert flags & 0b1111_1110 == 0, "reserved edge flag bits must be zero"
@@ -230,6 +236,7 @@ def test_edge_table_records_are_44_bytes():
         assert physical == pytest.approx(expected.physical_cost, rel=1e-5)
         assert intersection == pytest.approx(expected.intersection_cost, rel=1e-5)
         assert crash == pytest.approx(expected.crash_cost, rel=1e-5)
+        assert elevation == pytest.approx(expected.elevation_cost, rel=1e-5)
         cursor += EDGE_RECORD_SIZE
 
 

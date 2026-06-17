@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/socrata/spec.py
 """
 SocrataDatasetSpec — defines a Socrata dataset to collect.
 

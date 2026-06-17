@@ -1,3 +1,4 @@
+//! /loci_platform/services/routing/routing-core/src/lib.rs
 //! routing-core: types and pure routing logic for bike-map.
 //!
 //! Chunks 2-4 added: binary graph format, KD-tree, A*, turn penalties,

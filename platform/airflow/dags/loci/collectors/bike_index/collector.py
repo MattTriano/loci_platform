@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/bike_index/collector.py
 """
 BikeIndexCollector — collects stolen bike reports from the Bike Index API
 and ingests them into Postgres via StagedIngest.

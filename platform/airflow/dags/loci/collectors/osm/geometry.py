@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/osm/geometry.py
 """
 Geometry assembly for OSM elements.
 
