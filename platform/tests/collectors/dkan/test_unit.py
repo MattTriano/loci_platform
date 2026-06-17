@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/collectors/dkan/test_unit.py
 """
 Unit behaviors of the DKAN tooling that need neither a database nor
 HTTP: spec validation, catalog/distribution parsing, and the DDL

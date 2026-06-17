@@ -13,7 +13,7 @@ from loci.tasks.bike_map_tasks import (
     build_refresh_task_graph,
     standard_dag_params,
 )
-from loci.tasks.testing.route_tests import RouteTestCase
+from loci.tasks.testing.route_tests import Gate, RouteTestCase
 
 CITY = "sf"
 
@@ -27,7 +27,14 @@ CITY_LAYER_DISPLAYS: list[LayerDisplayConfig] = [
     data_layers.OSM_BIKE_PARKING_LAYER_CONFIG,
 ]
 
-CITY_ROUTE_TESTS: list[RouteTestCase] = []
+CITY_ROUTE_TESTS: list[RouteTestCase] = [
+    RouteTestCase(
+        name="Church and Duboce to avoids steep climb by Mission Delores Park",
+        origin=(37.7693, -122.4290),  # Church St and Dubonce Ave
+        destination=(37.7481, -122.4013),  # Marin St and Kansas St
+        must_not_cross=[Gate((37.7596, -122.4295), (37.7597, -122.4272))],
+    ),
+]
 
 ROUTABLE_ORIGIN_DEST_PAIR = ((37.8033, -122.4733), (37.7765, -122.4339))
 

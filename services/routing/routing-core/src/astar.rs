@@ -191,6 +191,7 @@ mod tests {
             physical_cost: stress,
             intersection_cost: f32::NAN,
             crash_cost: f32::NAN,
+            elevation_cost: f32::NAN,
         }
     }
 

@@ -73,6 +73,8 @@ class RoutingGraphExporter:
             crash_cost,
             intersection_cost_at_start,
             intersection_cost_at_end,
+            elevation_cost_forward,
+            elevation_cost_backward,
             start_is_intersection,
             end_is_intersection,
             highway_class,
@@ -209,10 +211,12 @@ class RoutingGraphExporter:
                     "crash_cost": _f(row["crash_cost"]),
                     "intersection_cost_at_start": _f(row["intersection_cost_at_start"]),
                     "intersection_cost_at_end": _f(row["intersection_cost_at_end"]),
+                    "elevation_cost_forward": _f(row["elevation_cost_forward"]),
+                    "elevation_cost_backward": _f(row["elevation_cost_backward"]),
                     # Carried as graph attributes for the heuristic-floor
                     # pass and possible future use; not written to the
                     # binary edge record (which carries only the composed
-                    # stress_cost and its physical/intersection/crash parts).
+                    # stress_cost and its physical/intersection/crash/elevation parts).
                     "highway_class": row["highway_class"],
                     "infra_tier": row["infra_tier"],
                     "base_stress_per_meter": _f(row["base_stress_per_meter"]),
@@ -391,8 +395,8 @@ def build_edges_and_strings(
     deduplicated string table.
 
     Per-direction stress composition:
-      forward edge:  physical_cost + crash_cost + intersection_cost_at_end
-      backward edge: physical_cost + crash_cost + intersection_cost_at_start
+      forward edge:  physical_cost + crash_cost + intersection_cost_at_end + elevation_cost_forward
+      backward edge: physical_cost + crash_cost + intersection_cost_at_start + elevation_cost_backward
 
     The returned `strings` dict preserves first-insertion order; its
     keys form the canonical string table (the writer takes `list(strings)`
@@ -427,9 +431,11 @@ def build_edges_and_strings(
         crash = _coerce_cost(data.get("crash_cost"))
         if forward:
             intersection = _coerce_cost(data.get("intersection_cost_at_end"))
+            elevation = _coerce_cost(data.get("elevation_cost_forward"))
         else:
             intersection = _coerce_cost(data.get("intersection_cost_at_start"))
-        stress_cost = physical + crash + intersection
+            elevation = _coerce_cost(data.get("elevation_cost_backward"))
+        stress_cost = physical + crash + intersection + elevation
 
         edges.append(
             WriteEdge(
@@ -448,6 +454,7 @@ def build_edges_and_strings(
                 # baked into `stress_cost`.
                 intersection_cost=f32_or_nan(intersection),
                 crash_cost=f32_or_nan(data.get("crash_cost")),
+                elevation_cost=f32_or_nan(elevation),
             )
         )
 

@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/exports/graph_format.py
 """
 Binary writer for the routing graph format.
 
@@ -17,7 +18,9 @@ Format v2 changes from v1:
     (speed/road_type/infrastructure/tunnel/surface/lighting), shrinking
     from 68 to 44 bytes. The additive cost model that replaced them
     keeps only physical_cost, intersection_cost, and crash_cost.
-The header, string table, and CSR offsets are unchanged.
+
+Format v3 changes from v2:
+  - The edge record is now 48 bytes; gained elevation_cost
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from dataclasses import dataclass
 from typing import IO
 
 MAGIC = b"LOCI"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 NULL_STR_IDX = 0xFFFFFFFF
 EDGE_FLAG_FORWARD = 0b0000_0001
 
@@ -84,6 +87,7 @@ class WriteEdge:
     physical_cost: float
     intersection_cost: float
     crash_cost: float
+    elevation_cost: float
 
 
 @dataclass
@@ -188,6 +192,7 @@ def _write_edge(out: IO[bytes], e: WriteEdge) -> None:
     out.write(_F32_LE.pack(e.physical_cost))
     out.write(_F32_LE.pack(e.intersection_cost))
     out.write(_F32_LE.pack(e.crash_cost))
+    out.write(_F32_LE.pack(e.elevation_cost))
 
 
 def _validate_edge_ordering(edges: list[WriteEdge]) -> None:

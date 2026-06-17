@@ -1,3 +1,4 @@
+# /loci_platform/platform/tests/collectors/conftest.py
 """
 Shared fixtures for the collector test suites (cms, dkan, ...).
 

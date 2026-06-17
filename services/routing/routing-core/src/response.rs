@@ -23,6 +23,7 @@
 //!           "length_m":          f32,
 //!           "physical_cost":     f32,
 //!           "crash_cost":        f32,
+//!           "elevation_cost":    f32,
 //!           "intersection_cost": f32,
 //!           "left_turn_penalty": f32
 //!         }
@@ -73,6 +74,7 @@ fn cost_components_to_json(c: &CostComponents) -> Value {
         "length_m": round_f32(c.length_m, LENGTH_ROUND_DECIMALS),
         "physical_cost": round_f32(c.physical_cost, COST_ROUND_DECIMALS),
         "crash_cost": round_f32(c.crash_cost, COST_ROUND_DECIMALS),
+        "elevation_cost": round_f32(c.elevation_cost, COST_ROUND_DECIMALS),
         "intersection_cost": round_f32(c.intersection_cost, COST_ROUND_DECIMALS),
         "left_turn_penalty": round_f32(c.left_turn_penalty, COST_ROUND_DECIMALS),
     })

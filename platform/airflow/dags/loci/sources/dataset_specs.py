@@ -10,6 +10,7 @@ from loci.collectors.osm.spec import OSMDatasetSpec
 from loci.collectors.osmnx.spec import OsmnxDatasetSpec
 from loci.collectors.socrata.spec import SocrataDatasetSpec
 from loci.collectors.static.spec import FileRef, StaticFileDatasetSpec
+from loci.collectors.threedep.spec import ThreeDEPDatasetSpec
 from loci.collectors.tiger.spec import TigerDatasetSpec
 from loci.geo import BBox
 
@@ -1749,3 +1750,30 @@ AHRQ_HEALTH_SYSTEMS_SPEC = StaticFileDatasetSpec(
         FileRef(url=f"{AHRQ_BASE}/chsp-compendium-2023-rev.csv", vintage="2023", encoding="cp1252"),
     ],
 )
+
+
+#######################################################################################
+#    USGS 3DEP Elevation                                                              #
+#######################################################################################
+
+
+def generate_3dep_elevation_spec(city: str, bbox: BBox, product: str = "13") -> ThreeDEPDatasetSpec:
+    """Build a USGS 3DEP elevation spec for a given US city."""
+    return ThreeDEPDatasetSpec(
+        name=f"{city}_3dep_elevation",
+        target_table=f"{city}_3dep_elevation",
+        target_schema="raw_data",
+        bbox=bbox,
+        product=product,
+    )
+
+
+BOSTON_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="boston", bbox=BOSTON_BBOX)
+CHICAGO_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="chicago", bbox=CHICAGO_BBOX)
+DC_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="dc", bbox=WASHINGTON_DC_BBOX)
+DENVER_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="denver", bbox=DENVER_BBOX)
+DETROIT_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="detroit", bbox=DENVER_BBOX)
+MADISON_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="madison", bbox=MADISON_BBOX)
+NOLA_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="nola", bbox=NEW_ORLEANS_BBOX)
+PORTLAND_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="portland", bbox=PORTLAND_BBOX)
+SF_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="sf", bbox=SAN_FRANCISCO_BBOX)

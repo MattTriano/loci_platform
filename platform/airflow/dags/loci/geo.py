@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/geo.py
 """Geographic bounding box.
 
 A small named type for bounding boxes so callers can't silently swap
@@ -55,3 +56,32 @@ class BBox:
     def to_st_makeenvelope(self) -> str:
         """Render as a PostGIS ST_MakeEnvelope(xmin, ymin, xmax, ymax, srid) call."""
         return f"ST_MakeEnvelope({self.west}, {self.south}, {self.east}, {self.north}, {self.srid})"
+
+
+@dataclass(frozen=True)
+class Gate:
+    """A line segment used as a geometric route assertion.
+
+    Endpoints are (lat, lon) in degrees, matching RouteTestCase's
+    origin/destination convention. A route "crosses" the gate when one of
+    its legs transversally intersects this segment — used to assert that a
+    route passes through (must_cross) or avoids (must_not_cross) a specific
+    corridor, independent of street names.
+    """
+
+    start: tuple[float, float]  # (lat, lon)
+    end: tuple[float, float]  # (lat, lon)
+
+    def __post_init__(self) -> None:
+        for label, (lat, lon) in (("start", self.start), ("end", self.end)):
+            if not -90.0 <= lat <= 90.0:
+                raise ValueError(
+                    f"Gate {label} latitude {lat} out of range [-90, 90]. "
+                    f"Are the endpoints (lat, lon) rather than (lon, lat)?"
+                )
+            if not -180.0 <= lon <= 180.0:
+                raise ValueError(f"Gate {label} longitude {lon} out of range [-180, 180].")
+        if self.start == self.end:
+            raise ValueError(
+                f"Gate endpoints are identical ({self.start}); a gate must have length."
+            )

@@ -1011,6 +1011,75 @@ AHRQ_HEALTH_SYSTEMS_UC = DatasetUpdateConfig(
 
 
 #######################################################################################
+#    USGS 3DEP Elevation                                                              #
+#######################################################################################
+
+
+BOSTON_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.BOSTON_3DEP_ELEVATION_SPEC,
+    update_cron="0 3 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+CHICAGO_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.CHICAGO_3DEP_ELEVATION_SPEC,
+    update_cron="10 3 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+DC_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.DC_3DEP_ELEVATION_SPEC,
+    update_cron="20 3 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+DENVER_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.DENVER_3DEP_ELEVATION_SPEC,
+    update_cron="30 3 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+DETROIT_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.DETROIT_3DEP_ELEVATION_SPEC,
+    update_cron="40 3 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+MADISON_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.MADISON_3DEP_ELEVATION_SPEC,
+    update_cron="50 3 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+NOLA_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.NOLA_3DEP_ELEVATION_SPEC,
+    update_cron="0 4 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+PORTLAND_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.PORTLAND_3DEP_ELEVATION_SPEC,
+    update_cron="10 4 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+SF_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.SF_3DEP_ELEVATION_SPEC,
+    update_cron="20 4 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
+
+#######################################################################################
 #    OSMnx                                                                            #
 #######################################################################################
 
