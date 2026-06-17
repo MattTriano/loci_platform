@@ -795,7 +795,7 @@
           Why this route?
         </button>
         <div class="route-why-text" id="route-why-text">
-          This route prefers streets with better bike infrastructure, lower speed limits, lighting, and less severe recent crash history, even if that means a slightly longer ride. It may differ from the shortest path based on these preferences. Conditions change — always use your own judgment. Hover or tap any segment to see what factors drove its cost.
+          This route prefers calmer, lower-stress riding: better bike infrastructure, quieter and slower streets, good lighting, gentler hills, and fewer stressful intersections and turns, while also weighing recent crash history. It avoids steep climbs and descents where a gentler way around exists, even if that means a slightly longer ride. Conditions change, and the underlying data can be incomplete or out of date, so always use your own judgment. Hover or tap any segment to see what drove its cost.
         </div>
       </div>
     </div>
@@ -1726,6 +1726,7 @@ function buildRouteSegmentPopupHTML(props) {
     ['Physical',     fmtMeters(cc.physical_cost)],
     ['Intersection', fmtMeters(cc.intersection_cost)],
     ['Crash',        fmtMeters(cc.crash_cost)],
+    ['Elevation',    fmtMeters(cc.elevation_cost)],
     ['Left turn',    fmtMeters(cc.left_turn_penalty)],
   ].filter(([, v]) => v != null && parseFloat(v) > 0);
 

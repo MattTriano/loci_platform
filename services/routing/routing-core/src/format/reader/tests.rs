@@ -16,7 +16,7 @@ use crate::format::{
 };
 
 const NODE_RECORD_SIZE: usize = 32;
-const EDGE_RECORD_SIZE: usize = 44;
+const EDGE_RECORD_SIZE: usize = 48;
 
 /// Build a minimal valid fixture: 3 nodes, 4 edges, 1 segment geometry.
 ///
@@ -121,6 +121,7 @@ fn build_fixture() -> Vec<u8> {
         b.extend_from_slice(&stress.to_le_bytes()); // physical_cost
         b.extend_from_slice(&0.0f32.to_le_bytes()); // intersection_cost
         b.extend_from_slice(&0.0f32.to_le_bytes()); // crash_cost
+        b.extend_from_slice(&0.0f32.to_le_bytes()); // elevation_cost
     }
 
     // --- CSR offsets ---
@@ -183,6 +184,7 @@ fn reads_valid_fixture() {
     assert_eq!(g.edges[0].length_m, 100.0);
     assert_eq!(g.edges[0].physical_cost, 250.0);
     assert_eq!(g.edges[0].crash_cost, 0.0);
+    assert_eq!(g.edges[0].elevation_cost, 0.0);
 
     // Nullability
     assert_eq!(g.lookup_str(g.edges[0].name_str_idx), Some("Main St"));

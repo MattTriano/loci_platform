@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/socrata/client.py
 from __future__ import annotations
 
 import json
@@ -6,11 +7,11 @@ from collections.abc import Iterator
 from typing import Any
 
 import requests
-from requests.exceptions import ConnectionError, ReadTimeout
+from requests.exceptions import ChunkedEncodingError, ConnectionError, HTTPError, ReadTimeout
 from tenacity import (
     before_sleep_log,
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 class SocrataClient:
     """Executes SoQL queries against a Socrata domain and yields results."""
+
+    RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
     def __init__(
         self,
@@ -107,8 +110,15 @@ class SocrataClient:
             params["$limit"] = str(limit)
         return self._request(domain, dataset_id, params, include_system_fields)
 
+    def is_retryable(self, exc: Exception) -> bool:
+        if isinstance(exc, HTTPError) and exc.response is not None:
+            return exc.response.status_code in self.RETRYABLE_STATUS
+        return isinstance(
+            exc, (json.JSONDecodeError, ConnectionError, ReadTimeout, ChunkedEncodingError)
+        )
+
     @retry(
-        retry=retry_if_exception_type((json.JSONDecodeError, ConnectionError, ReadTimeout)),
+        retry=retry_if_exception(is_retryable),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         before_sleep=before_sleep_log(logger, logging.WARNING),
@@ -139,3 +149,21 @@ class SocrataClient:
                 resp.text[max(0, e.pos - 200) : e.pos + 200],
             )
             raise
+
+    def find_dupes(self, domain: str, dataset_id: str, columns: list[str]):
+        cols = ", ".join(columns)
+        params = {
+            "$select": f"{cols}, count(*) as n",
+            "$group": cols,
+            "$having": "n > 1",
+            "$limit": 5,
+        }
+        headers = {"X-App-Token": self.app_token} if self.app_token else {}
+        r = requests.get(
+            f"https://{domain}/resource/{dataset_id}.json",
+            params=params,
+            headers=headers,
+            timeout=60,
+        )
+        r.raise_for_status()
+        return r.json()

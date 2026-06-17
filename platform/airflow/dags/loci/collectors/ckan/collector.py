@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/ckan/collector.py
 from __future__ import annotations
 
 import csv
@@ -9,6 +10,7 @@ from typing import Any
 from loci.collectors.ckan.client import CKANClient
 from loci.collectors.ckan.metadata import CKANResource
 from loci.collectors.ckan.spec import CKANDatasetSpec
+from loci.collectors.exceptions import SchemaDriftError
 from loci.parsers.csv_parser import parse_csv
 from loci.parsers.geojson import parse_geojson
 from loci.tracking.ingestion_tracker import IngestionTracker
@@ -23,7 +25,8 @@ class CKANCollector:
     Usage:
         collector = CKANCollector(engine=engine)
 
-        # Full refresh (download files, parse, SCD2 merge):
+        # Collect (CKAN is full-refresh-only; force is accepted for interface
+        # parity with the other collectors but does not change behavior):
         spec = CKANDatasetSpec(
             name="food_inspections",
             base_url="https://data.cityofchicago.org",
@@ -32,7 +35,7 @@ class CKANCollector:
             entity_key=["inspection_id"],
             resource_format="CSV",
         )
-        rows = collector.full_refresh(spec)
+        summary = collector.collect(spec, force=True)
 
         # Generate DDL for a new table:
         print(collector.generate_ddl(spec))
@@ -87,6 +90,36 @@ class CKANCollector:
         if base_url not in self._client_cache:
             self._client_cache[base_url] = CKANClient(base_url)
         return self._client_cache[base_url]
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def collect(self, spec: CKANDatasetSpec, force: bool = False) -> dict:
+        """
+        Collect a dataset and merge into the target table.
+
+        CKAN collection is full-refresh-only — it downloads resource files
+        and SCD2-merges, with no incremental path — so `force` is accepted
+        for interface parity with the other collectors but does not change
+        behavior: every run is a full refresh.
+
+        Returns a summary dict (spec_name, mode, rows_merged).
+        """
+        if not force:
+            self.logger.info(
+                "%s: CKAN collection is full-refresh-only; running a full refresh "
+                "(force is ignored).",
+                spec.name,
+            )
+        rows_merged = self.full_refresh(spec)
+        summary = {
+            "spec_name": spec.name,
+            "mode": "full_refresh",
+            "rows_merged": rows_merged,
+        }
+        self.logger.info("Collection complete for %r: %s", spec.name, summary)
+        return summary
 
     # ------------------------------------------------------------------
     # Resource resolution
@@ -207,6 +240,11 @@ class CKANCollector:
                 # and reuse it for all subsequent batches from this resource.
                 if name_map is None and batch:
                     name_map = self._normalize_column_names(list(batch[0].keys()))
+                    # Validate the resource's columns against the table before
+                    # writing. Warn-first: flip raise_on_drift=True to enforce.
+                    self._preflight_column_check(
+                        set(name_map.values()), spec.target_table, spec.target_schema
+                    )
 
                 if name_map:
                     batch = self._rename_batch_keys(batch, name_map)
@@ -216,6 +254,52 @@ class CKANCollector:
 
         finally:
             filepath.unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
+    # Schema drift
+    # ------------------------------------------------------------------
+
+    def _preflight_column_check(
+        self,
+        source_columns: set[str],
+        target_table: str,
+        target_schema: str,
+        raise_on_drift: bool = False,
+    ) -> None:
+        """Compare a resource's normalized columns against the target table.
+
+        Logs columns present in the table but absent from the source. For
+        columns present in the source but not the table (drift), raises
+        SchemaDriftError when raise_on_drift is True, or logs a warning when
+        False (the warn-first default). Skips silently when the table does
+        not exist yet — staged_ingest will surface that.
+        """
+        table_columns = self._get_table_columns(target_table, target_schema)
+        if not table_columns:
+            return
+
+        data_columns_in_table = {c.lower() for c in table_columns} - self.PIPELINE_COLUMNS
+        source_columns = source_columns - self.PIPELINE_COLUMNS - self.CKAN_INTERNAL_COLUMNS
+
+        new_in_source = source_columns - data_columns_in_table
+        missing_from_source = data_columns_in_table - source_columns
+
+        if missing_from_source:
+            self.logger.warning(
+                "Columns in %s.%s but not in source: %s",
+                target_schema,
+                target_table,
+                missing_from_source,
+            )
+
+        if new_in_source:
+            message = (
+                f"Source has columns not in {target_schema}.{target_table}: "
+                f"{new_in_source}. Add them via migration, then re-run."
+            )
+            if raise_on_drift:
+                raise SchemaDriftError(message)
+            self.logger.warning("Schema drift (warn-only): %s", message)
 
     # ------------------------------------------------------------------
     # Table column helpers
@@ -561,12 +645,19 @@ class CKANCollector:
         if first.datastore_active or client.metadata.has_datastore(first.id):
             return client.datastore_search(first.id, limit=limit)
 
-        # File fallback: download and parse just enough rows
-        suffix = client._suffix_for_format(first.format or "csv")
+        # File fallback: download and parse just enough rows. Branch on format
+        # so GeoJSON isn't parsed as CSV.
+        fmt = (first.format or "CSV").upper()
+        suffix = client._suffix_for_format(fmt)
         filepath = client.download_to_tempfile(first.url, suffix=suffix)
         try:
+            if fmt == "GEOJSON":
+                batches, _ = parse_geojson(filepath, geometry_column="geom")
+            else:
+                batches = parse_csv(filepath)
+
             rows = []
-            for batch in parse_csv(filepath):
+            for batch in batches:
                 rows.extend(batch)
                 if len(rows) >= limit:
                     break

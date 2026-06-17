@@ -30,6 +30,16 @@ models:
             name: chicago_intersection_cost_at_start_non_negative
       - dbt_utils.expression_is_true:
           arguments:
+            expression: elevation_cost_forward >= 0
+          config:
+            name: chicago_stress_weighted_elevation_cost_forward_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: elevation_cost_backward >= 0
+          config:
+            name: chicago_stress_weighted_elevation_cost_backward_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
             expression: intersection_cost_at_end >= 0
           config:
             name: chicago_intersection_cost_at_end_non_negative
@@ -97,6 +107,13 @@ models:
       - name: lighting_penalty
         data_tests:
           - not_null
+      - name: elevation_cost_forward
+        data_tests:
+          - not_null
+      - name: elevation_cost_backward
+        data_tests:
+          - not_null
+
   - name: chicago_bike_crash_hotspots
     description: 'Bike crash data with severity scores, deduplicated to one row per
       crash.
@@ -321,3 +338,47 @@ models:
                   - path
               config:
                 where: infra_category is not null
+  - name: chicago_segment_elevation_costs
+    description: Directional elevation cost per segment from the endpoint elevation
+      delta, quadratic in grade with separate up/down coefficients. One row per segment_id.
+      Costs coalesce to 0 on a coverage gap (treated as flat).
+    data_tests:
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('stg_chicago_bike_segments')
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: elevation_cost_forward >= 0
+          config:
+            name: chicago_elevation_cost_forward_non_negative
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: elevation_cost_backward >= 0
+          config:
+            name: chicago_elevation_cost_backward_non_negative
+    columns:
+      - name: segment_id
+        data_tests:
+          - not_null
+          - unique
+      - name: start_node_id
+        description: "Completeness check \u2014 every endpoint must resolve in node_elevations."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_chicago_node_elevations')
+                field: node_id
+      - name: end_node_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_chicago_node_elevations')
+                field: node_id
+      - name: elevation_cost_forward
+        data_tests:
+          - not_null
+      - name: elevation_cost_backward
+        data_tests:
+          - not_null

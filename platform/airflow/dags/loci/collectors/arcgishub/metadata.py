@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/arcgishub/metadata.py
 """Catalog/metadata access for ArcGIS Hub data portals."""
 
 from __future__ import annotations

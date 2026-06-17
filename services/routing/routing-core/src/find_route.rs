@@ -44,6 +44,7 @@ pub struct CostComponents {
     pub physical_cost: f32,
     pub crash_cost: f32,
     pub intersection_cost: f32,
+    pub elevation_cost: f32,
     pub left_turn_penalty: f32,
 }
 
@@ -134,6 +135,7 @@ fn compose_result(g: &IndexedGraph, path: &[u32]) -> Result<RouteResult, FindRou
                 physical_cost: edge.physical_cost,
                 crash_cost: edge.crash_cost,
                 intersection_cost: edge.intersection_cost,
+                elevation_cost: edge.elevation_cost,
                 left_turn_penalty,
             },
         });
@@ -211,6 +213,7 @@ mod tests {
             physical_cost: stress,
             intersection_cost: 0.0,
             crash_cost: 0.0,
+            elevation_cost: 0.0,
         }
     }
 

@@ -41,6 +41,7 @@ pub struct Edge {
     pub physical_cost: f32,
     pub intersection_cost: f32,
     pub crash_cost: f32,
+    pub elevation_cost: f32,
 }
 
 impl Edge {

@@ -193,6 +193,7 @@ fn read_edge(cursor: &mut Cursor<'_>, str_table_len: usize) -> Result<Edge, Grap
         physical_cost: cursor.read_f32("edge.physical_cost")?,
         intersection_cost: cursor.read_f32("edge.intersection_cost")?,
         crash_cost: cursor.read_f32("edge.crash_cost")?,
+        elevation_cost: cursor.read_f32("edge.elevation_cost")?,
     })
 }
 

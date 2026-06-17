@@ -10,4 +10,4 @@
     ]
 ) }}
 
-{{ generate_city_bike_stress_weighted_segments_model('madison', include_crashes=false) }}
+{{ generate_city_bike_stress_weighted_segments_model('madison', include_crashes=false, include_elevation=true) }}

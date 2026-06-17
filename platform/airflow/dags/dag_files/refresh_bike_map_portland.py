@@ -13,7 +13,7 @@ from loci.tasks.bike_map_tasks import (
     build_refresh_task_graph,
     standard_dag_params,
 )
-from loci.tasks.testing.route_tests import RouteTestCase
+from loci.tasks.testing.route_tests import Gate, RouteTestCase
 
 CITY = "portland"
 
@@ -27,7 +27,17 @@ CITY_LAYER_DISPLAYS: list[LayerDisplayConfig] = [
     data_layers.OSM_BIKE_PARKING_LAYER_CONFIG,
 ]
 
-CITY_ROUTE_TESTS: list[RouteTestCase] = []
+CITY_ROUTE_TESTS: list[RouteTestCase] = [
+    RouteTestCase(
+        name="Avoids hilly variations when largely flat alt routes are available",
+        origin=(45.5184, -122.6983),
+        destination=(45.5089, -122.6950),
+        must_not_cross=[
+            Gate((45.5129, -122.6965), (45.5130, -122.6955)),
+            Gate((45.5114, -122.6965), (45.5120, -122.6961)),
+        ],
+    ),
+]
 
 ROUTABLE_ORIGIN_DEST_PAIR = ((45.5165, -122.6832), (45.5233, -122.6816))
 

@@ -134,6 +134,7 @@ mod tests {
             physical_cost: 100.0,
             intersection_cost: 0.0,
             crash_cost: 0.0,
+            elevation_cost: 0.0,
         }
     }
 

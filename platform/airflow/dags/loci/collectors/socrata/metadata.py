@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/socrata/metadata.py
 from __future__ import annotations
 
 import logging
@@ -263,19 +264,18 @@ class SocrataTableMetadata:
 
     def print_ddl(
         self,
-        schema: str = "raw_data",
-        table_name: str | None = None,
+        spec: SocrataDatasetSpec,
         include_ingested_at: bool = True,
         include_comments: bool = True,
     ) -> None:
         """Generate and print DDL for easy copy-paste into a migration script."""
-        ddl = self.generate_ddl(
-            # schema=schema,
-            table_name=table_name,
-            include_ingested_at=include_ingested_at,
-            include_comments=include_comments,
+        print(
+            self.generate_ddl(
+                spec,
+                include_ingested_at=include_ingested_at,
+                include_comments=include_comments,
+            )
         )
-        print(ddl)
 
     @property
     def resource_metadata(self) -> dict:

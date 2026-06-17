@@ -10,4 +10,4 @@
     ]
 ) }}
 
-{{ generate_city_bike_stress_weighted_segments_model('chicago', include_crashes=true) }}
+{{ generate_city_bike_stress_weighted_segments_model('chicago', include_crashes=true, include_elevation=true) }}

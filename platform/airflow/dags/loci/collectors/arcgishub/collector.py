@@ -1,3 +1,4 @@
+# /loci_platform/platform/airflow/dags/loci/collectors/arcgishub/collector.py
 """
 ArcGISHubCollector — collects data from ArcGIS Hub feature service layers
 and ingests into Postgres via StagedIngest.
