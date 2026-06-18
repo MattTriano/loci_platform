@@ -33,6 +33,7 @@ from loci.geo import BBox
 
 VALID_ELEMENT_TYPES = {"node", "way", "relation"}
 VALID_OUT_MODES = {"geom", "center"}
+VALID_OUT_DATA_MODES = {"json","xml"}
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,10 @@ class OverpassAPIQuery:
         Output verbosity: "geom" (full geometry) or "center"
         (centroid only for ways/relations). "meta" is always included
         so we get version and timestamp on every element.
+    out_data_mode : str
+        Whether to return data from OSM Overpass API as json or xml;
+        Default is json; Only explicitly specify xml if you have a specific
+        reason for requiring xml output
     """
 
     element_types: list[str]
@@ -98,6 +103,7 @@ class OverpassAPIQuery:
     area_name: str | None = None
     timeout: int = 180
     out_mode: str = "geom"
+    out_data_mode: str = "json"
 
     def __post_init__(self) -> None:
         # element_types
@@ -132,6 +138,12 @@ class OverpassAPIQuery:
         if self.out_mode not in VALID_OUT_MODES:
             raise ValueError(
                 f"out_mode must be one of {sorted(VALID_OUT_MODES)}, got {self.out_mode!r}"
+            )
+
+        # out_data_mode
+        if self.out_data_mode not in VALID_OUT_DATA_MODES:
+            raise ValueError(
+                f"out_data_mode must be one of {sorted(VALID_OUT_DATA_MODES)}, got {self.out_data_mode!r}"
             )
 
     # ------------------------------------------------------------------
@@ -182,8 +194,11 @@ class OverpassAPIQuery:
                 "Cannot render query: no spatial extent set. "
                 "Call .for_bbox(...) or .for_area(...) first."
             )
-
-        lines = [f"[out:json][timeout:{self.timeout}];"]
+        
+        if self.out_data_mode == "json":
+            lines = [f"[out:json][timeout:{self.timeout}];"]
+        else:
+            lines = [f"[out:xml][timeout:{self.timeout}];"]  
 
         if self.area_name is not None:
             lines.append(f'area["name"={_quote(self.area_name)}]->.searchArea;')
