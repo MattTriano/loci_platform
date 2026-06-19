@@ -82,6 +82,7 @@ class OSMClient:
 
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": user_agent})
+        self._session.headers.update({'Accept': 'application/xml, application/json'})
 
     # ------------------------------------------------------------------
     # Public API
@@ -96,7 +97,20 @@ class OSMClient:
         Render the query, POST it, and return the parsed JSON response.
         """
         ql = query.to_ql(date_filter=date_filter)
-        return self._post(ql, http_timeout=query.timeout + self.extra_timeout)
+        resp = self._post(ql, http_timeout=query.timeout + self.extra_timeout)
+        
+        if query.out_data_mode == "json":
+            print("trying json output")
+            try:
+                return resp
+            except ValueError as exc:
+                raise OverpassError(f"Overpass returned non-JSON response: {resp.text[:500]}") from exc
+        else:
+            print("trying xml output")
+            try:
+                return resp.text
+            except ValueError as exc:
+                raise OverpassError(f"Overpass returned non-text response: {resp.text[:500]}") from exc 
 
     def fetch_rows(
         self,
@@ -171,10 +185,8 @@ class OSMClient:
                 f"Query was:\n{ql}"
             )
 
-        try:
-            return resp.json()
-        except ValueError as exc:
-            raise OverpassError(f"Overpass returned non-JSON response: {resp.text[:500]}") from exc
+        return resp
+            
 
 
 # ----------------------------------------------------------------------
