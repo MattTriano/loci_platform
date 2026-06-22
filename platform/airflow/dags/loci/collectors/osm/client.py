@@ -90,19 +90,31 @@ class OSMClient:
 
     def fetch(
         self,
-        query: OverpassAPIQuery,
+        query: OverpassAPIQuery | None = None,
+        query_string: str | None = None,
+        query_string_out_data_mode: str = "json",
+        query_string_timeout: int = 120,
         date_filter: str | None = None,
     ) -> dict[str, Any]:
         """
         Render the query, POST it, and return the parsed JSON response.
         """
-        ql = query.to_ql(date_filter=date_filter)
-        resp = self._post(ql, http_timeout=query.timeout + self.extra_timeout)
         
-        if query.out_data_mode == "json":
+        if query:
+            ql = query.to_ql(date_filter=date_filter)
+            query_timeout = query.timeout
+            out_data_mode = query.out_data_mode
+        else:
+            ql = query_string
+            query_timeout = query_string_timeout
+            out_data_mode = query_string_out_data_mode
+
+        resp = self._post(ql, http_timeout=query_timeout + self.extra_timeout)
+        
+        if out_data_mode == "json":
             print("trying json output")
             try:
-                return resp
+                return resp.json()
             except ValueError as exc:
                 raise OverpassError(f"Overpass returned non-JSON response: {resp.text[:500]}") from exc
         else:
