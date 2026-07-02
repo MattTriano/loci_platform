@@ -13,5 +13,6 @@ sources:
       - name: detroit_3dep_elevation
       - name: madison_3dep_elevation
       - name: nola_3dep_elevation
+      - name: nyc_3dep_elevation
       - name: portland_3dep_elevation
       - name: sf_3dep_elevation
