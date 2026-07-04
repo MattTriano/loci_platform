@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import quote_plus
 
 import pandas as pd
@@ -147,7 +147,6 @@ class TestPgRetry:
         mock_cursor.execute.side_effect = [
             psycopg2.OperationalError("connection reset"),
             None,  # retry: main query succeeds
-            None,  # geometry detection query
         ]
         engine.query("SELECT 1")
         main_query_calls = [c for c in mock_cursor.execute.call_args_list if c[0][0] == "SELECT 1"]
@@ -156,7 +155,6 @@ class TestPgRetry:
     def test_retries_on_interface_error(self, engine, mock_conn, mock_cursor):
         mock_cursor.execute.side_effect = [
             psycopg2.InterfaceError("connection closed"),
-            None,
             None,
         ]
         engine.query("SELECT 1")
@@ -372,7 +370,9 @@ class TestStagedIngest:
         assert '"k1" = excluded."k1"' not in insert_sql
 
     def test_merges_partial_data_on_error(self, engine, mock_cursor):
-        """On error, staged rows are still merged before re-raising."""
+        """On error, staged rows are still merged before re-raising. This salvage
+        policy applies to every mode EXCEPT invalidate_missing — see
+        TestStagedIngestInvalidateMissingSafety."""
         mock_cursor.rowcount = 1
 
         with pytest.raises(RuntimeError, match="boom"):
@@ -568,26 +568,6 @@ class TestGeometryDetectionByOid:
 
         assert geom_col is None
         assert srid == 0
-
-
-def _setup_scd2_cursor(mock_cursor, columns, rowcounts):
-    """Configure a mock cursor for an SCD2 merge.
-
-    Args:
-        columns: list of target column names (excluding metadata).
-        rowcounts: dict with optional keys 'deduped', 'invalidated',
-                   'closed', 'merged'. Defaults to 0 each.
-    """
-    _set_table_columns(mock_cursor, columns)
-
-    rc_sequence = [
-        2,  # write_batch's rowcount read (unused but cursor.rowcount may be read)
-        rowcounts.get("deduped", 0),
-        rowcounts.get("invalidated", 0),
-        rowcounts.get("closed", 0),
-        rowcounts.get("merged", 0),
-    ]
-    type(mock_cursor).rowcount = PropertyMock(side_effect=rc_sequence + [0] * 10)
 
 
 class TestStagedIngestSCD2:
@@ -862,3 +842,60 @@ class TestStagedIngestSCD2:
             "otherwise unchanged entities are dropped from staging and "
             "then invalidated as 'missing'."
         )
+
+
+class TestStagedIngestInvalidateMissingSafety:
+    """The salvage-on-error merge policy must NOT apply when
+    invalidate_missing is set: a partial staging snapshot would
+    invalidate every entity in the unfetched remainder."""
+
+    SCD2_KWARGS = dict(
+        entity_key=["id"],
+        metadata_columns={"ingested_at", "record_hash", "valid_from", "valid_to"},
+    )
+
+    def test_error_with_invalidate_missing_skips_merge(self, engine, mock_cursor):
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with pytest.raises(RuntimeError, match="boom"):
+            with engine.staged_ingest(
+                "t", "s", invalidate_missing=True, **self.SCD2_KWARGS
+            ) as stager:
+                stager.write_batch([{"id": 1, "val": "a"}])
+                raise RuntimeError("boom")
+
+        # The target must be untouched: no invalidation, no close-out, no insert
+        sqls = _get_execute_sql_strings(mock_cursor)
+        assert not [s for s in sqls if 'set "valid_to" = now()' in s]
+        assert not _find_sql_containing(mock_cursor, "insert into s.t")
+        assert stager.rows_merged == 0
+        assert stager.rows_invalidated == 0
+
+        # Staging is still cleaned up
+        drop_stmts = _find_sql_containing(mock_cursor, "drop table")
+        assert any(stager._staging_table in s for s in drop_stmts)
+
+    def test_error_without_invalidate_missing_still_salvages_scd2(self, engine, mock_cursor):
+        """The salvage policy is preserved for plain SCD2 mode."""
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with pytest.raises(RuntimeError, match="boom"):
+            with engine.staged_ingest("t", "s", **self.SCD2_KWARGS) as stager:
+                stager.write_batch([{"id": 1, "val": "a"}])
+                raise RuntimeError("boom")
+
+        assert _find_sql_containing(mock_cursor, "insert into s.t")
+
+    def test_clean_exit_with_invalidate_missing_merges_normally(self, engine, mock_cursor):
+        """The guard only fires on error; a successful full refresh
+        must still invalidate and merge."""
+        _set_table_columns(mock_cursor, ["id", "val"])
+
+        with engine.staged_ingest("t", "s", invalidate_missing=True, **self.SCD2_KWARGS) as stager:
+            stager.write_batch([{"id": 1, "val": "a"}])
+
+        update_stmts = [
+            s for s in _get_execute_sql_strings(mock_cursor) if 'set "valid_to" = now()' in s
+        ]
+        assert len(update_stmts) == 2  # invalidate-missing + close-out
+        assert _find_sql_containing(mock_cursor, "insert into s.t")

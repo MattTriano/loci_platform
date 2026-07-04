@@ -7,6 +7,7 @@ from loci.collectors.config import IncrementalConfig
 from loci.collectors.exceptions import SchemaDriftError
 from loci.collectors.socrata.client import SocrataClient
 from loci.collectors.socrata.collector import SocrataCollector
+from loci.collectors.socrata.spec import SocrataDatasetSpec
 
 from .conftest import (
     attach_mock_client,
@@ -234,6 +235,7 @@ class TestIncrementalUpdate:
 
     def test_failure_propagates_and_is_tracked(self, collector, mock_engine):
         collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        attach_mock_client(collector, error=RuntimeError("API down"))
         mock_client = MagicMock(spec=SocrataClient)
         mock_client.paginate.side_effect = RuntimeError("API down")
         collector._client = mock_client
@@ -357,12 +359,14 @@ class TestSystemFieldsIngested:
 class TestFullRefreshViaApi:
     def test_delegates_to_incremental_update(self, collector, mock_engine):
         collector._metadata_cache["abcd-1234"] = make_metadata_mock()
-        attach_mock_client(collector, [])
+        mock_client = attach_mock_client(collector, [])
 
         total = collector.full_refresh_via_api("abcd-1234", "test", "raw_data")
 
         assert total == 0
-        collector._client.paginate.assert_called_once()
+        mock_client.paginate.assert_called_once()
+        # A *full* refresh must not carry an HWM filter
+        assert mock_client.paginate.call_args.kwargs["where"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -610,3 +614,63 @@ class TestMaxRowsCap:
 
         with pytest.raises(ValueError, match="full_refresh_via_api"):
             collector.full_refresh_via_api("abcd-1234", "test", "raw_data")
+
+
+class TestSpecInvalidateMissing:
+    def test_invalidate_missing_without_entity_key_raises_at_construction(self):
+        """Misconfiguration should fail at DAG parse time, not at 3am runtime."""
+        with pytest.raises(ValueError, match="invalidate_missing requires entity_key"):
+            SocrataDatasetSpec(
+                name="x",
+                dataset_id="abcd-1234",
+                target_table="t",
+                invalidate_missing=True,
+            )
+
+
+class TestInvalidateMissingDispatch:
+    def _spec(self, invalidate_missing: bool = True) -> SocrataDatasetSpec:
+        return SocrataDatasetSpec(
+            name="test_spec",
+            dataset_id="abcd-1234",
+            target_table="test",
+            entity_key=["id"],
+            invalidate_missing=invalidate_missing,
+        )
+
+    def test_full_refresh_passes_flag_to_staged_ingest(self, collector, mock_engine):
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        attach_mock_client(collector, [])
+
+        collector.collect(self._spec(), force=True)
+
+        kwargs = mock_engine.staged_ingest.call_args.kwargs
+        assert kwargs["invalidate_missing"] is True
+        assert kwargs["entity_key"] == ["id"]
+
+    def test_incremental_never_passes_flag_even_when_spec_sets_it(self, collector, mock_engine):
+        """An incremental batch contains only changed rows; invalidating
+        entities absent from it would close out nearly the whole table."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+        attach_mock_client(collector, [])
+
+        collector.collect(self._spec(invalidate_missing=True), force=False)
+
+        kwargs = mock_engine.staged_ingest.call_args.kwargs
+        assert kwargs.get("invalidate_missing", False) is False
+
+    def test_incremental_update_rejects_direct_invalidate_missing(self, collector, mock_engine):
+        """Belt-and-suspenders guard on the method itself, for callers
+        that bypass collect()."""
+        collector._metadata_cache["abcd-1234"] = make_metadata_mock()
+
+        config = IncrementalConfig(incremental_column=":updated_at", entity_key=["id"])
+        with pytest.raises(ValueError, match="full refresh"):
+            collector.incremental_update(
+                "abcd-1234",
+                "test",
+                "raw_data",
+                config,
+                entity_key=["id"],
+                invalidate_missing=True,
+            )

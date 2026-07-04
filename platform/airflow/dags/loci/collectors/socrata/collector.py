@@ -132,6 +132,7 @@ class SocrataCollector:
                 target_table=target_table,
                 target_schema=target_schema,
                 entity_key=entity_key,
+                invalidate_missing=spec.invalidate_missing,
             )
         else:
             mode = "incremental"
@@ -453,6 +454,7 @@ class SocrataCollector:
         target_table: str,
         target_schema: str = "raw_data",
         entity_key: list[str] | None = None,
+        invalidate_missing: bool = False,
     ) -> int:
         """Full refresh using paginated SODA API (includes system fields)."""
         return self.incremental_update(
@@ -465,6 +467,7 @@ class SocrataCollector:
             ),
             entity_key=entity_key,
             high_water_mark_override="",
+            invalidate_missing=invalidate_missing,
         )
 
     def _rename_system_fields(self, rows: list[dict]) -> list[dict]:
@@ -569,6 +572,7 @@ class SocrataCollector:
         entity_key: list[str] | None = None,
         high_water_mark_override: str | None = None,
         max_rows: int | None = None,
+        invalidate_missing: bool = False,
     ) -> int:
         """
         Run an incremental paginated ingest using staged_ingest.
@@ -627,11 +631,15 @@ class SocrataCollector:
         if effective_max_rows is not None:
             run_metadata["max_rows"] = effective_max_rows
 
+        if invalidate_missing and not is_full_refresh_api:
+            raise ValueError("invalidate_missing is only safe on full refreshes.")
+
         # Determine merge strategy
         if entity_key:
             # SCD2 path
             staged_ingest_kwargs = {
                 "entity_key": entity_key,
+                "invalidate_missing": invalidate_missing,
             }
         elif config.entity_key:
             # Simple conflict path

@@ -48,10 +48,12 @@ def stub_table_columns(mock_engine, columns: list[str]):
     mock_engine.query.side_effect = query_side_effect
 
 
-def attach_mock_client(collector, pages: list[list[dict]]):
-    """Inject a mock SocrataClient that returns the given pages."""
+def attach_mock_client(collector, pages=None, error=None):
     mock_client = MagicMock(spec=SocrataClient)
-    mock_client.paginate.return_value = iter(pages)
+    if error is not None:
+        mock_client.paginate.side_effect = error
+    else:
+        mock_client.paginate.return_value = iter(pages or [])
     collector._client = mock_client
     return mock_client
 

@@ -269,18 +269,34 @@ class StagedIngest:
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         try:
             if self.rows_staged > 0:
-                self._cast_geometry_if_needed()
-                if self._entity_key:
-                    self._scd2_merge()
-                else:
-                    self._merge()
-                if exc_type is not None:
-                    self._engine.logger.warning(
-                        "StagedIngest: merged %d rows from %s despite error: %s",
-                        self.rows_merged,
-                        self._staging_table,
+                if exc_type is not None and self._invalidate_missing:
+                    # An error mid-staging means the staging table may hold a partial
+                    # snapshot of the source. Merging it with invalidate_missing=True
+                    # would close out every entity in the unfetched remainder, so
+                    # refuse to merge: leave the  target untouched and re-run the full
+                    # refresh instead.
+                    # Partial merges are still salvaged in all other modes (see else).
+                    self._engine.logger.error(
+                        "StagedIngest: skipping merge into %s — staging failed "
+                        "(%s) with invalidate_missing=True; a partial snapshot "
+                        "would invalidate entities still present in the source. "
+                        "Target unchanged; re-run the full refresh.",
+                        self._fqn,
                         exc_val,
                     )
+                else:
+                    self._cast_geometry_if_needed()
+                    if self._entity_key:
+                        self._scd2_merge()
+                    else:
+                        self._merge()
+                    if exc_type is not None:
+                        self._engine.logger.warning(
+                            "StagedIngest: merged %d rows from %s despite error: %s",
+                            self.rows_merged,
+                            self._staging_table,
+                            exc_val,
+                        )
         except Exception as merge_err:
             self._engine.logger.error(
                 "StagedIngest: merge failed for %s: %s",

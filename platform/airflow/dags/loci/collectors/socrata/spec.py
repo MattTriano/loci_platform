@@ -58,6 +58,7 @@ class SocrataDatasetSpec(DatasetSpec):
     incremental_column: str = ":updated_at"
     full_update_mode: str = "api"
     max_rows: int | None = None
+    invalidate_missing: bool = False
     source: str = "socrata"
 
     def __post_init__(self):
@@ -67,3 +68,5 @@ class SocrataDatasetSpec(DatasetSpec):
             )
         if self.max_rows is not None and self.max_rows <= 0:
             raise ValueError(f"max_rows must be positive, got {self.max_rows}")
+        if self.invalidate_missing and not self.entity_key:
+            raise ValueError("invalidate_missing requires entity_key (SCD2 mode).")
