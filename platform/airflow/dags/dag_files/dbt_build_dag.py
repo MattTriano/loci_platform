@@ -12,7 +12,7 @@ def install_dependencies() -> str:
 
 @task
 def alt_build() -> str:
-    return run_dbt("build", "--select", "+portland_bike_stress_weighted_segments")
+    return run_dbt("build", "--select", "+chicago_contractor_pair_decisions")
 
 
 @dag(

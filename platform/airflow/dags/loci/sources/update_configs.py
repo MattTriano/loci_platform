@@ -817,7 +817,7 @@ CHICAGO_HOUSE_SHARE_RESTRICTED_ZONES_UC = DatasetUpdateConfig(
 
 CHICAGO_BUILDING_PERMITS_UC = DatasetUpdateConfig(
     spec=specs.CHICAGO_BUILDING_PERMITS_SPEC,
-    update_cron="0 6 * * 2,5",
+    update_cron="0 6 * * *",
     full_update_week_of_month=1,
     full_update_day_of_week=1,
 )

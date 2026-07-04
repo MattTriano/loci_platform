@@ -1,0 +1,148 @@
+<svg viewBox="0 0 1260 640" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowlite" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <!-- background (explicit, for GitHub dark mode) -->
+  <rect x="0" y="0" width="1260" height="640" fill="#ffffff"/>
+
+  <!-- ===================== Airflow orchestration band ===================== -->
+  <rect x="240" y="56" width="990" height="44" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+  <text x="735" y="83" text-anchor="middle" font-size="13" font-weight="bold" fill="#92400e">Airflow orchestration — collect → transform → export → deploy → smoke-test, per city and environment</text>
+  <line x1="520" y1="100" x2="520" y2="116" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrowlite)"/>
+  <line x1="1045" y1="100" x2="1045" y2="116" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrowlite)"/>
+
+  <!-- ===================== External sources column ===================== -->
+  <text x="115" y="140" text-anchor="middle" font-size="12" font-weight="bold" fill="#64748b">EXTERNAL SOURCES</text>
+
+  <g fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5">
+    <rect x="30" y="158" width="170" height="46" rx="6"/>
+    <rect x="30" y="220" width="170" height="46" rx="6"/>
+    <rect x="30" y="282" width="170" height="46" rx="6"/>
+    <rect x="30" y="344" width="170" height="46" rx="6"/>
+    <rect x="30" y="406" width="170" height="46" rx="6"/>
+    <rect x="30" y="468" width="170" height="46" rx="6"/>
+  </g>
+  <g text-anchor="middle" fill="#334155">
+    <text x="115" y="177" font-size="12" font-weight="bold">Socrata</text>
+    <text x="115" y="192" font-size="10" fill="#64748b">Chicago + Cook Co. open data</text>
+    <text x="115" y="239" font-size="12" font-weight="bold">Census API</text>
+    <text x="115" y="254" font-size="10" fill="#64748b">ACS, Decennial, etc Survey Data</text>
+    <text x="115" y="301" font-size="12" font-weight="bold">TIGER/Line</text>
+    <text x="115" y="316" font-size="10" fill="#64748b">boundaries + roads</text>
+    <text x="115" y="363" font-size="12" font-weight="bold">OpenStreetMap</text>
+    <text x="115" y="378" font-size="10" fill="#64748b">bike infra, via Overpass API</text>
+    <text x="115" y="425" font-size="12" font-weight="bold">Bike Index</text>
+    <text x="115" y="440" font-size="10" fill="#64748b">theft reports</text>
+    <text x="115" y="487" font-size="12" font-weight="bold">USGS 3DEP</text>
+    <text x="115" y="502" font-size="10" fill="#64748b">elevation</text>
+  </g>
+
+  <!-- connector-class box: supported portal types, not yet-instantiated sources -->
+  <rect x="30" y="530" width="170" height="46" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="5 4"/>
+  <text x="115" y="549" text-anchor="middle" font-size="11" font-style="italic" fill="#64748b">+ any ArcGIS Hub,</text>
+  <text x="115" y="564" text-anchor="middle" font-size="11" font-style="italic" fill="#64748b">CKAN, or DKAN portal</text>
+
+  <!-- source merge spine -->
+  <g stroke="#94a3b8" stroke-width="1.5" fill="none">
+    <line x1="200" y1="181" x2="222" y2="181"/>
+    <line x1="200" y1="243" x2="222" y2="243"/>
+    <line x1="200" y1="305" x2="222" y2="305"/>
+    <line x1="200" y1="367" x2="222" y2="367"/>
+    <line x1="200" y1="429" x2="222" y2="429"/>
+    <line x1="200" y1="491" x2="222" y2="491"/>
+    <line x1="200" y1="553" x2="222" y2="553" stroke-dasharray="5 4"/>
+    <line x1="222" y1="181" x2="222" y2="553"/>
+  </g>
+  <line x1="222" y1="236" x2="250" y2="236" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ===================== Loci Platform container ===================== -->
+  <rect x="240" y="118" width="590" height="426" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="256" y="144" font-size="13" font-weight="bold" fill="#334155" letter-spacing="0.5">LOCI PLATFORM — reusable core</text>
+
+  <!-- Connector contract + StagedIngest -->
+  <rect x="256" y="170" width="214" height="182" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="266" y="196" font-size="13" font-weight="bold" fill="#1e293b">Connector contract</text>
+  <text x="266" y="222" font-size="11.5" fill="#334155">DatasetSpec — maps source data</text>
+  <text x="266" y="238" font-size="11.5" fill="#334155">assets to a named warehouse table</text>
+  <text x="266" y="262" font-size="11.5" fill="#334155">Metadata → auto-generated DDL</text>
+  <text x="266" y="286" font-size="11.5" fill="#334155">Client · Collector · parsers</text>
+  <line x1="266" y1="300" x2="460" y2="300" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="266" y="322" font-size="12.5" font-weight="bold" fill="#1e293b">StagedIngest</text>
+  <text x="266" y="340" font-size="11" fill="#334155">atomic merges · SCD2 versioning</text>
+
+  <!-- Warehouse -->
+  <rect x="498" y="200" width="142" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="569" y="228" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e293b">PostGIS warehouse</text>
+  <text x="569" y="250" text-anchor="middle" font-size="10.5" fill="#64748b">full SCD2 history</text>
+
+  <!-- dbt -->
+  <rect x="668" y="200" width="146" height="72" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="741" y="228" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e293b">dbt: staging → marts</text>
+  <text x="741" y="250" text-anchor="middle" font-size="10.5" fill="#64748b">per-segment stress costs</text>
+
+  <!-- main data-plane arrows -->
+  <line x1="470" y1="236" x2="490" y2="236" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="640" y1="236" x2="660" y2="236" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="814" y1="236" x2="870" y2="236" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- data quality strip -->
+  <rect x="256" y="380" width="558" height="58" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="535" y="404" text-anchor="middle" font-size="11.5" fill="#334155">Data quality: custom generic tests gate production builds;</text>
+  <text x="535" y="422" text-anchor="middle" font-size="11.5" fill="#334155">macro unit tests validate the tests themselves</text>
+
+  <!-- shared services strip -->
+  <rect x="256" y="456" width="558" height="48" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="535" y="485" text-anchor="middle" font-size="11.5" fill="#334155">Shared services: centralized geocoding cache · meta.ingest_log run observability</text>
+
+  <!-- ===================== platform/app contract label ===================== -->
+  <text x="847" y="392" text-anchor="middle" font-size="10" font-style="italic" fill="#94a3b8" transform="rotate(-90 847 392)">marts + exporters = the platform ↔ app contract</text>
+
+  <!-- ===================== Bike Infra application container ===================== -->
+  <rect x="864" y="118" width="366" height="426" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="880" y="144" font-size="13" font-weight="bold" fill="#134e4a" letter-spacing="0.5">BIKE INFRA APP — bikeinfra.com</text>
+
+  <!-- Exporters -->
+  <rect x="880" y="200" width="334" height="72" rx="8" fill="#ffffff" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="1047" y="224" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#134e4a">Exporters</text>
+  <text x="1047" y="246" text-anchor="middle" font-size="10.5" fill="#475569">map-layer exporter → GeoJSON</text>
+  <text x="1047" y="262" text-anchor="middle" font-size="10.5" fill="#475569">routing-graph exporter → compact binary</text>
+
+  <!-- split arrows down -->
+  <line x1="958" y1="272" x2="958" y2="296" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1136" y1="272" x2="1136" y2="296" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- S3 + CloudFront -->
+  <rect x="880" y="300" width="156" height="72" rx="8" fill="#ffffff" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="958" y="330" text-anchor="middle" font-size="12" font-weight="bold" fill="#134e4a">S3 + CloudFront</text>
+  <text x="958" y="352" text-anchor="middle" font-size="10.5" fill="#475569">static app &amp; data layers</text>
+
+  <!-- Rust routing engine -->
+  <rect x="1058" y="300" width="156" height="72" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="1136" y="322" text-anchor="middle" font-size="12" font-weight="bold" fill="#92400e">Rust routing engine</text>
+  <text x="1136" y="340" text-anchor="middle" font-size="10.5" fill="#78716c">Lambda + API Gateway</text>
+  <text x="1136" y="358" text-anchor="middle" font-size="10.5" fill="#78716c">~2s cross-metro routes</text>
+
+  <!-- arrows to web app -->
+  <line x1="958" y1="372" x2="958" y2="398" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1136" y1="372" x2="1136" y2="398" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Web app -->
+  <rect x="880" y="402" width="334" height="66" rx="8" fill="#ffffff" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="1047" y="428" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#134e4a">Web app (MapLibre GL)</text>
+  <text x="1047" y="450" text-anchor="middle" font-size="10.5" fill="#475569">safety-optimized routes · crash / theft / parking layers</text>
+
+  <!-- defenses + monitoring strip -->
+  <rect x="880" y="486" width="334" height="48" rx="8" fill="#ffffff" stroke="#0d9488" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="1047" y="506" text-anchor="middle" font-size="10.5" fill="#475569">WAF rate limits · throttling · pinned concurrency · kill switch</text>
+  <text x="1047" y="524" text-anchor="middle" font-size="10.5" fill="#475569">synthetic monitoring → status.bikeinfra.com</text>
+
+  <!-- ===================== OpenTofu foundation band ===================== -->
+  <rect x="240" y="564" width="990" height="44" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+  <text x="735" y="591" text-anchor="middle" font-size="13" font-weight="bold" fill="#334155">OpenTofu (Terraform) — everything provisioned as code, across dev / staging / prod AWS accounts</text>
+</svg>

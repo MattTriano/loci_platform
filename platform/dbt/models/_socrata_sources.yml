@@ -1,0 +1,26 @@
+sources:
+  - name: raw_data
+    database: loci
+    schema: raw_data
+    tags:
+      - raw
+    tables:
+      - name: chicago_building_permits
+        loaded_at_field: valid_from
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 7, period: day}
+        columns:
+          - name: permit_
+            data_tests:
+              - not_null
+              - unique:
+                  config:
+                    where: "valid_to is null"
+          - name: permit_status
+            data_tests:
+              - accepted_values:
+                  values: ['COMPLETE', 'ACTIVE', 'EXPIRED', 'SUSPENDED',
+                           'CANCELLED', 'REVOKED', 'PHASED PERMITTING']
+                  config:
+                    severity: warn

@@ -1,0 +1,42 @@
+# models/staging/property/_chicago_building_permits__models.yml
+
+version: 2
+
+models:
+  - name: stg_chicago_building_permit_contacts
+    description: One row per (permit, contact slot) from the current version of each permit.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [permit_, contact_slot]
+    columns:
+      - name: permit_
+        data_tests: [not_null]
+      - name: contact_slot
+        data_tests: [not_null]
+      - name: contact_name
+        data_tests: [not_null]
+      - name: name_norm
+        description: Output of standardize_str; must contain only A-Z, 0-9, and single spaces.
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "~ '^[A-Z0-9]+( [A-Z0-9]+)*$'"
+                config:
+                  where: "name_norm is not null"
+
+  - name: stg_chicago_building_permit_contractor_names
+    description: >
+      Evidence profile per distinct normalized contractor name. Feeds pair
+      generation (trigram similarity on name_norm, exact/similarity comparison
+      on distinct_key) and the contractor crosswalk.
+    columns:
+      - name: name_norm
+        data_tests: [unique, not_null]
+      - name: display_name
+        data_tests: [not_null]
+      - name: permits
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"

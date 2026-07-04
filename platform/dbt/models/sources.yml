@@ -17,7 +17,6 @@ sources:
       - name: chicago_bike_racks
       - name: chicago_bike_routes
       - name: chicago_boundaries_zip_codes
-      - name: chicago_building_permits
       - name: chicago_business_licenses
       - name: chicago_business_owners
       - name: chicago_crimes

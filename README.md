@@ -1,5 +1,76 @@
 # Loci Platform
 
+A production sandbox for data engineering: a monorepo where I develop data-platform patterns — ingestion contracts, SCD2 warehousing, dbt transformation, orchestration, and infrastructure-as-code — and prove them by running real applications on them. The flagship application is [bikeinfra.com](https://bikeinfra.com): safety-optimized bike routing built from open civic data, live in multiple metros.
+
+**Live:** [bikeinfra.com](https://bikeinfra.com) · [status.bikeinfra.com](https://status.bikeinfra.com) · Write-ups: [why safety-optimized routing](https://matttriano.dev/posts/021_bike_map/bike_map_routing_tool.html) · [the Python → Rust rewrite](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html)
+
+<img src="docs/images/loci_architecture.svg" alt="loci_platform architecture" width="800">
+
+<p align="center">
+  <img src="docs/images/google_maps_route_comp.png" alt="Before" width="45%">
+  <img src="docs/images/chicago_bike_map_route_comp.png" alt="After" width="45%">
+</p>
+
+## Headline numbers
+
+- Cross-metro route latency: **~16s → ~2s** after rewriting the routing engine from Python to Rust ([benchmarks and fitted scaling curves](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html)); cold starts **8–15s → 1–2s**; deployment artifact **67MB → 4.9MB**.
+- Runs across dev/staging/prod AWS accounts for **~$10/month** — mostly DNS and edge security; compute stays inside the free tier by design.
+- Every source lands as **SCD2 history** through one shared ingestion path, with atomic staged merges.
+- Synthetic monitoring with a public status page: [status.bikeinfra.com](https://status.bikeinfra.com).
+
+## Core Engineering Highlights
+
+Key load-bearing ideas, in reading order:
+
+1. **The connector contract** — how a new data source plugs in through one small spec:
+    a. [Example Spec (Socrata source)](platform/airflow/dags/loci/collectors/socrata/spec.py): For mapping a set of data assets from a data source to a target table.
+    b. [Example Metadata (Census source)](platform/airflow/dags/loci/collectors/census/metadata.py): For exploring a data source.
+    c. [Example Client (ArcGIS Hub source)](platform/airflow/dags/loci/collectors/arcgishub/client.py): For interacting with a data source.
+    d. [Example Collector (OSM source)](platform/airflow/dags/loci/collectors/osm/client.py): For Collecting a dataset from a data source.
+3. **`PostgresEngine` and `StagedIngest`** — atomic staged merges, SCD2 versioning, type-OID geometry handling: [`postgres_engine`](platform/airflow/dags/loci/db/core.py)
+4. **Custom generic dbt tests, and the tests that test them** — including polarity tests that assert a generic test fires on bad fixtures and stays silent on good ones: [`platform/dbt/tests/macros/`](platform/dbt/tests/macros/)
+5. **End-to-end Airflow DAGs** — collect → transform → export → deploy → smoke-test, per city and environment: ['All Cities DAG'](platform/airflow/dags/dag_files/refresh_bike_map_all.py), ['NYC DAG'](platform/airflow/dags/dag_files/refresh_bike_map_nyc.py)
+6. **Infrastructure as code** — per-environment state backends, CloudFront/OAC, WAF rate limiting, budget kill switch: [`infra/`](infra/)
+7. **Rust Routing Lambda Func Code** - ['services/routin/.../'](services/routing/routing-core/src/)
+
+## The core idea: `DatasetSpec`
+
+The most reusable part of this platform is its ingestion contract. A `DatasetSpec` maps a set of data assets at a source to a named table in the warehouse — it carries the target table and schema, the entity key for SCD2 tracking, and source-specific configuration (dataset IDs, API endpoints, geography levels, tag filters). Everything downstream derives from the spec:
+
+- **Metadata classes** discover the source's schema and `generate_ddl()` — column types, comments, SCD2 tracking columns, and constraints — directly from source schema information, so adding a source never means hand-writing DDL.
+- **`StagedIngest`** reads the spec's `entity_key` to choose the write path automatically: SCD2 merge (hash-compare, close out superseded rows, insert new versions) when a key exists, `INSERT ... ON CONFLICT` when it doesn't.
+- **`DbtModelGenerator`** scaffolds staging models and `sources.yml` entries following project conventions, idempotently.
+
+The result: adding a civic data source is a small, uniform amount of work, and every source gets full history, atomic ingestion, and generated boilerplate for free. Five sources currently flow through this contract: Socrata (Chicago and Cook County open data), the Census API, TIGER/Line, OpenStreetMap (streaming PBF parsing via pyosmium), and Bike Index.
+
+## Design decisions
+
+Choices I'd defend, with reasoning written down:
+
+- **Batch, not streaming.** Civic data updates daily-to-monthly; streaming infrastructure would be complexity without a customer. The Airflow scheduling layer distinguishes incremental crons from full-refresh crons instead.
+- **SCD2 at ingestion, not transformation.** History capture is a property of landing data, not of modeling it; putting it in the shared ingestion path means no source can opt out by accident.
+- **Rewrite the hot path, keep the platform in Python.** The routing engine moved to Rust because its scaling was structural (superlinear in route length); everything else stays in Python because iteration speed dominates. Full reasoning, benchmarks, and the complexity I chose *not* to build: [the rewrite post](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html).
+- **Cost as a design constraint.** Layered abuse defenses (WAF per-IP rate limiting, API Gateway throttling, pinned Lambda concurrency, a budget-triggered kill switch) exist so the service can be public without being a liability.
+
+## Current work
+
+- Extracting the collector framework and database-engine tooling into an installable package.
+- Adding an `IcebergEngine` alongside `PostgresEngine`, so an Iceberg collection mode can feed a PySpark transformation path parallel to the dbt + PostGIS warehouse path.
+
+This repo is a living platform, not a frozen portfolio piece — expect active development. <!-- [Optionally: link a CHANGELOG or recent releases.] -->
+
+---
+
+## Platform reference
+
+<!-- [Existing README sections slot in here, largely as-is: Data sources · Collector architecture · Database and ingestion · Transformation (incl. the geocoding cache) · Orchestration · Infrastructure · Applications. Two required updates for consistency: (1) replace "currently runs on a single machine using Podman Compose... against the dev environment" with an accurate description of the current deployment story; (2) update the Applications section — bike-map.dev.missinglastmile.net → current bikeinfra.com URLs, and add the Rust routing engine + multi-city deployment, which postdate the old text.] -->
+
+## Development practices
+
+Tests gate merges; custom generic dbt tests gate data quality; synthetic monitors gate deploys. I use AI assistance (Claude) heavily for scaffolding and drafting, with every output reviewed and hardened before merge — the test suites and the commit history are the audit trail.
+
+# Loci Platform
+
 Loci is a data platform for collecting, transforming, and serving geospatial data. It doubles as a sandbox for building out data engineering ideas — a place to develop patterns for ingestion, transformation, and deployment, then apply them to real datasets and applications. Through experimenting with and evaluating different architectural data platform components/designs, this platform aims to support the search for a *critical locus* (a set of optimal constraint-satisfying points) for a data engineering situation.
 
 The platform currently runs on a single machine using Podman Compose, which keeps costs near zero (the only expenses are an annual domain registration and a few pennies on S3). The architecture is designed to require very little RAM so that it's cheap to deploy on modest hardware or inexpensive cloud instances when the time comes. OpenTofu modules already manage AWS resources for deployed applications and support dev, staging, and prod environments via per-environment state backends.

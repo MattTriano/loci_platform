@@ -1,0 +1,108 @@
+-- models/staging/chicago_building_permits/stg_chicago_building_permit_contractor_names.sql
+-- One row per distinct normalized contractor name, with the evidence
+-- profile used for entity resolution (pair matching + crosswalk).
+--
+-- Materialized as a table (not a view) because pair generation needs a
+-- physical relation for the trigram index; the post-hook recreates the
+-- index on every rebuild.
+
+{{ config(
+    materialized='table',
+    post_hook="create index if not exists {{ this.name }}_name_trgm on {{ this }} using gin (name_norm gin_trgm_ops)"
+) }}
+
+with generic_tokens (token) as (
+
+    -- Tokens removed when deriving distinct_key, the "identifying part"
+    -- of a name used for pair scoring.
+    --
+    -- Inclusion test: a token is generic only if removing it could NOT
+    -- collapse two different businesses into one key. Legal suffixes and
+    -- trade words pass this test. Person first names and single-letter
+    -- initials FAIL it (they are the identity of sole proprietors:
+    -- 'J SMITH CONSTRUCTION' vs 'M SMITH CONSTRUCTION') and must never
+    -- be added here, however frequent they are.
+    --
+    -- Derived from a token-frequency scan of this table, 2026-07.
+
+    values
+        ('INC'), ('INCORPORATED'), ('LLC'), ('CO'), ('CORP'),
+        ('CORPORATION'), ('COMPANY'), ('LTD'), ('THE'), ('AND'), ('DBA'),
+        ('CONSTRUCTION'), ('DEVELOPMENT'), ('GROUP'), ('CONTRACTING'),
+        ('CONTRACTORS'), ('GENERAL'), ('BUILDERS'), ('REMODELING'),
+        ('SERVICES'), ('SERVICE'), ('HEATING'), ('COOLING'), ('MECHANICAL'),
+        ('ELECTRIC'), ('ELECTRICAL'), ('PLUMBING'), ('MASONRY')
+
+),
+
+contractor_contacts as (
+
+    select
+        name_norm,
+        contact_name,
+        contact_zip,
+        contact_city,
+        issue_date
+    from {{ ref('stg_chicago_building_permit_contacts') }}
+    where contact_type ilike '%CONTRACTOR%'
+      and name_norm is not null
+      and name_norm not like 'OWNER ACTING%'   -- self-performed work, not a firm
+
+),
+
+profiles as (
+
+    select
+        name_norm,
+        count(*) as permits,
+        mode() within group (order by contact_zip) as modal_zip,
+        mode() within group (order by contact_city) as modal_city,
+        (array_agg(contact_name order by issue_date desc))[1] as display_name,
+        min(issue_date) as first_seen,
+        max(issue_date) as last_seen
+    from contractor_contacts
+    group by 1
+
+)
+
+select
+    name_norm,
+
+    -- Identifying tokens only: generic tokens removed, deduplicated
+    -- (concatenation artifacts like 'X CONTRACTING CONTRACTING'), and
+    -- sorted so word-order variants produce the same key.
+    --
+    -- Truncation handling: the source name field is truncated at varying
+    -- widths, so a LAST token that is a proper prefix (>= 2 chars) of a
+    -- generic token (e.g. 'CORPORATI', 'COOLIN', 'IN') is treated as that
+    -- generic token and removed. Restricted to the last token because
+    -- truncation only occurs at the end of the field; applying prefix
+    -- matching everywhere would wrongly genericize real words like the
+    -- surname MASON (prefix of MASONRY).
+    --
+    -- NULL when nothing survives (e.g. 'GENERAL CONSTRUCTION INC');
+    -- such names are never auto-merge candidates.
+    nullif(array_to_string(array(
+        select distinct u.t
+        from unnest(string_to_array(name_norm, ' '))
+             with ordinality as u(t, pos)
+        where u.t not in (select token from generic_tokens)
+          and not (
+                u.pos = cardinality(string_to_array(name_norm, ' '))
+                and length(u.t) >= 2
+                and exists (
+                    select 1 from generic_tokens g
+                    where g.token like u.t || '%'
+                      and g.token != u.t
+                )
+          )
+        order by u.t
+    ), ' '), '') as distinct_key,
+
+    permits,
+    modal_zip,
+    modal_city,
+    display_name,
+    first_seen,
+    last_seen
+from profiles

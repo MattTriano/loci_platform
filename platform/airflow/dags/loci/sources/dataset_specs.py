@@ -900,12 +900,8 @@ NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
     city="nola", bbox=NEW_ORLEANS_BBOX
 )
 
-NYC_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
-    city="nyc", bbox=NYC_BBOX
-)
-NYC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
-    city="nyc", bbox=NYC_BBOX
-)
+NYC_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(city="nyc", bbox=NYC_BBOX)
+NYC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(city="nyc", bbox=NYC_BBOX)
 
 PORTLAND_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
     city="portland", bbox=PORTLAND_BBOX
@@ -1496,6 +1492,7 @@ CHICAGO_BUILDING_PERMITS_SPEC = SocrataDatasetSpec(
     target_schema="raw_data",
     entity_key=["permit_"],
     full_update_mode="api",
+    invalidate_missing=True,
 )
 
 CHICAGO_FOOD_INSPECTIONS_SPEC = SocrataDatasetSpec(

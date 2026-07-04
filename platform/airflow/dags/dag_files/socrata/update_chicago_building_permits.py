@@ -1,7 +1,7 @@
 import datetime as dt
 import logging
 
-from airflow.sdk import dag
+from airflow.sdk import Param, dag
 from loci.collectors.socrata.taskflow import update_socrata_table
 from loci.sources.update_configs import (
     CHICAGO_BUILDING_PERMITS_UC as UPDATE_CONFIG,
@@ -17,6 +17,7 @@ CONN_ID = "gis_dwh_db"
     schedule=UPDATE_CONFIG.update_cron,
     start_date=dt.datetime(2022, 11, 1),
     catchup=False,
+    params={"force_full_refresh": Param(False, type="boolean")},
     tags=["socrata", "update", "chicago", "real estate"],
 )
 def update_chicago_building_permits():
