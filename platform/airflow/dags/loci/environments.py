@@ -43,6 +43,7 @@ VALID_CITIES = (
     "detroit",
     "madison",
     "nola",
+    "nyc",
     "portland",
     "sf",
     "toronto",

@@ -1064,6 +1064,13 @@ NOLA_3DEP_ELEVATION_UC = DatasetUpdateConfig(
     full_update_day_of_week=6,
 )
 
+NYC_3DEP_ELEVATION_UC = DatasetUpdateConfig(
+    spec=specs.NYC_3DEP_ELEVATION_SPEC,
+    update_cron="30 4 10 1 *",
+    full_update_week_of_month=1,
+    full_update_day_of_week=6,
+)
+
 PORTLAND_3DEP_ELEVATION_UC = DatasetUpdateConfig(
     spec=specs.PORTLAND_3DEP_ELEVATION_SPEC,
     update_cron="10 4 10 1 *",

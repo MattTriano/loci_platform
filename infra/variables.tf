@@ -53,6 +53,7 @@ variable "routing_lambda_memory_by_city" {
     detroit  = 1024
     madison  = 512
     nola     = 512
+    nyc      = 1536
     portland = 1024
     sf       = 1536
     toronto  = 1024

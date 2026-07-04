@@ -1,15 +1,15 @@
 {
-  "city_name": "New Orleans",
+  "city_name": "New York City",
   "log_endpoint": "<log_endpoint>",
   "routing_api_url": "<routing_api_url>",
   "routing_api_key": "<routing_api_key>",
-  "map_center": [-90.08, 29.96],
+  "map_center": [-73.98, 40.70],
   "map_zoom": 11,
   "map_bbox": {
-    "south": 29.79,
-    "west": -90.34,
-    "north": 30.19,
-    "east": -89.60
+    "south": 40.48,
+    "west": -74.26,
+    "north": 40.93,
+    "east": -73.70
   },
   "layers": [
     {
@@ -59,11 +59,11 @@
     }
   ],
   "about_paragraphs": [
-    "New Orleans Bike Map helps you explore cycling conditions around the city.",
+    "Washington DC Bike Map helps you explore cycling conditions around the city.",
     "Routes prefer streets with better bike infrastructure, lower speed limits, and less severe recent crash history, even if that means a slightly longer ride. We recommend always wearing a helmet while riding.",
     "Routes are generated using OpenStreetMap data that may be incomplete or outdated. Route suggestions are informational and are no substitute for your own judgment while riding."
   ],
-  "terms_what_is": "New Orleans Bike Map is a personal project that displays cycling-related data for the New Orleans area and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.",
+  "terms_what_is": "Washington DC Bike Map is a personal project that displays cycling-related data for the Washington DC area and generates route suggestions based on publicly available data. It is not a commercial product, and it is not offered by a licensed transportation, safety, or engineering professional.",
   "terms_data_sources": "Map data comes from OpenStreetMap contributors and is subject to the <a href=\"https://opendatacommons.org/licenses/odbl/\" target=\"_blank\" rel=\"noopener\">ODbL license</a>. This project does not independently verify the accuracy or completeness of any of these sources.",
-  "terms_liability": "This project is provided \"as is\" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of New Orleans Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss."
+  "terms_liability": "This project is provided \"as is\" without warranties of any kind, express or implied. To the fullest extent permitted by law, the creator of Washington DC Bike Map shall not be liable for any damages arising from your use of or reliance on this application, including but not limited to personal injury, property damage, or data loss."
 }

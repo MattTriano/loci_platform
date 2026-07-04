@@ -580,7 +580,7 @@ DETROIT_BBOX = BBox(42.18, -83.40, 42.56, -82.84)
 LOS_ANGELES_BBOX = BBox(33.69, -118.72, 34.38, -118.02)
 MADISON_BBOX = BBox(42.96, -89.60, 43.21, -89.21)
 NEW_ORLEANS_BBOX = BBox(29.79, -90.34, 30.19, -89.60)
-NEW_YORK_CITY_BBOX = BBox(40.48, -74.26, 40.93, -73.70)
+NYC_BBOX = BBox(40.48, -74.26, 40.93, -73.70)
 PORTLAND_BBOX = BBox(45.41, -122.86, 45.66, -122.46)
 SAN_FRANCISCO_BBOX = BBox(37.18, -122.59, 38.00, -121.73)
 SEATTLE_BBOX = BBox(47.47, -122.48, 47.78, -122.04)
@@ -901,10 +901,10 @@ NEW_ORLEANS_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
 )
 
 NYC_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
-    city="nyc", bbox=NEW_YORK_CITY_BBOX
+    city="nyc", bbox=NYC_BBOX
 )
 NYC_OSM_BIKE_NETWORK_NODES_SPEC = generate_osm_bike_network_nodes_spec(
-    city="nyc", bbox=NEW_YORK_CITY_BBOX
+    city="nyc", bbox=NYC_BBOX
 )
 
 PORTLAND_OSM_BIKE_NETWORK_EDGES_SPEC = generate_osm_bike_network_edges_spec(
@@ -948,7 +948,7 @@ NEW_ORLEANS_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(
     city="nola", bbox=NEW_ORLEANS_BBOX
 )
 
-NYC_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="nyc", bbox=NEW_YORK_CITY_BBOX)
+NYC_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="nyc", bbox=NYC_BBOX)
 
 PORTLAND_OSM_BIKE_PARKING_SPEC = generate_osm_bike_parking_spec(city="portland", bbox=PORTLAND_BBOX)
 
@@ -1775,5 +1775,6 @@ DENVER_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="denver", bbox=DE
 DETROIT_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="detroit", bbox=DENVER_BBOX)
 MADISON_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="madison", bbox=MADISON_BBOX)
 NOLA_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="nola", bbox=NEW_ORLEANS_BBOX)
+NYC_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="nyc", bbox=NYC_BBOX)
 PORTLAND_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="portland", bbox=PORTLAND_BBOX)
 SF_3DEP_ELEVATION_SPEC = generate_3dep_elevation_spec(city="sf", bbox=SAN_FRANCISCO_BBOX)
