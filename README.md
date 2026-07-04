@@ -7,31 +7,35 @@ A production sandbox for data engineering: a monorepo where I develop data-platf
 <img src="docs/images/loci_architecture.svg" alt="loci_platform architecture" width="800">
 
 <p align="center">
-  <img src="docs/images/google_maps_route_comp.png" alt="Before" width="45%">
-  <img src="docs/images/chicago_bike_map_route_comp.png" alt="After" width="45%">
+  <img src="docs/images/google_maps_route_comp.png" alt="Google Maps' fastest route" width="45%">
+  <img src="docs/images/chicago_bike_map_route_comp.png" alt="bikeinfra.com's safety-optimized route" width="45%">
 </p>
 
-## Headline numbers
+## The system at a glance
 
-- Cross-metro route latency: **~16s → ~2s** after rewriting the routing engine from Python to Rust ([benchmarks and fitted scaling curves](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html)); cold starts **8–15s → 1–2s**; deployment artifact **67MB → 4.9MB**.
-- Runs across dev/staging/prod AWS accounts for **~$10/month** — mostly DNS and edge security; compute stays inside the free tier by design.
-- Every source lands as **SCD2 history** through one shared ingestion path, with atomic staged merges.
-- Synthetic monitoring with a public status page: [status.bikeinfra.com](https://status.bikeinfra.com).
+- **Live in [N] metros** (Chicago, SF Bay, NYC, Boston, Denver, Detroit, Madison WI, New Orleans, Portland OR, Toronto, and Washington DC), each with its own routing graph and data layers, built and deployed per city and per environment.
+- **Routing:** cross-metro routes in **~2s** and short trips in under **~0.5s** from a **4.9MB** Rust Lambda with **1–2s** cold starts, on AWS free-tier compute.
+- **Scale:**
+    - ~750k-edge routing graphs of road segments scored for safety per metro
+    - 100ks of datasets available through the already-implemented data collectors
+    - 100s of Airflow DAGs each orchestrating regular data collections to update datasets tracked with their full **SCD2 history**.
+- **Cost:** **~$10/month** total across dev/staging/prod — mostly DNS and edge security; compute stays inside the free tier by design.
+- **Reliability:** synthetic monitoring with a public status page: [status.bikeinfra.com](https://status.bikeinfra.com). 100.0000% uptime for each site from launch to the time of writing (thanks to )
 
-## Core Engineering Highlights
+## Core engineering highlights
 
-Key load-bearing ideas, in reading order:
+The load-bearing ideas, in reading order:
 
 1. **The connector contract** — how a new data source plugs in through one small spec:
-    a. [Example Spec (Socrata source)](platform/airflow/dags/loci/collectors/socrata/spec.py): For mapping a set of data assets from a data source to a target table.
-    b. [Example Metadata (Census source)](platform/airflow/dags/loci/collectors/census/metadata.py): For exploring a data source.
-    c. [Example Client (ArcGIS Hub source)](platform/airflow/dags/loci/collectors/arcgishub/client.py): For interacting with a data source.
-    d. [Example Collector (OSM source)](platform/airflow/dags/loci/collectors/osm/client.py): For Collecting a dataset from a data source.
-3. **`PostgresEngine` and `StagedIngest`** — atomic staged merges, SCD2 versioning, type-OID geometry handling: [`postgres_engine`](platform/airflow/dags/loci/db/core.py)
-4. **Custom generic dbt tests, and the tests that test them** — including polarity tests that assert a generic test fires on bad fixtures and stays silent on good ones: [`platform/dbt/tests/macros/`](platform/dbt/tests/macros/)
-5. **End-to-end Airflow DAGs** — collect → transform → export → deploy → smoke-test, per city and environment: ['All Cities DAG'](platform/airflow/dags/dag_files/refresh_bike_map_all.py), ['NYC DAG'](platform/airflow/dags/dag_files/refresh_bike_map_nyc.py)
-6. **Infrastructure as code** — per-environment state backends, CloudFront/OAC, WAF rate limiting, budget kill switch: [`infra/`](infra/)
-7. **Rust Routing Lambda Func Code** - ['services/routin/.../'](services/routing/routing-core/src/)
+    - [Spec](platform/airflow/dags/loci/collectors/socrata/spec.py) (Socrata): maps a set of data assets at a source to a target warehouse table
+    - [Metadata](platform/airflow/dags/loci/collectors/census/metadata.py) (Census): explores a source and generates table DDL from its schema
+    - [Client](platform/airflow/dags/loci/collectors/arcgishub/client.py) (ArcGIS Hub): handles communication with a source's API
+    - [Collector](platform/airflow/dags/loci/collectors/osm/collector.py) (OSM): orchestrates fetch → normalize → ingest for a dataset
+2. **`PostgresEngine` and `StagedIngest`** — atomic staged merges, SCD2 versioning, type-OID geometry handling: [loci/db/core.py](platform/airflow/dags/loci/db/core.py)
+3. **Custom generic dbt tests, and the tests that test them** — including polarity tests that assert a generic test fires on bad fixtures and stays silent on good ones: [platform/dbt/tests/macros/](platform/dbt/tests/macros/)
+4. **End-to-end Airflow DAGs** — collect → transform → export → deploy → smoke-test, per city and environment: [all-cities DAG](platform/airflow/dags/dag_files/refresh_bike_map_all.py) · [NYC DAG](platform/airflow/dags/dag_files/refresh_bike_map_nyc.py)
+5. **The Rust routing engine** — the hot path that made cross-metro routing serverless-viable: [services/routing/](services/routing/routing-core/src/)
+6. **Infrastructure as code** — per-environment state backends, CloudFront/OAC, WAF rate limiting, budget kill switch: [infra/](infra/)
 
 ## The core idea: `DatasetSpec`
 
@@ -41,7 +45,7 @@ The most reusable part of this platform is its ingestion contract. A `DatasetSpe
 - **`StagedIngest`** reads the spec's `entity_key` to choose the write path automatically: SCD2 merge (hash-compare, close out superseded rows, insert new versions) when a key exists, `INSERT ... ON CONFLICT` when it doesn't.
 - **`DbtModelGenerator`** scaffolds staging models and `sources.yml` entries following project conventions, idempotently.
 
-The result: adding a civic data source is a small, uniform amount of work, and every source gets full history, atomic ingestion, and generated boilerplate for free. Five sources currently flow through this contract: Socrata (Chicago and Cook County open data), the Census API, TIGER/Line, OpenStreetMap (streaming PBF parsing via pyosmium), and Bike Index.
+The result: adding a civic data source is a small, uniform amount of work, and every source gets full history, atomic ingestion, and generated boilerplate for free. Sources currently flowing through the contract: Socrata (Chicago and Cook County open data), the Census API, TIGER/Line, OpenStreetMap (via Overpass), and Bike Index. The contract also generalizes across portal *types* — there are connectors for any ArcGIS Hub, CKAN, or DKAN portal — which, together with Socrata, covers most of the platforms that host civic open data.
 
 ## Design decisions
 
@@ -49,147 +53,133 @@ Choices I'd defend, with reasoning written down:
 
 - **Batch, not streaming.** Civic data updates daily-to-monthly; streaming infrastructure would be complexity without a customer. The Airflow scheduling layer distinguishes incremental crons from full-refresh crons instead.
 - **SCD2 at ingestion, not transformation.** History capture is a property of landing data, not of modeling it; putting it in the shared ingestion path means no source can opt out by accident.
-- **Rewrite the hot path, keep the platform in Python.** The routing engine moved to Rust because its scaling was structural (superlinear in route length); everything else stays in Python because iteration speed dominates. Full reasoning, benchmarks, and the complexity I chose *not* to build: [the rewrite post](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html).
+- **Rewrite the hot path, keep the platform in Python.** The routing engine moved to Rust because its scaling was structural (superlinear in route length) — cutting cross-metro latency ~16s → ~2s, cold starts 8–15s → 1–2s, and the deployment artifact 67MB → 4.9MB. Everything else stays in Python because iteration speed dominates. Full reasoning, benchmarks, and the complexity I chose *not* to build: [the rewrite post](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html).
 - **Cost as a design constraint.** Layered abuse defenses (WAF per-IP rate limiting, API Gateway throttling, pinned Lambda concurrency, a budget-triggered kill switch) exist so the service can be public without being a liability.
 
 ## Current work
 
 - Extracting the collector framework and database-engine tooling into an installable package.
 - Adding an `IcebergEngine` alongside `PostgresEngine`, so an Iceberg collection mode can feed a PySpark transformation path parallel to the dbt + PostGIS warehouse path.
+- Extending the `DbtPipelineBuilder` subclasses (Socrata, TIGER, OSM) so adding a new dataset is a one-liner that generates the staging model, updates `sources.yml`, and wires up SCD2/column-aliasing conventions.
+- More mart models: bike infrastructure quality layers, cyclist points of interest, crash-severity heatmaps with grid-based pre-aggregation.
+- Additional applications on the same collect → transform → export → deploy pattern — the warehouse already holds crimes, building permits, food inspections, Census demographics, and transit ridership, which support neighborhood dashboards, transit accessibility analysis, and property/zoning tools.
 
-This repo is a living platform, not a frozen portfolio piece — expect active development. <!-- [Optionally: link a CHANGELOG or recent releases.] -->
+This repo is a living platform, not a frozen portfolio piece — expect active development.
 
 ---
 
 ## Platform reference
 
-<!-- [Existing README sections slot in here, largely as-is: Data sources · Collector architecture · Database and ingestion · Transformation (incl. the geocoding cache) · Orchestration · Infrastructure · Applications. Two required updates for consistency: (1) replace "currently runs on a single machine using Podman Compose... against the dev environment" with an accurate description of the current deployment story; (2) update the Applications section — bike-map.dev.missinglastmile.net → current bikeinfra.com URLs, and add the Rust routing engine + multi-city deployment, which postdate the old text.] -->
+Loci is a data platform for collecting, transforming, and serving geospatial data. The name comes from what the sandbox is for: experimenting with architectural components to find a *critical locus* — a set of optimal constraint-satisfying points — for a given data engineering situation.
 
-## Development practices
+**Deployment model:** the orchestration and warehouse plane (Airflow, PostGIS, dbt) runs on a single machine via Podman Compose — a deliberate cost decision, with the architecture designed to need little RAM so it stays cheap on modest hardware. Applications build locally and deploy to AWS, where OpenTofu manages resources across dev, staging, and prod via per-environment state backends.
 
-Tests gate merges; custom generic dbt tests gate data quality; synthetic monitors gate deploys. I use AI assistance (Claude) heavily for scaffolding and drafting, with every output reviewed and hardened before merge — the test suites and the commit history are the audit trail.
+### Data sources
 
-# Loci Platform
+Data is collected into a PostGIS warehouse from external sources including:
 
-Loci is a data platform for collecting, transforming, and serving geospatial data. It doubles as a sandbox for building out data engineering ideas — a place to develop patterns for ingestion, transformation, and deployment, then apply them to real datasets and applications. Through experimenting with and evaluating different architectural data platform components/designs, this platform aims to support the search for a *critical locus* (a set of optimal constraint-satisfying points) for a data engineering situation.
-
-The platform currently runs on a single machine using Podman Compose, which keeps costs near zero (the only expenses are an annual domain registration and a few pennies on S3). The architecture is designed to require very little RAM so that it's cheap to deploy on modest hardware or inexpensive cloud instances when the time comes. OpenTofu modules already manage AWS resources for deployed applications and support dev, staging, and prod environments via per-environment state backends.
-
-## Data sources
-
-Data is collected into a PostGIS data warehouse from five external sources:
-
-- **Socrata** — Chicago and Cook County open data portals. Datasets include traffic crashes (three related tables), crimes, arrests, bike racks, building permits, food inspections, business licenses, CTA ridership, and more.
+- **Socrata** — Chicago and Cook County open data portals: traffic crashes (three related tables), crimes, arrests, bike racks, building permits, food inspections, business licenses, CTA ridership, and more.
 - **Census API** — American Community Survey tables at various geography levels (tract, block group, etc.).
 - **TIGER/Line** — Census boundary and geographic feature shapefiles (tracts, counties, roads, railroads, water features) across multiple vintages.
-- **OpenStreetMap** — PBF extracts parsed element-by-element using pyosmium, with geometry converted to WKB via shapely. Supports nodes (points), ways (lines/polygons via a node location cache), and relations (member lists). Used for bike infrastructure, points of interest, parks, and other features.
-- **Bike Index** — Stolen bike reports for the Chicago area.
+- **OpenStreetMap** — queried via the Overpass API; used for the bike network, bike infrastructure, points of interest, and parks.
+- **Bike Index** — stolen-bike reports.
 
-## Collector architecture
+Portal-type connectors (ArcGIS Hub, CKAN, DKAN) extend the same contract to any portal running those platforms.
 
-Each data source has a collector built on a shared set of abstractions:
+### Collector architecture
 
-**Specs** define what to collect. Each source has a dataclass-based spec type (`SocrataDatasetSpec`, `CensusDatasetSpec`, `OsmDatasetSpec`, `TigerDatasetSpec`, `BikeIndexDatasetSpec`) that inherits from a common `DatasetSpec` base. Specs carry the target table, target schema, entity key (for SCD2 tracking), and source-specific configuration like dataset IDs, API endpoints, geography levels, or tag filters.
+Each source's collector is built on a shared set of abstractions:
 
-**Clients** handle communication with external APIs. `SocrataClient` manages SODA API queries with pagination and retry logic. `CensusClient` handles variable resolution and API calls. `BikeIndexClient` manages search-based collection. Clients are separate from collectors so they can be used independently (e.g., in notebooks for exploration).
+- **Specs** define what to collect. Each source has a dataclass-based spec type (`SocrataDatasetSpec`, `CensusDatasetSpec`, `OsmDatasetSpec`, ...) inheriting from a common `DatasetSpec` base.
+- **Clients** handle communication with external APIs — pagination, retries, query construction. Clients are separate from collectors so they can be used independently (e.g., in notebooks for exploration).
+- **Metadata** classes provide schema discovery and expose `generate_ddl()`, producing the full `CREATE TABLE` statement (types, comments, SCD2 tracking columns, constraints) from source schema information.
+- **Collectors** orchestrate the end-to-end flow — fetch, normalize, write through `StagedIngest`. All inherit from `BaseCollector` (shared HTTP session, logging, tempfile downloads, `IngestionTracker` integration) and return a standardized `CollectionSummary`.
+- **Parsers** stream CSV, GeoJSON, and shapefile content as batches of row dicts, keeping memory proportional to batch size rather than file size.
 
-**Metadata** classes provide schema discovery. `SocrataTableMetadata` fetches column definitions from the Socrata catalog API. `CensusMetadata` browses available variables, groups, and geographies. `TigerMetadata` explores the Census TIGER file server to discover available datasets across vintages. Each metadata class exposes a `generate_ddl()` method that produces a `CREATE TABLE` statement for the target table — including column types, comments, SCD2 tracking columns, and constraints — directly from the source's schema information.
+### Database and ingestion
 
-**Collectors** orchestrate the end-to-end flow: fetch data (via a client or file download), normalize it, and write it through `StagedIngest`. All collectors inherit from `BaseCollector`, which provides a shared HTTP session, logging, a `download_to_tempfile` utility, and integration with the optional `IngestionTracker`. Collectors return a `CollectionSummary` dataclass that standardizes reporting across sources.
+`PostgresEngine` is the central interface to the PostGIS warehouse. Its `StagedIngest` context manager handles all writes: data lands in a temporary staging table, then merges into the target in a single transaction — atomic, with partial-failure recovery (whatever was staged before a mid-stream failure still merges cleanly).
 
-**Parsers** handle file formats. Streaming parsers for CSV, GeoJSON, shapefiles, and PBF files all yield batches of row dicts without loading entire files into memory, keeping resource usage proportional to batch size rather than file size.
+For tables with an entity key, `StagedIngest` uses SCD2 merge logic: compute a record hash (MD5 of all non-metadata columns), compare against the current version (`valid_to IS NULL`), close out superseded rows, insert new versions. Tables without an entity key use `INSERT ... ON CONFLICT`. The spec's `entity_key` field drives the choice automatically.
 
-## Database and ingestion
+`PostgresEngine` also handles geometry detection and casting (by type OID, not column name), batched COPY-based writes, server-side cursors for large reads, and retry logic for transient connection failures. Schema migrations are managed by Flyway, run as a one-off container.
 
-`PostgresEngine` is the central interface to the PostGIS warehouse. Its `StagedIngest` context manager handles all writes: data lands in a temporary staging table first, then gets merged into the target in a single transaction. This keeps ingestion atomic and allows partial-failure recovery (if a collection fails mid-stream, whatever was already staged still gets merged).
+### Transformation
 
-For tables with an entity key, `StagedIngest` uses SCD2 (slowly changing dimension type 2) merge logic. It computes a record hash (MD5 of all non-metadata columns), compares against the current version in the target (`valid_to IS NULL`), closes out superseded rows, and inserts new versions. Tables without an entity key use a simpler `INSERT ... ON CONFLICT` path. The choice is driven by the spec's `entity_key` field — if it's set, SCD2 is used automatically.
+dbt models are organized into staging and marts layers. Staging models deduplicate SCD2 records (filtering to `valid_to IS NULL`), normalize column names, and handle data quality issues. Mart models join across sources to produce analysis-ready datasets — including the per-segment stress costs that feed the routing graph.
 
-`PostgresEngine` also handles geometry detection and casting (by type OID, not column name), batched COPY-based writes, server-side cursors for large reads, and retry logic for transient connection failures.
+`DbtModelGenerator` automates staging-model creation: given a source, table, and columns, it produces a conventions-following `.sql` file and updates `sources.yml` idempotently. Source-specific subclasses layer on extra logic — for Census data, automated variable-name compression turns codes like `B01001_001E` into readable column names within Postgres's 63-character limit, via a two-pass algorithm (group concept → prefix, label tree → distinguishing leaf tokens).
 
-Schema migrations are managed by Flyway, run as a one-off container (`podman compose run --rm flyway-postgis`).
+**Geocoding cache:** rather than geocoding redundantly across models and runs, a dbt incremental model (`geocoded_address_cache`) unions addresses from all sources, deduplicates by normalized address hash, and preserves source-provided coordinates. An Airflow task geocodes the remainder via PostGIS's TIGER geocoder (SRID 4269 to match TIGER's NAD83 datum), storing quality metadata — rating score, normalized input, TIGER data version, threshold in effect — so geocoding quality is auditable and re-runnable. Downstream marts join the cache without ever triggering geocoding themselves.
 
-## Transformation
+### Orchestration
 
-dbt models are organized into staging and marts layers. Staging models deduplicate SCD2 records (filtering to `valid_to IS NULL`), normalize column names (via a `standardize_column_name` macro or explicit mappings), and handle data quality issues. Mart models join across sources to produce analysis-ready datasets.
+Airflow 3 DAGs coordinate collection, transformation, export, and deployment, using the `@task` / `@task_group` decorator API. `DatasetUpdateConfig` pairs each spec with scheduling: a cron for incremental updates and a separate cron for periodic full refreshes, with a `choose_update_mode` task inspecting the schedule and ingestion log at runtime. dbt runs via subprocess using `--select` intersection syntax to execute precise DAG segments.
 
-A `DbtModelGenerator` class automates creation of staging models. Given a source name, table name, and column list, it produces a `.sql` file following project conventions (SCD2 CTE if needed, column aliasing, proper file placement) and updates `sources.yml` idempotently. Source-specific subclasses like `CensusDbtPipelineBuilder` layer on additional logic — for Census data, this includes automated variable-name compression that turns codes like `B01001_001E` into readable column names within Postgres's 63-character limit, using a two-pass algorithm (group concept → prefix, label tree → distinguishing leaf tokens).
+`IngestionTracker` logs every run (source, dataset, target, row counts, duration, mode, errors) to `meta.ingest_log` for observability; `ScheduleVisualizer` renders Gantt-style run history in notebooks (to help stagger collections and load on data sources).
 
-### Address extraction and geocoding cache
+### Infrastructure
 
-Multiple source datasets contain address data, and many downstream models need coordinates for spatial analysis. Rather than geocoding redundantly across models and pipeline runs, the platform uses a centralized geocoding cache.
+OpenTofu modules manage all AWS resources:
 
-A dbt incremental model (`geocoded_address_cache`) unions addresses from all source datasets, deduplicates by normalized address hash, and preserves source-provided lat/lng where available. An Airflow task then geocodes rows that are still missing coordinates using PostGIS's built-in TIGER geocoder, bounded to the Chicago metro area (in SRID 4269 to match TIGER's NAD83 datum). Results are stored with quality metadata — the TIGER rating score, the normalized input string, the TIGER data version, and the rating threshold in effect — so that geocoding quality can be audited and rows re-geocoded if the threshold changes. Downstream mart models join against the cache for coordinates without triggering any geocoding themselves.
+- **State management** (`modules/state/`) — per-environment S3 + DynamoDB for state locking across dev/staging/prod.
+- **Bike map** (`modules/bike-map/`) — private S3 behind CloudFront (OAC), ACM certificate with DNS validation, Route 53 alias, and a deploy IAM user scoped to S3 sync + cache invalidation.
+- **Routing services**
+    - the Rust engine's Lambda,  pinned concurrency, and API Gateway (with throttling)[module](infra/modules/bike-map/main.tf),
+    - [WAF per-IP rate limiting](infra/modules/waf/main.tf), and
+    - the budget-triggered [kill switch](infra/modules/cost-guard/main.tf).
 
-The Airflow task flow for this is: build the incremental cache model (extracting new addresses) → geocode pending rows via TIGER → build downstream mart models that join on the cache.
+### Applications
 
-## Orchestration
+**Bike Infra ([bikeinfra.com](https://bikeinfra.com))** — a per-metro static web app (MapLibre GL JS, OpenFreeMap tiles) showing crash, theft, and bike-parking layers, with safety-optimized routing served by the Rust engine (Lambda behind API Gateway). Layers cluster at coarse zooms and resolve to individual points with detail popups at fine zooms.
 
-Airflow 3 DAGs coordinate collection, transformation, export, and deployment. Tasks use the `@task` and `@task_group` decorator API (not the legacy Operator style). `DatasetUpdateConfig` instances pair a spec with scheduling configuration — a cron for incremental updates and a separate cron for periodic full refreshes. A `choose_update_mode` task inspects the schedule and ingestion log at runtime to decide which path to take.
+The end-to-end pipeline runs per city and environment: Airflow collects from the sources above → dbt builds staging and mart models, computing per-segment stress costs → a `GeoJsonExporter` writes the map's data layers and a routing-graph exporter writes the compact binary graph → deploy to S3/CloudFront and the routing Lambda → smoke test. Synthetic monitors watch the result: [status.bikeinfra.com](https://status.bikeinfra.com).
 
-dbt is invoked via subprocess from Airflow tasks, using `--select` with intersection syntax to run specific segments of the DAG (e.g., `"model_a+,+model_n"` to run everything between two models).
+The platform is designed so additional applications follow the same pattern: collect → transform → export → deploy.
 
-An `IngestionTracker` logs every collection run (source, dataset, target table, row counts, duration, mode, errors) into a `meta.ingest_log` table for observability. A `ScheduleVisualizer` class can render Gantt-style charts of run history in Jupyter notebooks.
-
-## Infrastructure
-
-OpenTofu modules manage AWS resources:
-
-- **State management** (`modules/state/`) — per-environment S3 bucket + DynamoDB table for OpenTofu state locking, supporting dev, staging, and prod environments.
-- **Bike map** (`modules/bike-map/`) — S3 bucket (private, CloudFront-only access via OAC), ACM certificate with DNS validation (in us-east-1 for CloudFront), CloudFront distribution, Route 53 alias record, and an IAM deploy user scoped to S3 sync and cache invalidation.
-
-The infrastructure code supports the full environment progression. The platform currently runs against the dev environment.
-
-## Applications
-
-### Chicago Bike Map
-
-`apps/bike-map/` — a static web application showing bike crashes, bike thefts, and bike parking across Chicago. Built as a single HTML file with MapLibre GL JS and OpenFreeMap "liberty" tiles. Layers support clustering at coarse zoom levels and individual data points at fine zoom, with click-through detail popups and layer toggles. Currently under active development.
-
-The end-to-end pipeline: Airflow collects from Socrata and Bike Index → dbt builds staging and mart models → a `GeoJsonExporter` queries mart tables and writes compact GeoJSON files → an S3 sync task deploys to CloudFront. The site is served at [bike-map.dev.missinglastmile.net](https://bike-map.dev.missinglastmile.net).
-
-The platform is designed so that additional applications can follow the same pattern: collect → transform → export → deploy.
-
-## Project structure
+### Project structure
 
 ```
 loci_platform/
 ├── apps/
-│   └── bike-map/            # Static web app (HTML + GeoJSON)
+│   └── bike-map/            # Static web app (HTML + MapLibre GL)
+├── docs/
+│   └── images/              # Architecture diagram, screenshots
 ├── infra/
-│   ├── bootstrap/           # Per-environment state backend setup
-│   │   ├── dev/
-│   │   ├── staging/
-│   │   └── prod/
+│   ├── bootstrap/           # Per-environment state backend setup (dev/staging/prod)
 │   └── modules/
 │       ├── state/           # S3 + DynamoDB for OpenTofu state
 │       └── bike-map/        # S3 + CloudFront + ACM + Route 53 + IAM
 ├── platform/
 │   ├── airflow/
 │   │   └── dags/
-│   │       ├── dag_files/   # DAG definitions
+│   │       ├── dag_files/   # DAG definitions (per-city refresh DAGs)
 │   │       └── loci/        # Shared library
 │   │           ├── collectors/
-│   │           │   ├── socrata/    # client, metadata, collector, spec
+│   │           │   ├── socrata/     # spec, metadata, client, collector
 │   │           │   ├── census/
-│   │           │   ├── osm/
 │   │           │   ├── tiger/
-│   │           │   └── bike_index/
+│   │           │   ├── osm/         # via Overpass
+│   │           │   ├── bike_index/
+│   │           │   └── arcgishub/   # + other portal-type connectors (CKAN, DKAN)
 │   │           ├── db/          # PostgresEngine, StagedIngest
-│   │           ├── exports/     # GeoJSON export tooling
-│   │           ├── parsers/     # Streaming parsers (CSV, GeoJSON, shapefile, PBF)
+│   │           ├── exports/     # GeoJSON + routing-graph export tooling
+│   │           ├── parsers/     # Streaming parsers (CSV, GeoJSON, shapefile)
 │   │           ├── tasks/       # Airflow task definitions
 │   │           ├── tracking/    # Ingestion run tracking
 │   │           └── transform/   # Geocoding and other Python transforms
-│   ├── dbt/                 # dbt project (models, macros, sources)
+│   ├── dbt/                 # dbt project (models, macros, tests)
 │   ├── migrations/          # Flyway SQL migrations
 │   └── docker-compose.yaml  # Full platform stack
+├── services/
+│   └── routing/
+│       └── routing-core/    # Rust routing engine (Lambda)
 └── notebooks/               # Jupyter notebooks for exploration
 ```
 
-## Running locally
+### Running locally
 
-The platform runs via Podman Compose. The `docker-compose.yaml` in `platform/` defines the stack: PostGIS (data warehouse), Airflow (apiserver, scheduler, dag-processor, worker, triggerer), Postgres (Airflow metadata), and Redis (Celery broker).
+The platform runs via Podman Compose. The `docker-compose.yaml` in `platform/` defines the stack: PostGIS (warehouse), Airflow (apiserver, scheduler, dag-processor, worker, triggerer), Postgres (Airflow metadata), and Redis (Celery broker).
 
 ```
 cd platform
@@ -198,12 +188,6 @@ podman compose up -d
 podman compose run --rm flyway-postgis   # run migrations
 ```
 
-## Roadmap
+## Development practices
 
-Near-term work in progress or planned:
-
-- **More mart models** — bike infrastructure quality layers (from OSM cycleway data), points of interest for cyclists (restaurants, cafes, bike shops), park polygons, and crash severity heatmaps with grid-based pre-aggregation.
-- **Safety-weighted bike routing** — integrate crash density and theft hotspot data into a routing cost function (likely via pgRouting on the OSM bike network) to suggest routes that balance distance against safety. Would be served as a feature of the bike map.
-- **Remove MySQL** — the current docker-compose includes a MySQL service that isn't used by anything in the platform. Removing it and its related configuration simplifies the stack.
-- **Additional analyses and applications** — the collected data (crimes, building permits, food inspections, Census demographics, property assessments, transit ridership, etc.) supports a range of applications beyond cycling. Future work may include neighborhood-level dashboards, transit accessibility analysis, or property/zoning tools — following the same collect → transform → export → deploy pattern.
-- **Automated dbt model generation** — extend `DbtPipelineBuilder` subclasses for Socrata, TIGER, and OSM sources so that adding a new dataset to the warehouse is a one-liner that generates the staging model, updates `sources.yml`, and wires up the correct SCD2/column-aliasing conventions.
+Tests gate merges; custom generic dbt tests gate data quality; synthetic monitors gate deploys. I use AI assistance (Claude) heavily for scaffolding and drafting, with every output reviewed and hardened before merge — the test suites and the commit history are the audit trail.
