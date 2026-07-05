@@ -1,0 +1,18 @@
+sources:
+  - name: raw_data
+    database: loci
+    schema: raw_data
+    tags:
+      - raw
+    tables:
+      - name: labeled_chicago_contractor_pairs
+        description: >
+          Hand-labeled contractor name pairs (2026-07-04 sample, n=75).
+          Regression fixture for the entity-resolution decision rule:
+          same_entity is the human verdict; null means undecidable after
+          research. New labeling sessions append with a new labeled_on.
+        columns:
+          - name: name_a
+            tests: [not_null]
+          - name: name_b
+            tests: [not_null]

@@ -1,11 +1,18 @@
--- marts/property/chicago_contractor_pair_decisions.sql
--- Candidate pairs with the v2 decision rule applied.
--- Assumes pg_trgm.similarity_threshold = 0.70 (set at database level).
+-- models/marts/property/chicago_contractor_pair_decisions.sql
+-- Candidate contractor-name pairs with the merge decision rule applied.
+-- Assumes pg_trgm.similarity_threshold = 0.70 (set at the database level).
+--
+-- Decision rule (v3, calibrated against the 75-pair hand-labeled sample
+-- of 2026-07-04, which found the only false merges were word-order
+-- permutations with mismatched zips):
+--   - same identifying tokens in the same ORDER: strong evidence on its
+--     own; single-token keys still need location corroboration
+--   - same identifying tokens in a different order (permutation):
+--     needs zip corroboration
+--   - near-identical keys (typos, truncation residue): needs zip
+--   - anything weaker but plausible: review, materiality-floored
 
-{{ config(
-    materialized='table',
-    pre_hook="set pg_trgm.similarity_threshold = 0.70"
-) }}
+{{ config(materialized='table') }}
 
 with pairs as (
 
@@ -19,6 +26,7 @@ with pairs as (
         a.modal_city as city_a,
         b.modal_city as city_b,
         similarity(a.name_norm, b.name_norm) as name_sim,
+        a.distinct_key_ordered = b.distinct_key_ordered as ordered_exact,
         a.distinct_key = b.distinct_key as distinct_exact,
         similarity(a.distinct_key, b.distinct_key) as distinct_sim,
         cardinality(string_to_array(a.distinct_key, ' ')) as key_tokens,
@@ -37,17 +45,21 @@ with pairs as (
 
 select *,
     case
-        -- same identifying tokens; multi-token keys are distinctive enough
-        -- alone, single-token keys need location corroboration
-        when distinct_exact and (key_tokens >= 2 or zip_match)
+        -- same identifying tokens, same order: suffix/truncation variants;
+        -- zip only needed when the key is a single token
+        when ordered_exact and (key_tokens >= 2 or zip_match)
             then 'auto'
-        -- near-identical identifying tokens (typos, minor truncation
-        -- residue) corroborated by location
+        -- same tokens, different order: permutations can be different
+        -- businesses ('AIR COMFORT' vs 'COMFORT AIR'), so require zip
+        when distinct_exact and zip_match
+            then 'auto'
+        -- near-identical keys (typos, minor truncation residue),
+        -- corroborated by location
         when distinct_sim >= 0.90 and zip_match
             then 'auto'
         -- real evidence, no corroboration: human decision, but only
         -- where the merge would affect the analysis
-        when (distinct_sim >= 0.85 or (distinct_exact and key_tokens = 1))
+        when (distinct_sim >= 0.85 or distinct_exact or (ordered_exact and key_tokens = 1))
              and greatest(permits_a, permits_b) >= 10
             then 'review'
         else 'no_match'

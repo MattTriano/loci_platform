@@ -4,8 +4,6 @@ A production sandbox for data engineering: a monorepo where I develop data-platf
 
 **Live:** [bikeinfra.com](https://bikeinfra.com) · [status.bikeinfra.com](https://status.bikeinfra.com) · Write-ups: [why safety-optimized routing](https://matttriano.dev/posts/021_bike_map/bike_map_routing_tool.html) · [the Python → Rust rewrite](https://matttriano.dev/posts/022_bike_infra_rust/routing_algo_rust_refactor.html)
 
-<img src="docs/images/loci_architecture.svg" alt="loci_platform architecture" width="800">
-
 <p align="center">
   <img src="docs/images/google_maps_route_comp.png" alt="Google Maps' fastest route" width="45%">
   <img src="docs/images/chicago_bike_map_route_comp.png" alt="bikeinfra.com's safety-optimized route" width="45%">
@@ -20,7 +18,9 @@ A production sandbox for data engineering: a monorepo where I develop data-platf
     - 100ks of datasets available through the already-implemented data collectors
     - 100s of Airflow DAGs each orchestrating regular data collections to update datasets tracked with their full **SCD2 history**.
 - **Cost:** **~$10/month** total across dev/staging/prod — mostly DNS and edge security; compute stays inside the free tier by design.
-- **Reliability:** synthetic monitoring with a public status page: [status.bikeinfra.com](https://status.bikeinfra.com). 100.0000% uptime for each site from launch to the time of writing (thanks to )
+- **Reliability:** synthetic monitoring with a public status page: [status.bikeinfra.com](https://status.bikeinfra.com). 100.0000% uptime for each site from launch to the time of writing (thanks to a careful dev > staging > prod release cycle).
+
+<img src="docs/images/loci_architecture.svg" alt="loci_platform architecture" width="800">
 
 ## Core engineering highlights
 

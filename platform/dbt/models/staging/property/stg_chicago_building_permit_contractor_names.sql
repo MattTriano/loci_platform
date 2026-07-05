@@ -8,13 +8,16 @@
 
 {{ config(
     materialized='table',
-    post_hook="create index if not exists {{ this.name }}_name_trgm on {{ this }} using gin (name_norm gin_trgm_ops)"
+    post_hook=[
+        "drop index if exists {{ this.schema }}.{{ this.name }}_name_trgm",
+        "create index {{ this.name }}_name_trgm on {{ this }} using gin (name_norm gin_trgm_ops)"
+    ]
 ) }}
 
 with generic_tokens (token) as (
 
-    -- Tokens removed when deriving distinct_key, the "identifying part"
-    -- of a name used for pair scoring.
+    -- Tokens removed when deriving the distinct keys (the "identifying
+    -- part" of a name used for pair scoring).
     --
     -- Inclusion test: a token is generic only if removing it could NOT
     -- collapse two different businesses into one key. Legal suffixes and
@@ -63,46 +66,73 @@ profiles as (
     from contractor_contacts
     group by 1
 
+),
+
+-- Identifying tokens: generic tokens removed. A LAST token that is a
+-- proper prefix (>= 2 chars) of a generic token (e.g. 'CORPORATI',
+-- 'COOLIN', 'IN') is treated as that generic token and removed —
+-- the source name field is truncated at varying widths, and truncation
+-- only occurs at the end, so prefix matching is restricted to the last
+-- token (applying it everywhere would wrongly genericize real words
+-- like the surname MASON, a prefix of MASONRY).
+keyed as (
+
+    select
+        profiles.*,
+
+        -- Sorted + deduplicated: word-order variants and concatenation
+        -- artifacts ('X CONTRACTING CONTRACTING') produce the same key.
+        -- Equality here means "same bag of identifying words".
+        nullif(array_to_string(array(
+            select distinct u.t
+            from unnest(string_to_array(name_norm, ' '))
+                 with ordinality as u(t, pos)
+            where u.t not in (select token from generic_tokens)
+              and not (
+                    u.pos = cardinality(string_to_array(name_norm, ' '))
+                    and length(u.t) >= 2
+                    and exists (
+                        select 1 from generic_tokens g
+                        where g.token like u.t || '%'
+                          and g.token != u.t
+                    )
+              )
+            order by u.t
+        ), ' '), '') as distinct_key,
+
+        -- Same tokens, original order preserved. Equality here means
+        -- "same identifying words in the same sequence" — much stronger
+        -- evidence than the sorted key, since it cannot be produced by
+        -- reordering ('AIR COMFORT' vs 'COMFORT AIR' differ here).
+        nullif(array_to_string(array(
+            select u.t
+            from unnest(string_to_array(name_norm, ' '))
+                 with ordinality as u(t, pos)
+            where u.t not in (select token from generic_tokens)
+              and not (
+                    u.pos = cardinality(string_to_array(name_norm, ' '))
+                    and length(u.t) >= 2
+                    and exists (
+                        select 1 from generic_tokens g
+                        where g.token like u.t || '%'
+                          and g.token != u.t
+                    )
+              )
+            order by u.pos
+        ), ' '), '') as distinct_key_ordered
+
+    from profiles
+
 )
 
 select
     name_norm,
-
-    -- Identifying tokens only: generic tokens removed, deduplicated
-    -- (concatenation artifacts like 'X CONTRACTING CONTRACTING'), and
-    -- sorted so word-order variants produce the same key.
-    --
-    -- Truncation handling: the source name field is truncated at varying
-    -- widths, so a LAST token that is a proper prefix (>= 2 chars) of a
-    -- generic token (e.g. 'CORPORATI', 'COOLIN', 'IN') is treated as that
-    -- generic token and removed. Restricted to the last token because
-    -- truncation only occurs at the end of the field; applying prefix
-    -- matching everywhere would wrongly genericize real words like the
-    -- surname MASON (prefix of MASONRY).
-    --
-    -- NULL when nothing survives (e.g. 'GENERAL CONSTRUCTION INC');
-    -- such names are never auto-merge candidates.
-    nullif(array_to_string(array(
-        select distinct u.t
-        from unnest(string_to_array(name_norm, ' '))
-             with ordinality as u(t, pos)
-        where u.t not in (select token from generic_tokens)
-          and not (
-                u.pos = cardinality(string_to_array(name_norm, ' '))
-                and length(u.t) >= 2
-                and exists (
-                    select 1 from generic_tokens g
-                    where g.token like u.t || '%'
-                      and g.token != u.t
-                )
-          )
-        order by u.t
-    ), ' '), '') as distinct_key,
-
+    distinct_key,
+    distinct_key_ordered,
     permits,
     modal_zip,
     modal_city,
     display_name,
     first_seen,
     last_seen
-from profiles
+from keyed

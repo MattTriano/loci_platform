@@ -15,12 +15,15 @@ sources:
             data_tests:
               - not_null
               - unique:
-                  config:
-                    where: "valid_to is null"
+                  arguments:
+                    config:
+                      where: "valid_to is null"
           - name: permit_status
             data_tests:
               - accepted_values:
-                  values: ['COMPLETE', 'ACTIVE', 'EXPIRED', 'SUSPENDED',
-                           'CANCELLED', 'REVOKED', 'PHASED PERMITTING']
-                  config:
-                    severity: warn
+                  arguments:
+                    values: ['COMPLETE', 'ACTIVE', 'EXPIRED', 'SUSPENDED',
+                             'CANCELLED', 'REVOKED', 'PHASED PERMITTING']
+                    config:
+                      severity: warn
+      - name: contractor_crosswalk
