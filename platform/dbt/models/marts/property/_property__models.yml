@@ -4,12 +4,41 @@ models:
       - name: contractor_id
         tests: [unique, not_null]
   - name: chicago_contractor_services
-    tests:
+    data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [contractor_id, service, evidence]
     columns:
       - name: contractor_id
-        tests: [not_null]
+        data_tests: [not_null]
       - name: service
-        tests: [not_null]
+        data_tests: [not_null]
+  - name: chicago_permit_outcomes
+    columns:
+      - name: permit_
+        data_tests: [unique, not_null]
+      - name: outcome
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['complete_organic', 'complete_estimated', 'complete_admin',
+                       'complete_undated', 'expired', 'cancelled', 'revoked',
+                       'suspended', 'open']
+      - name: duration_days
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+                config:
+                  where: "duration_days is not null"
+
+  - name: chicago_contractor_completion_speed
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [scope, contractor_id, service]
+    columns:
+      - name: n_completions
+        data_tests:
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
