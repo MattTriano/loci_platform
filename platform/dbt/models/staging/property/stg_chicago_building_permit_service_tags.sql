@@ -1,14 +1,14 @@
 -- models/staging/chicago_building_permits/stg_chicago_building_permit_service_tags.sql
 -- One row per (permit, service). Two channels, deduplicated by the
 -- UNION: keyword patterns over work_description, and permit types that
--- directly imply a service (a wrecking permit IS demolition work,
--- whatever the description says). Current permit versions only.
+-- directly imply a service. Current permit versions only.
 --
--- Taxonomy extended 2026-07 from a word-frequency scan of untagged
--- Express descriptions, which were dominated by low-voltage electrical
--- and alarm/security maintenance work. Note 'FIRE ALARM' matches both
--- fire_protection and alarm_security: deliberate — a permit can carry
--- both tags, and firms doing fire alarm work genuinely offer both.
+-- Amendment permits are excluded: descriptions beginning 'FOR PERMIT '
+-- are administrative contractor-replacement filings against another
+-- permit ("FOR PERMIT 101056531: REPLACEMENT PLUMBING CONTRACTOR...").
+-- They describe no work, but their boilerplate names trades, which
+-- falsely tagged them as services (discovered via the plumbing
+-- fast-completion anomaly, 2026-07).
 
 {{ config(materialized='table') }}
 
@@ -31,7 +31,8 @@ with service_taxonomy (service, pattern) as (
         ('signs',           '\m(SIGN)\M'),
         ('elevator',        '\m(ELEVATOR|ESCALATOR|LIFT)\M'),
         ('scaffolding',     '\m(SCAFFOLD)'),
-        ('tents',           '\m(TENT|CANOPY)\M')
+        ('tents',           '\m(TENT|CANOPY)\M'),
+        ('telecom_antennas','\m(ANTENNA|SMALL CELL|CELL SITE)')
 
 ),
 
@@ -55,6 +56,8 @@ permits as (
         upper(coalesce(work_description, '')) as descr
     from {{ source('raw_data', 'chicago_building_permits') }}
     where valid_to is null
+      -- amendment filings, not work (see header)
+      and upper(coalesce(work_description, '')) not like 'FOR PERMIT %'
 
 )
 
@@ -62,7 +65,7 @@ select p.permit_, p.permit_type, p.issue_date, t.service
 from permits p
 join service_taxonomy t on p.descr ~ t.pattern
 
-union   -- deliberate: dedupes permits tagged by both channels
+union
 
 select p.permit_, p.permit_type, p.issue_date, s.service
 from permits p

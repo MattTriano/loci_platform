@@ -1,28 +1,30 @@
 -- models/marts/property/chicago_permit_outcomes.sql
--- One row per tracked permit (Express / Renovation / New Construction —
--- the types that carry status) with a classified outcome, and where a
--- completion date is recoverable, the date, its source, and the duration.
+-- One row per tracked JOB permit (Express / Renovation / New
+-- Construction — the types that carry status) with a classified outcome,
+-- and where a completion date is recoverable, the date, its source, and
+-- the duration.
+--
+-- Amendment permits (work_description beginning 'FOR PERMIT ') are
+-- excluded from the universe: they are administrative contractor-
+-- replacement filings against another permit, not jobs. Including them
+-- inflated permit counts, polluted service medians with same-day
+-- "completions", and padded the open-jobs population.
 --
 -- Completion-date sources, in priority order:
 --   observed_transition: the SCD2 version log captured the COMPLETE flip
---     (collection began 2026-03-04; dates accurate to the twice-weekly
---     cadence, ~±4 days).
+--     (collection began 2026-03-04; ~±4 days).
 --   updated_at_estimate: permit was already COMPLETE at first collection,
 --     and its socrata_updated_at postdates the portal's 2025-10-14 full
---     restamp — validated retouch rate ~2.2%, so the last-touch date
---     approximates the completion flip.
---   Completions before 2025-10-14 are undatable (restamped) and appear
---     as complete_undated.
+--     restamp — validated retouch rate ~2.2%.
+--   Completions before 2025-10-14 are undatable and appear as
+--     complete_undated.
 --
--- Organic vs administrative completion: the transition analysis showed
--- completions arriving from inspections-family states are real
--- inspection closures, while INSPECTION ELIGIBLE -> COMPLETE (~397 days,
--- the 13-month auto-close sweep) and SUSPENDED -> COMPLETE (median ~797
--- days, backlog cleanup) are administrative and carry no work-finish
--- information. For recovered Express completions (no prior state
--- observable), duration > 365 days is classified administrative, since
--- observed Express organic completions overwhelmingly occur inside the
--- one-year validity window and both sweep paths occur beyond it.
+-- Organic vs administrative completion: completions arriving from
+-- inspections-family states are real inspection closures; INSPECTION
+-- ELIGIBLE -> COMPLETE (~397 days, the 13-month auto-close sweep) and
+-- SUSPENDED -> COMPLETE (median ~797 days, backlog cleanup) are
+-- administrative. For recovered Express completions (no prior state
+-- observable), duration > 365 days is classified administrative.
 
 {{ config(materialized='table') }}
 
@@ -65,6 +67,8 @@ current_permits as (
     from {{ source('raw_data', 'chicago_building_permits') }}
     where valid_to is null
       and permit_status is not null
+      -- amendment filings, not jobs (see header)
+      and upper(coalesce(work_description, '')) not like 'FOR PERMIT %'
 
 ),
 
@@ -78,16 +82,11 @@ classified as (
         p.permit_milestone,
 
         case
-            -- observed flip, from an inspections-family state: real closure
             when f.permit_ is not null
                  and f.prev_milestone not in ('INSPECTION ELIGIBLE', 'SUSPENDED')
                 then 'complete_organic'
-
-            -- observed flip via the auto-close or backlog-sweep paths
             when f.permit_ is not null
                 then 'complete_admin'
-
-            -- pre-collection completion, dated via post-restamp last touch
             when p.permit_milestone in ('COMPLETE', 'CERTIFICATE OF OCCUPANCY ISSUED')
                  and p.last_touched > date '2025-10-14'
                 then case
@@ -96,11 +95,8 @@ classified as (
                         then 'complete_admin'
                     else 'complete_estimated'
                 end
-
-            -- completed sometime before the restamp: date unrecoverable
             when p.permit_milestone in ('COMPLETE', 'CERTIFICATE OF OCCUPANCY ISSUED')
                 then 'complete_undated'
-
             when p.permit_status = 'EXPIRED'   then 'expired'
             when p.permit_status = 'CANCELLED' then 'cancelled'
             when p.permit_status = 'REVOKED'   then 'revoked'
@@ -124,8 +120,6 @@ select
     permit_status,
     permit_milestone,
     outcome,
-
-    -- date and duration only where the outcome makes them meaningful
     case when outcome in ('complete_organic', 'complete_estimated')
          then candidate_completed_at end as completed_at,
     case when outcome in ('complete_organic', 'complete_estimated')

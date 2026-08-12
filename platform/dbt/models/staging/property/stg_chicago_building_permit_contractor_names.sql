@@ -3,8 +3,15 @@
 -- profile used for entity resolution (pair matching + crosswalk).
 --
 -- Materialized as a table (not a view) because pair generation needs a
--- physical relation for the trigram index; the post-hook recreates the
--- index on every rebuild.
+-- physical relation for the trigram index; the post-hook drops and
+-- recreates the index (dbt's rebuild renames the old table to a backup
+-- that still holds an index with this name, so create-if-not-exists
+-- would no-op and the index would vanish with the backup).
+--
+-- permits counts DISTINCT permits, not contact rows: self-performing
+-- firms commonly appear on one permit under multiple roles (e.g. solar
+-- installers as GENERAL CONTRACTOR + ELECTRICAL CONTRACTOR), which
+-- inflated row-based counts by ~2x for those firms.
 
 {{ config(
     materialized='table',
@@ -37,10 +44,9 @@ with generic_tokens (token) as (
         ('ELECTRIC'), ('ELECTRICAL'), ('PLUMBING'), ('MASONRY')
 
 ),
-
 contractor_contacts as (
-
     select
+        permit_,
         name_norm,
         contact_name,
         contact_zip,
@@ -50,14 +56,11 @@ contractor_contacts as (
     where contact_type ilike '%CONTRACTOR%'
       and name_norm is not null
       and name_norm not like 'OWNER ACTING%'   -- self-performed work, not a firm
-
 ),
-
 profiles as (
-
     select
         name_norm,
-        count(*) as permits,
+        count(distinct permit_) as permits,   -- not count(*): dual-role firms
         mode() within group (order by contact_zip) as modal_zip,
         mode() within group (order by contact_city) as modal_city,
         (array_agg(contact_name order by issue_date desc))[1] as display_name,
@@ -65,18 +68,8 @@ profiles as (
         max(issue_date) as last_seen
     from contractor_contacts
     group by 1
-
 ),
-
--- Identifying tokens: generic tokens removed. A LAST token that is a
--- proper prefix (>= 2 chars) of a generic token (e.g. 'CORPORATI',
--- 'COOLIN', 'IN') is treated as that generic token and removed —
--- the source name field is truncated at varying widths, and truncation
--- only occurs at the end, so prefix matching is restricted to the last
--- token (applying it everywhere would wrongly genericize real words
--- like the surname MASON, a prefix of MASONRY).
 keyed as (
-
     select
         profiles.*,
 
@@ -100,10 +93,9 @@ keyed as (
             order by u.t
         ), ' '), '') as distinct_key,
 
-        -- Same tokens, original order preserved. Equality here means
-        -- "same identifying words in the same sequence" — much stronger
-        -- evidence than the sorted key, since it cannot be produced by
-        -- reordering ('AIR COMFORT' vs 'COMFORT AIR' differ here).
+        -- Same tokens, original order preserved: much stronger evidence,
+        -- since it cannot be produced by reordering ('AIR COMFORT' vs
+        -- 'COMFORT AIR' differ here).
         nullif(array_to_string(array(
             select u.t
             from unnest(string_to_array(name_norm, ' '))
@@ -120,9 +112,7 @@ keyed as (
               )
             order by u.pos
         ), ' '), '') as distinct_key_ordered
-
     from profiles
-
 )
 
 select

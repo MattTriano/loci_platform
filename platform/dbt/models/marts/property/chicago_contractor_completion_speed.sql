@@ -8,18 +8,18 @@
 -- Population: permits ISSUED within the 3-year analysis window that have
 -- a dated completion (outcome complete_organic or complete_estimated)
 -- falling on/after 2025-10-14 (the earliest recoverable completion date).
+-- The issue-window restriction is load-bearing: without it, dated
+-- "completions" of old permits (administrative retouches of long-closed
+-- rows) dominated and medians came out in the thousands of days.
 --
--- The issue-window restriction is load-bearing, not just scoping: dated
--- "completions" of old permits are dominated by administrative retouches
--- of long-closed rows (any edit updates socrata_updated_at, so the
--- updated_at_estimate channel selects retouched old permits along with
--- genuine recent completions). Without the restriction, service medians
--- came out in the thousands of days. With it, durations are capped at
--- ~1,095 days by construction and the residual retouch contamination
--- (~2% of the estimated channel, months of error not decades) is a
--- documented caveat. Trade-off to state when reporting: percentiles
--- describe jobs that finished; long-running jobs still open contribute
--- no duration.
+-- pct_observed is a confidence signal: the share of a row's durations
+-- coming from directly observed SCD2 transitions rather than
+-- updated_at-based estimates. Source-agreement analysis (2026-07) found
+-- the two channels agree closely for high-volume services and the
+-- estimated channel skews ~1-3 months long for slower, low-volume
+-- services due to residual retouch contamination; rows with low
+-- pct_observed and long medians should be read with that in mind. The
+-- observed share grows with every collection cycle.
 --
 -- Attribution: a permit's duration is attributed to every contractor
 -- contact on it (gc and trade roles). Service grain comes from the
@@ -57,7 +57,7 @@ permit_contractors as (
 
 contractor_durations as (
 
-    select pc.contractor_id, d.permit_, d.duration_days
+    select pc.contractor_id, d.permit_, d.duration_days, d.completion_source
     from dated_completions d
     join permit_contractors pc on pc.permit_ = d.permit_
 
@@ -65,7 +65,9 @@ contractor_durations as (
 
 contractor_service_durations as (
 
-    select distinct cd.contractor_id, t.service, cd.permit_, cd.duration_days
+    select distinct
+        cd.contractor_id, t.service, cd.permit_,
+        cd.duration_days, cd.completion_source
     from contractor_durations cd
     join {{ ref('stg_chicago_building_permit_service_tags') }} t
         on t.permit_ = cd.permit_
@@ -77,6 +79,8 @@ select
     contractor_id,
     null as service,
     count(*) as n_completions,
+    round(100.0 * count(*) filter (where completion_source = 'observed_transition')
+          / count(*), 1) as pct_observed,
     percentile_cont(0.25) within group (order by duration_days) as p25_days,
     percentile_cont(0.50) within group (order by duration_days) as median_days,
     percentile_cont(0.75) within group (order by duration_days) as p75_days,
@@ -91,6 +95,8 @@ select
     contractor_id,
     service,
     count(*),
+    round(100.0 * count(*) filter (where completion_source = 'observed_transition')
+          / count(*), 1),
     percentile_cont(0.25) within group (order by duration_days),
     percentile_cont(0.50) within group (order by duration_days),
     percentile_cont(0.75) within group (order by duration_days),
@@ -105,10 +111,12 @@ select
     null,
     service,
     count(*),
+    round(100.0 * count(*) filter (where completion_source = 'observed_transition')
+          / count(*), 1),
     percentile_cont(0.25) within group (order by duration_days),
     percentile_cont(0.50) within group (order by duration_days),
     percentile_cont(0.75) within group (order by duration_days),
     percentile_cont(0.90) within group (order by duration_days)
-from (select distinct service, permit_, duration_days
+from (select distinct service, permit_, duration_days, completion_source
       from contractor_service_durations) service_durations
 group by 1, 2, 3

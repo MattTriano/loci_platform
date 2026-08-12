@@ -21,9 +21,10 @@ models:
         data_tests:
           - not_null
           - accepted_values:
-              values: ['complete_organic', 'complete_estimated', 'complete_admin',
-                       'complete_undated', 'expired', 'cancelled', 'revoked',
-                       'suspended', 'open']
+              arguments:
+                values: ['complete_organic', 'complete_estimated', 'complete_admin',
+                         'complete_undated', 'expired', 'cancelled', 'revoked',
+                         'suspended', 'open']
       - name: duration_days
         data_tests:
           - dbt_utils.expression_is_true:
@@ -41,4 +42,15 @@ models:
       - name: n_completions
         data_tests:
           - dbt_utils.expression_is_true:
-              expression: "> 0"
+              arguments:
+                expression: "> 0"
+
+  - name: chicago_contractor_open_jobs
+    columns:
+      - name: contractor_id
+        data_tests: [unique, not_null]
+      - name: n_open
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
